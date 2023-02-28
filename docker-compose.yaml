@@ -3,6 +3,7 @@ version: "3.5"
 services:
 
   backend:
+    container_name: backend-crypto
     build: 
       context: ./backend
     restart: always
@@ -10,9 +11,69 @@ services:
       - "5000:5000"
     volumes:
       - ./backend/:/backend
+    environment:
+      - BACKEND_URL= $BACKEND_URL
+      - MONGO_USERNAME=$MONGO_USERNAME
+      - MONGO_PASSWORD=$MONGO_PASSWORD
+      - MONGO_DB_URL=$MONGO_DB_URL
+      - MONGO_PORT=$MONGO_PORT
+      - TZ=$TIME_ZONE
+      - BTC_TRADES=$BTC_TRADES
+
     networks:
       - local-net
 
+
+  mongo:
+    container_name: mongo-crypto
+    build: 
+      context: ./mongodb
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - MONGO_INITDB_ROOT_USERNAME=$MONGO_INITDB_ROOT_USERNAME
+      - MONGO_INITDB_ROOT_PASSWORD=$MONGO_INITDB_ROOT_PASSWORD
+      - MONGO_USERNAME=$MONGO_USERNAME
+      - MONGO_PASSWORD=$MONGO_PASSWORD
+      - MONGO_DB_URL=$MONGO_DB_URL
+      - MONGO_DB_NAME=$MONGO_DB_NAME
+      - MONGO_PORT=$MONGO_PORT
+      - MONGO_VERSION=$MONGO_VERSION
+      - TZ=$TIME_ZONE
+      
+    restart: always
+    ports:
+      - "27017:27017"
+    
+    volumes:
+      - ./mongodb/db:/data/db
+    networks:
+      - local-net
+
+  mongo-express:
+    image: mongo-express
+    container_name: mongo-express-crypto
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "1"
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_MONGODB_AUTH_USERNAME: $MONGO_INITDB_ROOT_USERNAME
+      ME_CONFIG_MONGODB_AUTH_PASSWORD: $MONGO_INITDB_ROOT_PASSWORD
+      ME_CONFIG_BASICAUTH_USERNAME: $MONGO_INITDB_ROOT_USERNAME # to enable auth in mongo-express gui
+      ME_CONFIG_BASICAUTH_PASSWORD: $MONGO_INITDB_ROOT_PASSWORD
+      ME_CONFIG_SITE_BASEURL: "/mongo"
+      #ME_CONFIG_MONGODB_URL: mongodb://root:password@mongo:27017/
+    depends_on:
+      - mongo
+    networks:
+      - local-net
 networks:
   local-net:
     driver: bridge

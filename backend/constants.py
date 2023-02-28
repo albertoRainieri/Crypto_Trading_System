@@ -18,3 +18,5 @@ DAY_1="1D"
 DAY_7="7D"
 DAY_14="14D"
 MONTH_1="1M"
+
+BTC_USD = "BTC_USD"

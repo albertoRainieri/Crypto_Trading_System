@@ -33,4 +33,5 @@ async def getAllInstruments():
 
 @router.get("/get-trades_over-q")
 async def getTrades_BTC_over_Q():
-    return CryptoController.getTrades_BTC_over_Q()
+    crypto = CryptoController()
+    return crypto.getTrades_BTC_over_Q()

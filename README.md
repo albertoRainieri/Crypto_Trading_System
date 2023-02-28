@@ -6,6 +6,7 @@ WORKING IN PROGRESS
 
 # Installation
 ```
+cp .env.example .env
 docker-compose up
 ```
 

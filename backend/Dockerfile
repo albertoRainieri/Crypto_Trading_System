@@ -12,4 +12,5 @@ RUN yes | apt-get install iputils-ping
 RUN pip install "python-jose[cryptography]"
 RUN mkdir logs
 
-CMD ["uvicorn", "main:app", "--reload", "--host", "0.0.0.0", "--port", "5000"]
+#CMD ["uvicorn", "main:app", "--reload", "--host", "0.0.0.0", "--port", "5000"]
+CMD ["/bin/bash", "/backend/scripts/docker_wrapper_script.sh"]
