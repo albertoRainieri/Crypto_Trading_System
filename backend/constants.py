@@ -1,11 +1,17 @@
+# CRYPTO.COM API
 REST_API_ENDPOINT="https://api.crypto.com/v2/"
 REST_UAT_SANDBOX_ENDPOINT="https://uat-api.3ona.co/v2/"
 WSS_UAT_SANDBOX_ENDPOINT_USER="wss://uat-stream.3ona.co/v2/user"
 WSS_UAT_SANDBOX_ENDPOINT_MARKET="wss://uat-stream.3ona.co/v2/market"
 WSS_PRODUCTION_USER="wss://stream.crypto.com/v2/user"
 WSS_PRODUCTION_MARKET="wss://stream.crypto.com/v2/market"
-DD="CIAO"
 
+#DATABASE
+DATABASE_TRADES_OVER_Q="TRADES_OVER_Q"
+DATABASE_ALL_TRADES="ALL_TRADES"
+DATABASE_VOLUME_STATISTICS="VOLUME_STATISTICS"
+
+# TIMEFRAME
 MINUTE_1="1m"
 MINUTE_5="5m"
 MINUTE_15="15m"
@@ -19,4 +25,5 @@ DAY_7="7D"
 DAY_14="14D"
 MONTH_1="1M"
 
+# COINS
 BTC_USD = "BTC_USD"

@@ -5,15 +5,17 @@ from time import sleep
 from app.Controller.LoggingController import LoggingController
 from database.DatabaseConnection import DatabaseConnection
 from app.Controller.CryptoController import CryptoController
-import requests
+from datetime import datetime
 
 logger = LoggingController.start_logging()
 
-def main(db, crypto_instance):
+def main(db, crypto_instance, coin_list, logger):
   while True:
-      crypto_instance.getTrades_BTC_over_Q()
+    #each minute
+    
+    crypto_instance.getTrades_BTC_over_Q(coin_list=coin_list, logger=logger)
 
-      
+    
 
 
 if __name__ == '__main__':
@@ -22,5 +24,6 @@ if __name__ == '__main__':
     logger.info('Python Script Started')
     db = DatabaseConnection()
     crypto = CryptoController()
+    coin_list = ["BTC_USD", "ETH_USD"]
     
-    main(db=db, crypto_instance=crypto)
+    main(db=db, crypto_instance=crypto, coin_list=coin_list, logger=logger)
