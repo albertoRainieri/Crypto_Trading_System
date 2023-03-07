@@ -4,6 +4,10 @@ services:
 
   backend:
     container_name: backend-crypto
+    logging:
+      driver: "json-file"
+      options:
+          max-size: "2m"
     build: 
       context: ./backend
     restart: always
@@ -26,6 +30,10 @@ services:
 
   mongo:
     container_name: mongo-crypto
+    logging:
+      driver: "json-file"
+      options:
+          max-size: "5m"
     build: 
       context: ./mongodb
     environment:
@@ -52,13 +60,12 @@ services:
 
   mongo-express:
     image: mongo-express
-    container_name: mongo-express-crypto
-    restart: always
     logging:
       driver: "json-file"
       options:
-        max-size: "5m"
-        max-file: "1"
+          max-size: "5m"
+    container_name: mongo-express-crypto
+    restart: always
     ports:
       - "8081:8081"
     environment:

@@ -28,10 +28,15 @@ async def getAllInstruments():
     return CryptoController.getTicker()
 
 @router.get("/get-trades")
-async def getAllInstruments():
-    return CryptoController.getTrades()
+async def getAllInstruments(instrument_name='BTC_USD'):
+    return CryptoController.getTrades(instrument_name=instrument_name)
 
 @router.get("/get-trades_over-q")
 async def getTrades_BTC_over_Q():
     crypto = CryptoController()
     return crypto.getTrades_BTC_over_Q()
+
+@router.get("/get-most-traded-coins")
+async def getMostTradedCoins():
+    crypto = CryptoController()
+    return crypto.getMostTradedCoins()
