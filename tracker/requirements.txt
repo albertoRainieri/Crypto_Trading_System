@@ -1,0 +1,6 @@
+nano==0.10.0
+requests==2.28.1
+pymongo==3.11.1
+pydantic==1.9.1
+pytz
+numpy
