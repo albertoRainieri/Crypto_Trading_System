@@ -29,7 +29,7 @@ async def getAllInstruments():
 
 @router.get("/get-trades")
 async def getAllInstruments(instrument_name='BTC_USD'):
-    return CryptoController.getTrades(instrument_name=instrument_name)
+    return CryptoController.getTrades_sync(instrument_name=instrument_name)
 
 @router.get("/get-trades_over-q")
 async def getTrades_BTC_over_Q():

@@ -22,10 +22,36 @@ services:
       - MONGO_DB_URL=$MONGO_DB_URL
       - MONGO_PORT=$MONGO_PORT
       - TZ=$TIME_ZONE
-      - BTC_TRADES=$BTC_TRADES
-
     networks:
       - local-net
+
+  tracker:
+    container_name: tracker-crypto
+    logging:
+      driver: "json-file"
+      options:
+          max-size: "2m"
+    build: 
+      context: ./tracker
+    restart: always
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./tracker/:/tracker
+      - ./backend/json:/tracker/json:ro
+      - ./backend/constants:/tracker/constants:ro
+      - ./backend/database:/tracker/database:ro
+      - ./backend/app/Helpers:/tracker/app/Helpers
+    environment:
+      - BACKEND_URL= $BACKEND_URL
+      - MONGO_USERNAME=$MONGO_USERNAME
+      - MONGO_PASSWORD=$MONGO_PASSWORD
+      - MONGO_DB_URL=$MONGO_DB_URL
+      - MONGO_PORT=$MONGO_PORT
+      - TZ=$TIME_ZONE
+    networks:
+      - local-net
+
 
 
   mongo:
@@ -81,6 +107,8 @@ services:
       - mongo
     networks:
       - local-net
+
+  
 networks:
   local-net:
     driver: bridge

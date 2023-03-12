@@ -13,3 +13,4 @@ python-dateutil
 pytz
 passlib[bcrypt]
 numpy
+httpx

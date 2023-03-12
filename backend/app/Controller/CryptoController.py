@@ -1,16 +1,19 @@
-from time import time
+from time import time, sleep
 from random import randint
 import json
 import os,sys
-from constants import *
+from constants.constants import *
 import requests
 import numpy as np
 from datetime import datetime, timedelta
 from operator import itemgetter
 from database.DatabaseConnection import DatabaseConnection
 from app.Controller.LoggingController import LoggingController
-from app.Helpers import round_, timer_func
+from backend.app.Helpers.Helpers import round_, timer_func
 import numpy as np
+
+import httpx
+import asyncio
 
 sys.path.insert(0,'../..')
 
@@ -19,7 +22,6 @@ class CryptoController:
 
     def __init__(self) -> None:
         self.db = DatabaseConnection()
-        self.db_btc_trades = os.getenv("BTC_TRADES")
 
     def getHeader():
         header= {"Content Type": "application/json"}
@@ -183,21 +185,45 @@ class CryptoController:
 
         #instrument_name="BTC_USDT"
         method="public/get-ticker"
-
         url=REST_API_ENDPOINT + method + f"?instrument_name={instrument_name}"
-
         response=requests.get(url=url, headers=header)
-
         return json.loads(response.text)
     
-    @staticmethod
-    @timer_func
-    def getTrades(instrument_name):
+    def getTrades_sync(instrument_name):
         header=CryptoController.getHeader()
         method="public/get-trades"
         url=REST_API_ENDPOINT + method + f"?instrument_name={instrument_name}"
         response=requests.get(url=url, headers=header)
-        trades=json.loads(response.text)
+        return json.loads(response.text)
+
+    @staticmethod
+    async def getTrades(coin_list, logger):
+        trades = {}
+        urls= []
+        method="public/get-trades"
+            
+        for coin in coin_list:
+            urls.append(REST_API_ENDPOINT + method + f"?instrument_name={coin}")
+        logger.info(coin_list)
+        resps = await asyncio.gather(*map(CryptoController.get_async, urls))
+        data = [json.loads(resp.text) for resp in resps]
+
+        for object in data:
+            instrument_name = object['result']['instrument_name']
+            trades[instrument_name] = object
+
+        #logger.info(trades)
+        return trades
+
+
+    async def get_async(url):
+        #header = CryptoController.getHeader()
+        async with httpx.AsyncClient() as client:
+            return await client.get(url)
+    
+    @timer_func
+    def launch(coin_list, logger):
+        trades = asyncio.run(CryptoController.getTrades(coin_list=coin_list, logger=logger))
         return trades
 
 
@@ -211,31 +237,50 @@ class CryptoController:
         prices = {}
         trades_sorted = {}
         n_trades = {}
-        n_trades_p_s_dict = {}
+        
 
         # JSON file
         # Overwrite coin_list variable
         f = open ('/backend/json/most_traded_coin_list.json', "r")
         data = json.loads(f.read())
-        coin_list = data["most_traded_coin_list"][:5]
+        coin_list = data["most_traded_coin_list"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
+
 
         for instrument_name in coin_list:
             resp[instrument_name] = []
-            doc_db[instrument_name] = {"_id": None, "price_average": None, "n_trades": 0,"volume": 0 , "buy_volume": 0, "sell_volume": 0, "buy_n": 0, "sell_n": 0, "quantity": 0, "n_trades_p_s": []}
-            prices[instrument_name] = []
+            doc_db[instrument_name] = {"_id": None, "price": None, "n_trades": 0,"volume": 0 , "buy_volume": 0, "sell_volume": 0, "buy_n": 0, "sell_n": 0, "quantity": 0, "n_trades_p_s": []}
+            prices[instrument_name] = None
             trades_sorted[instrument_name] = []
             n_trades[instrument_name] = 0
-            n_trades_p_s_dict[instrument_name] = []
-         
+            # n_trades_p_s_dict[instrument_name] = []
+        
+        slice_i=0
         while start_minute == datetime.now().minute:
+            
+            slice_coins_to_trade = (slice_i % SLICES)+1
+            logger.info(f'Slice: {slice_coins_to_trade}/{SLICES}  ---  Fetched {COINS_PRIORITY} priority coins + {NUMBER_COINS_TO_TRADE} regular coins')
 
+            if slice_coins_to_trade == 1:
+                coin_list = data["most_traded_coin_list"][:COINS_PRIORITY] + data["most_traded_coin_list"][COINS_PRIORITY:NUMBER_COINS_TO_TRADE*slice_coins_to_trade+COINS_PRIORITY]
+            else:
+                coin_list = data["most_traded_coin_list"][:COINS_PRIORITY] + data["most_traded_coin_list"][NUMBER_COINS_TO_TRADE*(slice_coins_to_trade-1)+COINS_PRIORITY:NUMBER_COINS_TO_TRADE*slice_coins_to_trade+COINS_PRIORITY]
+            
+            try:
+                trades = CryptoController.launch(coin_list=coin_list, logger=logger)
+            except Exception as e:
+                logger.error('ERROR')
+                continue
+                # if e.errno != errno.ECONNRESET:
+                #     raise # Not error we are looking for
+                # pass # Handle error here.
+            
+            instrument_names = list(trades.keys())
+            
+            for instrument_name in instrument_names:
 
-            for instrument_name in coin_list:
-                # make the request to Crypto.Com API
-                trades = CryptoController.getTrades(instrument_name)
-
-                if len(trades["result"]["data"]) == 0:
-                    pass 
+                #logger.info(trades)
+                if len(trades[instrument_name]["result"]["data"]) == 0:
+                    pass
 
                 # use LAST_TRADE_TIMESTAMP to fetch only the new trades
                 LAST_TRADE_TIMESTAMP = os.getenv(f"LAST_TRADE_TIMESTAMP_{instrument_name}")
@@ -246,8 +291,7 @@ class CryptoController:
                 
                 # if db is None
                 if database == None:
-                    print("ok")
-                    for trade in trades["result"]["data"]:
+                    for trade in trades[instrument_name]["result"]["data"]:
                         datetime_trade = datetime.fromtimestamp(trade["t"]/1000)
                         if datetime_trade > datetime.fromisoformat(LAST_TRADE_TIMESTAMP):
                             doc = {"order":trade["s"], "price": trade["p"], "quantity": trade["q"], "timestamp": datetime_trade, "trade_id": trade["d"]}
@@ -255,13 +299,13 @@ class CryptoController:
                 # if db in not None. save the data
                 else:
                     # number of seconds between each trade
-                    n_trades_p_s = 0
+                    # n_trades_p_s = 0
 
                     #print("N_SEC_P_TRADE: ", datetime.now() - datetime.fromisoformat(LAST_TRADE_TIMESTAMP))
                     
                     timestamps=[]
                     current_n_trades = 0
-                    for trade in trades["result"]["data"]:
+                    for trade in trades[instrument_name]["result"]["data"]:
                         datetime_trade = datetime.fromtimestamp(trade["t"]/1000)
                         if datetime_trade > datetime.fromisoformat(LAST_TRADE_TIMESTAMP):
                             timestamps.append(datetime_trade)
@@ -273,7 +317,7 @@ class CryptoController:
 
                             # ANALYZE STATISTICS TO SAVE TO DB
 
-                            prices[instrument_name].append(float(doc["price"]))
+                            prices[instrument_name] = float(doc["price"])
 
                             doc_db[instrument_name]["quantity"] += float(doc["quantity"])
                             
@@ -284,39 +328,48 @@ class CryptoController:
                                 doc_db[instrument_name]["sell_n"] += 1
                                 doc_db[instrument_name]["sell_volume"] += float(doc["quantity"]) * float(doc["price"])
 
+
                     if current_n_trades != 0:
                         doc_db[instrument_name]["n_trades"] += current_n_trades
-                        n_trades_p_s_datetime = datetime.now() - datetime.fromisoformat(LAST_TRADE_TIMESTAMP)
-                        n_trades_p_s = n_trades_p_s_datetime.seconds + n_trades_p_s_datetime.microseconds*10**(-6)
-                        n_trades_p_s = current_n_trades / n_trades_p_s
+                        # n_trades_p_s_datetime = datetime.now() - datetime.fromisoformat(LAST_TRADE_TIMESTAMP)
+                        # n_trades_p_s = n_trades_p_s_datetime.seconds + n_trades_p_s_datetime.microseconds*10**(-6)
+                        # n_trades_p_s = current_n_trades / n_trades_p_s
                         
                         resp[instrument_name] = sorted(resp[instrument_name], key=itemgetter('timestamp'), reverse=False)
                         os.environ[f"LAST_TRADE_TIMESTAMP_{instrument_name}"] = resp[instrument_name][-1]['timestamp'].isoformat()
-                        n_trades_p_s_dict[instrument_name].append(n_trades_p_s)
+                        # n_trades_p_s_dict[instrument_name].append(n_trades_p_s)
                                         
-                if logger != None:
-                    logger.info(f'{instrument_name}: {doc_db[instrument_name]}')
+                if logger != None and n_trades[instrument_name] != 0:
+                    logger.info({'instrument_name': instrument_name, 'price': prices[instrument_name], 'n_trades': doc_db[instrument_name]["n_trades"], 'buy_volume': round_(doc_db[instrument_name]["buy_volume"],2), 'sell_volume': round_(doc_db[instrument_name]["sell_volume"],2)})
 
+            logger.info(f'Sleep Time: {SLEEP_SECONDS}s')
+            sleep(SLEEP_SECONDS)
+            slice_i += 1
 
-        for instrument_name in prices:
-            price_average = np.mean(prices[instrument_name])
-            doc_db[instrument_name]["n_trades_p_s"]= round_(np.mean(n_trades_p_s_dict[instrument_name]),2)
-            doc_db[instrument_name]["price_average"]=round_(price_average,4)
-            doc_db[instrument_name]["quantity"] = round_(doc_db[instrument_name]["quantity"],2)
-            doc_db[instrument_name]["volume"] =  int(doc_db[instrument_name]["buy_volume"] + doc_db[instrument_name]["sell_volume"])
-            doc_db[instrument_name]["sell_volume"] = int(doc_db[instrument_name]["sell_volume"])
-            doc_db[instrument_name]["buy_volume"] = int(doc_db[instrument_name]["buy_volume"])
-            doc_db[instrument_name]['_id']= datetime.now().isoformat()
-            database[COLLECTION_ALL_TRADES][instrument_name].insert(doc_db[instrument_name])
-            trades_sorted[instrument_name]= sorted(resp[instrument_name], key=itemgetter('timestamp'), reverse=False)
-            
-                
-        #logger.info(f'Final log - Trades Sorted: {trades_sorted}')        
-        #if len(trades_sorted) != 0:
-        #    logger.info(f'{instrument_name}: {timestamps}')
-        
+        if database != None:
+            trades_sorted = CryptoController.saveTrades_toDB(n_trades, prices, doc_db, database, trades_sorted, resp)
+        else:
+            for instrument_name in prices:
+                trades_sorted[instrument_name]= sorted(resp[instrument_name], key=itemgetter('timestamp'), reverse=False)
         return trades_sorted
-                
+
+    @timer_func
+    def saveTrades_toDB(n_trades, prices, doc_db, database, trades_sorted, resp):
+        for instrument_name in n_trades:
+            if n_trades[instrument_name] != 0:
+                #doc_db[instrument_name]["n_trades_p_s"]= round_(np.mean(n_trades_p_s_dict[instrument_name]),2)
+                doc_db[instrument_name]["price"]=prices[instrument_name]
+                doc_db[instrument_name]["quantity"] = round_(doc_db[instrument_name]["quantity"],2)
+                doc_db[instrument_name]["volume"] =  round_(doc_db[instrument_name]["buy_volume"] + doc_db[instrument_name]["sell_volume"],2)
+                doc_db[instrument_name]["sell_volume"] = round(doc_db[instrument_name]["sell_volume"],2)
+                doc_db[instrument_name]["buy_volume"] = round(doc_db[instrument_name]["buy_volume"],2)
+                doc_db[instrument_name]['_id']= datetime.now().isoformat()
+                database[COLLECTION_ALL_TRADES][instrument_name].insert(doc_db[instrument_name])
+                trades_sorted[instrument_name]= sorted(resp[instrument_name], key=itemgetter('timestamp'), reverse=False)
+
+        return trades_sorted
+        
+
     
     def getTrades_BTC_over_Q(self, coin_list=["BTC_USD"], logger=LoggingController.start_logging()):
 
@@ -327,21 +380,21 @@ class CryptoController:
         db = self.get_db('Market_Trades')
         trades = CryptoController.getStatistics_onTrades(coin_list=coin_list, database=db, logger=logger, start_minute=current_minute)
 
-        for instrument_name in coin_list:
+        # for instrument_name in coin_list:
 
-            if len(trades) == 0:
-                return
+        #     if len(trades) == 0:
+        #         return
 
-            for instrument_name in trades:
-                for trade in trades[instrument_name]:
-                    if float(trade['quantity']) > limit:
-                        doc = {"order":trade["order"], "price": trade["price"], "quantity": trade["quantity"],
-                                "timestamp": trade["timestamp"].isoformat(), "trade_id": trade["trade_id"]}
+        #     for instrument_name in trades:
+        #         for trade in trades[instrument_name]:
+        #             if float(trade['quantity']) > limit:
+        #                 doc = {"order":trade["order"], "price": trade["price"], "quantity": trade["quantity"],
+        #                         "timestamp": trade["timestamp"].isoformat(), "trade_id": trade["trade_id"]}
                         
-                        resp[instrument_name] = doc
-                        db[COLLECTION_TRADES_OVER_Q][instrument_name].insert(doc)
+        #                 resp[instrument_name] = doc
+        #                 db[COLLECTION_TRADES_OVER_Q][instrument_name].insert(doc)
                 
-        return resp
+        # return resp
 
     
     # private
