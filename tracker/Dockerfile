@@ -11,4 +11,5 @@ RUN apt install net-tools
 RUN yes | apt-get install iputils-ping
 RUN mkdir logs
 
-CMD ["python3", "/tracker/scripts/main.py"]
+#CMD ["python3", "/tracker/scripts/main.py"]
+CMD ["/bin/bash", "/tracker/scripts/docker_wrapper_script.sh"]

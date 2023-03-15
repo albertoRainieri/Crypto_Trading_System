@@ -14,7 +14,7 @@ class TrackerController:
     def __init__(self) -> None:
         pass
       
-
+    # Retrieve data from db and compute statistics
     def getData(db_trades, logger):
         # f = open ('/tracker/json/most_traded_coin_list.json', "r")
         # data = json.loads(f.read())
@@ -29,142 +29,218 @@ class TrackerController:
     @timer_func
     def db_operations(db_trades, db_tracker, logger):
         now = datetime.now()
-        reference_60m = (now - timedelta(hours=1)).isoformat()
-        reference_30m = (now - timedelta(minutes=30)).isoformat()
-        reference_15m = (now - timedelta(minutes=15)).isoformat()
-        reference_5m =  (now - timedelta(minutes=5)).isoformat()
-
-        price_change_60m = {}
-        price_change_30m = {}
-        price_change_15m = {}
-        price_change_5m = {}
-
-
-        volumes_60m = {}
-        volumes_30m = {}
-        volumes_15m = {}
-        volumes_5m = {}
-
-        buy_volume_perc_60m = {}
-        buy_volume_perc_30m = {}
-        buy_volume_perc_15m = {}
-        buy_volume_perc_5m = {}
-
-        buy_trades_perc_60m = {}
-        buy_trades_perc_30m = {}
-        buy_trades_perc_15m = {}
-        buy_trades_perc_5m = {}
+        reference_1day_datetime = now - timedelta(days=1)
+        reference_60m_datetime = now - timedelta(hours=1)
+        reference_30m_datetime = now - timedelta(minutes=30)
+        reference_15m_datetime = now - timedelta(minutes=15)
+        reference_5m_datetime =  now - timedelta(minutes=5)
+        
+        reference_1day = reference_1day_datetime.isoformat()
 
         coins_list = db_trades.list_collection_names()
-        #coins_list = ['All_Trades.BTC_USD']
-
-        for coin in coins_list:
-            
-            price_change_60m[coin] = []
-            price_change_30m[coin] = []
-            price_change_15m[coin] = []
-            price_change_5m[coin] = []
-
-
-            volumes_60m[coin] = []
-            volumes_30m[coin] = []
-            volumes_15m[coin] = []
-            volumes_5m[coin] = []
-
-            buy_volume_perc_60m[coin] = []
-            buy_volume_perc_30m[coin] = []
-            buy_volume_perc_15m[coin] = []
-            buy_volume_perc_5m[coin] = []
-
-            buy_trades_perc_60m[coin] = []
-            buy_trades_perc_30m[coin] = []
-            buy_trades_perc_15m[coin] = []
-            buy_trades_perc_5m[coin] = []
-
+        f = open ('/tracker/json/most_traded_coin_list.json', "r")
+        data = json.loads(f.read())
+        coin_list_subset = data["most_traded_coin_list"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
+        # logger.info(coin_list_subset)
+        # logger.info(len(coin_list_subset))
+        
         # iterate through each coin
         for coin in coins_list:
+
+            if coin not in coin_list_subset:
+                continue
+
+            # initialize these variables list for each coin
+
+            volumes_24h_list = []
+            volumes_60m_list = []
+            volumes_30m_list = []
+            volumes_15m_list = []
+            volumes_5m_list = []
+
+            buy_volume_perc_24h_list = []
+            buy_volume_perc_60m_list = []
+            buy_volume_perc_30m_list = []
+            buy_volume_perc_15m_list = []
+            buy_volume_perc_5m_list = []
+
+            buy_trades_perc_24h_list = []
+            buy_trades_perc_60m_list = []
+            buy_trades_perc_30m_list = []
+            buy_trades_perc_15m_list = []
+            buy_trades_perc_5m_list = []
+
             
-            docs = db_trades[coin].find({"_id": {"$gte": reference_60m}})
-            # iterate thrugh each doc (trade)
+            docs = db_trades[coin].find({"_id": {"$gte": reference_1day}})
+            
+
+            i = 1
             for doc in docs:
+                if i == 1:
+                    price_1d = doc['price']
+                    i += 1
+      
+
                 #logger.info(doc)
-                volumes_60m[coin].append(doc['volume'])
-                buy_volume_perc_60m[coin].append(doc['buy_volume'] / doc['volume'])
-                buy_trades_perc_60m[coin].append(doc['buy_n'] / doc['n_trades'])
+                doc_vol = doc['volume']
+                doc_buy_vol = doc['buy_volume'] / doc['volume']
+                doc_buy_trd = doc['buy_n'] / doc['n_trades']
 
-                timestamp_trade = doc['_id']
+                volumes_24h_list.append(doc_vol)
+                buy_volume_perc_24h_list.append(doc_buy_vol)
+                buy_trades_perc_24h_list.append(doc_buy_trd)
+
+                timestamp_trade = datetime.fromisoformat(doc['_id'])
+                #logger.info(timestamp_trade)
                 # average volume 5m
-                if timestamp_trade < reference_5m:
+                if timestamp_trade > reference_5m_datetime:
+                    #logger.info(f'{timestamp_trade} --- {reference_5m_datetime}')
+                    volumes_5m_list.append(doc_vol)
+                    volumes_15m_list.append(doc_vol)
+                    volumes_30m_list.append(doc_vol)
+                    volumes_60m_list.append(doc_vol)
 
-                    volumes_5m[coin].append(doc['volume'])
-                    volumes_15m[coin].append(doc['volume'])
-                    volumes_30m[coin].append(doc['volume'])
+                    buy_volume_perc_5m_list.append(doc_buy_vol)
+                    buy_volume_perc_15m_list.append(doc_buy_vol)
+                    buy_volume_perc_30m_list.append(doc_buy_vol)
+                    buy_volume_perc_60m_list.append(doc_buy_vol)
 
-                    buy_volume_perc_5m[coin].append(doc['buy_volume'] / doc['volume'])
-                    buy_volume_perc_15m[coin].append(doc['buy_volume'] / doc['volume'])
-                    buy_volume_perc_30m[coin].append(doc['buy_volume'] / doc['volume'])
-
-                    buy_trades_perc_5m[coin].append(doc['buy_n'] / doc['n_trades'])
-                    buy_trades_perc_15m[coin].append(doc['buy_n'] / doc['n_trades'])
-                    buy_trades_perc_30m[coin].append(doc['buy_n'] / doc['n_trades'])
-
-                    continue
-
-                elif timestamp_trade < reference_15m:
-                    volumes_15m[coin].append(doc['volume'])
-                    volumes_30m[coin].append(doc['volume'])
-
-                    buy_volume_perc_15m[coin].append(doc['buy_volume'] / doc['volume'])
-                    buy_volume_perc_30m[coin].append(doc['buy_volume'] / doc['volume'])
-
-                    buy_trades_perc_15m[coin].append(doc['buy_n'] / doc['n_trades'])
-                    buy_trades_perc_30m[coin].append(doc['buy_n'] / doc['n_trades'])
+                    buy_trades_perc_5m_list.append(doc_buy_trd)
+                    buy_trades_perc_15m_list.append(doc_buy_trd)
+                    buy_trades_perc_30m_list.append(doc_buy_trd)
+                    buy_trades_perc_60m_list.append(doc_buy_trd)
 
                     continue
 
-                elif timestamp_trade < reference_30m:
-                    volumes_30m[coin].append(doc['volume'])
-                    buy_volume_perc_30m[coin].append(doc['buy_volume'] / doc['volume'])
-                    buy_trades_perc_30m[coin].append(doc['buy_n'] / doc['n_trades'])
+                elif timestamp_trade > reference_15m_datetime:
+                    volumes_15m_list.append(doc_vol)
+                    volumes_30m_list.append(doc_vol)
+                    volumes_60m_list.append(doc_vol)
+
+                    buy_volume_perc_15m_list.append(doc_buy_vol)
+                    buy_volume_perc_30m_list.append(doc_buy_vol)
+                    buy_volume_perc_60m_list.append(doc_buy_vol)
+
+                    buy_trades_perc_15m_list.append(doc_buy_trd)
+                    buy_trades_perc_30m_list.append(doc_buy_trd)
+                    buy_trades_perc_60m_list.append(doc_buy_trd)
 
                     continue
 
+                elif timestamp_trade > reference_30m_datetime:
+                    volumes_30m_list.append(doc_vol)
+                    volumes_60m_list.append(doc_vol)
 
-            volumes_60m[coin] = np.mean(volumes_60m[coin])
-            volumes_30m[coin] = np.mean(volumes_30m[coin])
-            volumes_15m[coin] = np.mean(volumes_15m[coin])
-            volumes_5m[coin] = np.mean(volumes_5m[coin])
+                    buy_volume_perc_30m_list.append(doc_buy_vol)
+                    buy_volume_perc_60m_list.append(doc_buy_vol)
 
-            buy_volume_perc_60m[coin] = np.mean(buy_volume_perc_60m[coin])
-            buy_volume_perc_30m[coin] = np.mean(buy_volume_perc_30m[coin])
-            buy_volume_perc_15m[coin] = np.mean(buy_volume_perc_15m[coin])
-            buy_volume_perc_5m[coin] = np.mean(buy_volume_perc_5m[coin])
+                    buy_trades_perc_30m_list.append(doc_buy_trd)
+                    buy_trades_perc_60m_list.append(doc_buy_trd)
 
-            buy_trades_perc_60m[coin] = np.mean(buy_trades_perc_60m[coin])
-            buy_trades_perc_30m[coin] = np.mean(buy_trades_perc_30m[coin])
-            buy_trades_perc_15m[coin] = np.mean(buy_trades_perc_15m[coin])
-            buy_trades_perc_5m[coin] = np.mean(buy_trades_perc_5m[coin])
+                    continue
 
-            doc_db = {'vol_5m': volumes_5m[coin], 'buy_vol_5m': buy_volume_perc_5m[coin], 'buy_trd_5m': buy_trades_perc_5m[coin], 
-                      'vol_15m': volumes_15m[coin], 'buy_vol_15m': buy_volume_perc_15m[coin], 'buy_trd_15m': buy_trades_perc_15m[coin],
-                      'vol_30m': volumes_30m[coin], 'buy_vol_30m': buy_volume_perc_30m[coin], 'buy_trd_30m': buy_trades_perc_30m[coin],
-                      'vol_60m': volumes_60m[coin], 'buy_vol_60m': buy_volume_perc_60m[coin], 'buy_trd_60m': buy_trades_perc_60m[coin],
+                elif timestamp_trade > reference_60m_datetime:
+                    
+                    volumes_60m_list.append(doc_vol)
+                    buy_volume_perc_60m_list.append(doc_buy_vol)
+                    buy_trades_perc_60m_list.append(doc_buy_trd)
+
+                    continue
+            
+            price_now = doc['price']
+            price_variation = (price_now - price_1d) / price_1d
+            #logger.info(price_variation)
+            
+
+            if len(volumes_24h_list) != 0:
+                volumes_24h = int(np.mean(volumes_24h_list))
+                buy_volume_perc_24h = round_(np.mean(buy_volume_perc_24h_list),2)
+                buy_trades_perc_24h = round_(np.mean(buy_trades_perc_24h_list),2)
+                volumes_24h_std = int(np.std(volumes_24h_list))
+                buy_volume_perc_24h_std = round_(np.std(buy_volume_perc_24h_list),2)
+                buy_trades_perc_24h_std = round_(np.std(buy_trades_perc_24h_list),2)
+            else:
+                volumes_24h = None
+                buy_volume_perc_24h = None
+                buy_trades_perc_24h = None
+                volumes_24h_std = None
+                buy_volume_perc_24h_std = None
+                buy_trades_perc_24h_std = None
+
+
+            if len(volumes_60m_list) != 0:
+                volumes_60m = int(np.mean(volumes_60m_list))
+                buy_volume_perc_60m = round_(np.mean(buy_volume_perc_60m_list),2)
+                buy_trades_perc_60m = round_(np.mean(buy_trades_perc_60m_list),2)
+                volumes_60m_std = int(np.std(volumes_60m_list))
+                buy_volume_perc_60m_std = round_(np.std(buy_volume_perc_60m_list),2)
+                buy_trades_perc_60m_std = round_(np.std(buy_trades_perc_60m_list),2)
+            else:
+                volumes_60m = None
+                buy_volume_perc_60m = None
+                buy_trades_perc_60m = None
+                volumes_60m_std = None
+                buy_volume_perc_60m_std = None
+                buy_trades_perc_60m_std = None
+            
+
+            if len(volumes_30m_list) != 0:
+                volumes_30m = int(np.mean(volumes_30m_list))
+                buy_volume_perc_30m = round_(np.mean(buy_volume_perc_30m_list),2)
+                buy_trades_perc_30m = round_(np.mean(buy_trades_perc_30m_list),2)
+                volumes_30m_std = int(np.std(volumes_30m_list))
+                buy_volume_perc_30m_std = round_(np.std(buy_volume_perc_30m_list),2)
+                buy_trades_perc_30m_std = round_(np.std(buy_trades_perc_30m_list),2)
+            else:
+                volumes_30m = None
+                buy_volume_perc_30m = None
+                buy_trades_perc_30m = None
+                volumes_30m_std = None
+                buy_volume_perc_30m_std = None
+                buy_trades_perc_30m_std = None
+
+
+            if len(volumes_15m_list) != 0:
+                volumes_15m = int(np.mean(volumes_15m_list))
+                buy_volume_perc_15m = round_(np.mean(buy_volume_perc_15m_list),2)
+                buy_trades_perc_15m = round_(np.mean(buy_trades_perc_15m_list),2)
+                volumes_15m_std = int(np.std(volumes_15m_list))
+                buy_volume_perc_15m_std = round_(np.std(buy_volume_perc_15m_list),2)
+                buy_trades_perc_15m_std = round_(np.std(buy_trades_perc_15m_list),2)
+            else:
+                volumes_15m = None
+                buy_volume_perc_15m = None
+                buy_trades_perc_15m = None
+                volumes_15m_std = None
+                buy_volume_perc_15m_std = None
+                buy_trades_perc_15m_std = None
+
+            if len(volumes_5m_list) != 0:
+                volumes_5m = int(np.mean(volumes_5m_list))
+                buy_volume_perc_5m = round_(np.mean(buy_volume_perc_5m_list),2)
+                buy_trades_perc_5m = round_(np.mean(buy_trades_perc_5m_list),2)
+                volumes_5m_std = int(np.std(volumes_5m_list))
+                buy_volume_perc_5m_std = round_(np.std(buy_volume_perc_5m_list),2)
+                buy_trades_perc_5m_std = round_(np.std(buy_trades_perc_5m_list),2)
+            else:
+                volumes_5m = None
+                buy_volume_perc_5m = None
+                buy_trades_perc_5m = None
+                volumes_5m_std = None
+                buy_volume_perc_5m_std = None
+                buy_trades_perc_5m_std = None
+
+
+
+            doc_db = {'_id': now.isoformat(), "price_%" : round_(price_variation,4), 
+                      'vol_5m': volumes_5m, 'vol_5m_std': volumes_5m_std, 'buy_vol_5m': buy_volume_perc_5m, 'buy_vol_5m_std': buy_volume_perc_5m_std,'buy_trd_5m': buy_trades_perc_5m, 'buy_trd_5m_std': buy_trades_perc_5m_std,
+                      'vol_15m': volumes_15m, 'vol_15m_std': volumes_15m_std, 'buy_vol_15m': buy_volume_perc_15m, 'buy_vol_15m_std': buy_volume_perc_15m_std,'buy_trd_15m': buy_trades_perc_15m, 'buy_trd_15m_std': buy_trades_perc_15m_std,
+                      'vol_30m': volumes_30m, 'vol_30m_std': volumes_30m_std, 'buy_vol_30m': buy_volume_perc_30m, 'buy_vol_30m_std': buy_volume_perc_30m_std,'buy_trd_30m': buy_trades_perc_30m, 'buy_trd_30m_std': buy_trades_perc_30m_std,
+                      'vol_60m': volumes_60m, 'vol_60m_std': volumes_60m_std, 'buy_vol_60m': buy_volume_perc_60m, 'buy_vol_60m_std': buy_volume_perc_60m_std,'buy_trd_60m': buy_trades_perc_60m, 'buy_trd_60m_std': buy_trades_perc_60m_std,
+                      'vol_24h': volumes_24h, 'vol_24h_std': volumes_24h_std, 'buy_vol_24h': buy_volume_perc_24h, 'buy_vol_24h_std': buy_volume_perc_24h_std,'buy_trd_24h': buy_trades_perc_24h, 'buy_trd_24h_std': buy_trades_perc_24h_std,
+
                       }
-            
-            coin_s = coin.split('.')[-1]
-            #logger.info(f'STRING: {coin_s}')
-            #logger.info(doc_db)
 
-            db_tracker[coin_s].insert(doc_db)
+            db_tracker[coin].insert(doc_db)
 
-            
-            #SAVE DATA TO DB.
-        for coin in coins_list:
-
-               
-
-                    
-                    
-                    
-            pass
         

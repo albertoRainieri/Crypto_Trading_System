@@ -1,7 +1,9 @@
+import os,sys
+sys.path.insert(0,'../..')
+
 from time import time, sleep
 from random import randint
 import json
-import os,sys
 from constants.constants import *
 import requests
 import numpy as np
@@ -14,8 +16,6 @@ import numpy as np
 
 import httpx
 import asyncio
-
-sys.path.insert(0,'../..')
 
 
 class CryptoController:
@@ -49,7 +49,7 @@ class CryptoController:
         This function outputs the list of the pairs that will be traded
         The list does not cointain redundant pairs (e.g. BTC_USD and BTC_USDT, but only one (the most traded))
         '''
-
+        
         # JSON file
         # get all the pairs traded
         # f = open ('/backend/json/coin-list.json', "r")
@@ -364,7 +364,7 @@ class CryptoController:
                 doc_db[instrument_name]["sell_volume"] = round(doc_db[instrument_name]["sell_volume"],2)
                 doc_db[instrument_name]["buy_volume"] = round(doc_db[instrument_name]["buy_volume"],2)
                 doc_db[instrument_name]['_id']= datetime.now().isoformat()
-                database[COLLECTION_ALL_TRADES][instrument_name].insert(doc_db[instrument_name])
+                database[instrument_name].insert(doc_db[instrument_name])
                 trades_sorted[instrument_name]= sorted(resp[instrument_name], key=itemgetter('timestamp'), reverse=False)
 
         return trades_sorted

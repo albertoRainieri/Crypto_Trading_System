@@ -10,7 +10,7 @@ def main(db, logger):
     logger.info('Hello there')
     while True:
         TrackerController.getData(db_trades=db, logger=logger)
-        sleep(20)
+        sleep(60)
 
     
 
@@ -18,5 +18,5 @@ if __name__ == '__main__':
     db = DatabaseConnection()
     logger = LoggingController.start_logging()
     db = db.get_db('Market_Trades')
-    sleep(1)
+    sleep(2)
     main(db=db, logger=logger)

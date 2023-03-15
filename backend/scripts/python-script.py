@@ -10,9 +10,12 @@ from datetime import datetime
 logger = LoggingController.start_logging()
 
 def main(db, crypto_instance, coin_list, logger):
+  
   while True:
-    #sleep(1)
     crypto_instance.getTrades_BTC_over_Q(coin_list=coin_list, logger=logger)
+
+       
+
 
     
 
