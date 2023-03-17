@@ -18,7 +18,6 @@ def main(db, logger):
         second = now.second
         hour = now.hour
 
-        logger.info("list of instruments updated")
         if minute == 0 and second == 0 and hour == 0:
             crypto.getMostTradedCoins()
             logger.info("list of instruments updated")

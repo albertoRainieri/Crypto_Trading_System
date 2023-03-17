@@ -4,10 +4,21 @@ sys.path.insert(1, os.path.join(sys.path[0], '..'))
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from routes import Router
+from pydantic import BaseSettings
+
+
+
+class Settings(BaseSettings):
+    openapi_url: str = ""
 
 
 def get_application():
-    app = FastAPI()
+    PRODUCTION = int(os.getenv("PRODUCTION"))
+    if bool(PRODUCTION):
+        settings = Settings()
+        app = FastAPI(openapi_url=settings.openapi_url)
+    else:
+        app = FastAPI()
 
     app.add_middleware(
         CORSMiddleware,

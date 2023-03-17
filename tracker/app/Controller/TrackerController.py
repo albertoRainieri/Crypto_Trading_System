@@ -146,10 +146,12 @@ class TrackerController:
                     buy_trades_perc_60m_list.append(doc_buy_trd)
 
                     continue
+                
+            #logger.info(f"{coin}: {doc['_id']}")
             
             price_now = doc['price']
             price_variation = (price_now - price_1d) / price_1d
-            #logger.info(price_variation)
+            
             
 
             if len(volumes_24h_list) != 0:
