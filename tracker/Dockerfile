@@ -2,7 +2,7 @@ FROM python:3.7
 
 WORKDIR /tracker
 COPY ./ /tracker
-COPY ./requirements.txt /backend
+COPY ./requirements.txt /tracker
 
 RUN apt-get update
 RUN pip install --upgrade -r ./requirements.txt

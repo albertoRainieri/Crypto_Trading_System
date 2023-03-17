@@ -1,0 +1,1 @@
+python3 /tracker/scripts/side-script.py
