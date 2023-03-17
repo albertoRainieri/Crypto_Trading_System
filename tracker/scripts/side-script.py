@@ -22,6 +22,7 @@ def main(db, logger):
             crypto.getMostTradedCoins()
             logger.info("list of instruments updated")
         pass
+        sleep(0.8)
 
     
 
