@@ -20,7 +20,7 @@ def main(db, logger):
         if minute == 0 and second == 0 and hour == 0:
             crypto.getMostTradedCoins()
             logger.info("list of instruments updated")
-        pass
+        
 
         
         sleep(0.8)
