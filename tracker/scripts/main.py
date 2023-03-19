@@ -9,7 +9,7 @@ from app.Controller.TrackerController import TrackerController
 def main(db, logger):
     logger.info('Hello there')
     while True:
-        TrackerController.getData(db_trades=db, logger=logger)
+        #TrackerController.getData(db_trades=db, logger=logger)
         sleep(60)
 
     

@@ -8,7 +8,6 @@ from database.DatabaseConnection import DatabaseConnection
 from app.Controller.CryptoController import CryptoController
 from datetime import datetime
 
-logger = LoggingController.start_logging()
 
 def main(db, logger):
     crypto = CryptoController()
@@ -22,7 +21,13 @@ def main(db, logger):
             crypto.getMostTradedCoins()
             logger.info("list of instruments updated")
         pass
+
+        crypto.getMostTradedCoins()
+
+        
         sleep(0.8)
+
+    
 
     
 

@@ -6,6 +6,10 @@ import json
 from constants.constants import *
 from operator import itemgetter
 from database.DatabaseConnection import DatabaseConnection
+from time import time, sleep
+from random import randint
+import requests
+from tracker.app.Helpers.Helpers import round_, timer_func
 
 
 
@@ -122,4 +126,29 @@ class CryptoController:
 
         #np.savetxt("instruments.py", list_instruments)
         return list_instruments
+    
+
+    @staticmethod
+    def getInstruments():
+        method="public/get-instruments"
+        nonce=int(time()*1000)
+        id=randint(0,10**9)
+
+        body=CryptoController.getBody(method=method, nonce=nonce, id=id)
+        header=CryptoController.getHeader()
+        print(body)
+
+        response=requests.get(url=REST_API_ENDPOINT + method, data=body, headers=header)
+        return json.loads(response.text)
+    
+    @staticmethod
+    @timer_func
+    def getTicker(instrument_name='BTC_USD'):
+        header=CryptoController.getHeader()
+
+        #instrument_name="BTC_USDT"
+        method="public/get-ticker"
+        url=REST_API_ENDPOINT + method + f"?instrument_name={instrument_name}"
+        response=requests.get(url=url, headers=header)
+        return json.loads(response.text)
 
