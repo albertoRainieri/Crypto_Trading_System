@@ -250,7 +250,7 @@ class TrackerController:
 
                       }
         
-            logger.info(doc_db)
+            #logger.info(doc_db)
 
             db_tracker[coin].insert(doc_db)
 
