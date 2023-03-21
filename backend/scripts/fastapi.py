@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from routes import Router
 from pydantic import BaseSettings
+from app.Controller.LoggingController import LoggingController
 
 
 
@@ -13,7 +14,10 @@ class Settings(BaseSettings):
 
 
 def get_application():
+
     PRODUCTION = int(os.getenv("PRODUCTION"))
+
+
     if bool(PRODUCTION):
         settings = Settings()
         app = FastAPI(openapi_url=settings.openapi_url)

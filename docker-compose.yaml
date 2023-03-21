@@ -16,7 +16,6 @@ services:
     volumes:
       - ./backend/:/backend
       - ./tracker/json:/backend/json:ro
-
     environment:
       - BACKEND_URL= $BACKEND_URL
       - MONGO_USERNAME=$MONGO_USERNAME
