@@ -8,6 +8,8 @@ from tracker.app.Controller.LoggingController import LoggingController
 from datetime import datetime, timedelta
 import numpy as np
 from tracker.constants.constants import *
+from tracker.app.Helpers.Helpers import round_, timer_func
+
 
 
 class Benchmark:
@@ -18,6 +20,7 @@ class Benchmark:
     
 
     @staticmethod
+    @timer_func
     def computeVolumeAverage(db=DatabaseConnection(), logger=LoggingController.start_logging()):
         '''
         This function is used to compute/update the average volumes of all the coins in db
@@ -38,8 +41,8 @@ class Benchmark:
         volumes_90days_list = []
 
         # get db Market and Benchmark
-        db_market = db.get_db('Market_Trades')
-        db_benchmark = db.get_db("Benchmark")
+        db_market = db.get_db(DATABASE_MARKET)
+        db_benchmark = db.get_db(DATABASE_BENCHMARK)
 
         # Get the updated coin list
         coins_list = db_market.list_collection_names()

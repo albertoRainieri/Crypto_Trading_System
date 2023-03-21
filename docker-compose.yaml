@@ -11,8 +11,8 @@ services:
     build: 
       context: ./backend
     restart: always
-    ports:
-      - "5000:5000"
+    # ports:
+    #   - "5000:5000"
     volumes:
       - ./backend/:/backend
       - ./tracker/json:/backend/json:ro
@@ -36,8 +36,8 @@ services:
     build: 
       context: ./tracker
     restart: always
-    ports:
-      - "5001:5001"
+    # ports:
+    #   - "5001:5001"
     volumes:
       - ./tracker/:/tracker
       - ./backend/constants:/tracker/constants:ro
@@ -77,8 +77,8 @@ services:
       - TZ=$TIME_ZONE
       
     restart: always
-    ports:
-      - "27017:27017"
+    # ports:
+    #   - "27017:27017"
     
     volumes:
       - ./mongodb/db:/data/db

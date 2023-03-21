@@ -18,13 +18,14 @@ def main(db, logger):
         second = now.second
         hour = now.hour
 
-        if minute == 0 and second == 0 and hour == 0:
-            crypto.getMostTradedCoins()
-            logger.info("list of instruments updated")
-        
-        if minute == 15 and second == 0 and hour == 0:
+        if minute == 0 and second == 5 and hour == 0:
             Benchmark.computeVolumeAverage(db=db)
             logger.info("volumes have been updated")
+
+        
+        if minute == 15 and second == 0 and hour == 0:
+            crypto.getMostTradedCoins()
+            logger.info("list of instruments updated")
         
         sleep(0.8)
 

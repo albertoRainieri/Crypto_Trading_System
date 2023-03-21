@@ -19,15 +19,16 @@ class TrackerController:
         # f = open ('/tracker/json/most_traded_coin_list.json', "r")
         # data = json.loads(f.read())
         # coin_list = data["most_traded_coin_list"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
-        db_tracker = DatabaseConnection()
-        db_tracker = db_tracker.get_db(database=DATABASE_TRACKER)
-        TrackerController.db_operations(db_trades=db_trades, db_tracker=db_tracker, logger=logger)
+        db = DatabaseConnection()
+        db_tracker = db.get_db(database=DATABASE_TRACKER)
+        db_benchmark = db.get_db(database=DATABASE_BENCHMARK)
+        TrackerController.db_operations(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, logger=logger)
         #logger.info(collection_list)
 
         pass
       
     @timer_func
-    def db_operations(db_trades, db_tracker, logger):
+    def db_operations(db_trades, db_tracker, db_benchmark, logger):
         now = datetime.now()
         reference_1day_datetime = now - timedelta(days=1)
         reference_60m_datetime = now - timedelta(hours=1)
@@ -49,7 +50,13 @@ class TrackerController:
 
             if coin not in coin_list_subset:
                 continue
+            
+            volume_coin = list(db_benchmark[coin].find({}, {'_id': 1, 'volume_30_avg': 1, 'volume_30_std': 1}))
+            #print(volume_coin)
+            avg_volume_1_month = volume_coin[0]['volume_30_avg']
+            std_volume_1_month = volume_coin[0]['volume_30_std']
 
+            # logger.info(f'{coin}: {avg_volume_1_month}')
             # initialize these variables list for each coin
 
             volumes_24h_list = []
@@ -155,10 +162,10 @@ class TrackerController:
             
 
             if len(volumes_24h_list) != 0:
-                volumes_24h = int(np.mean(volumes_24h_list))
+                volumes_24h = round_(np.mean(volumes_24h_list) / avg_volume_1_month, 2) 
                 buy_volume_perc_24h = round_(np.mean(buy_volume_perc_24h_list),2)
                 buy_trades_perc_24h = round_(np.mean(buy_trades_perc_24h_list),2)
-                volumes_24h_std = int(np.std(volumes_24h_list))
+                volumes_24h_std = round_(np.std(volumes_24h_list) / std_volume_1_month, 2)
                 buy_volume_perc_24h_std = round_(np.std(buy_volume_perc_24h_list),2)
                 buy_trades_perc_24h_std = round_(np.std(buy_trades_perc_24h_list),2)
             else:
@@ -171,10 +178,10 @@ class TrackerController:
 
 
             if len(volumes_60m_list) != 0:
-                volumes_60m = int(np.mean(volumes_60m_list))
+                volumes_60m = round_(np.mean(volumes_60m_list) / avg_volume_1_month, 2)
                 buy_volume_perc_60m = round_(np.mean(buy_volume_perc_60m_list),2)
                 buy_trades_perc_60m = round_(np.mean(buy_trades_perc_60m_list),2)
-                volumes_60m_std = int(np.std(volumes_60m_list))
+                volumes_60m_std = round_(np.std(volumes_60m_list) / std_volume_1_month, 2)
                 buy_volume_perc_60m_std = round_(np.std(buy_volume_perc_60m_list),2)
                 buy_trades_perc_60m_std = round_(np.std(buy_trades_perc_60m_list),2)
             else:
@@ -187,10 +194,10 @@ class TrackerController:
             
 
             if len(volumes_30m_list) != 0:
-                volumes_30m = int(np.mean(volumes_30m_list))
+                volumes_30m = round_(np.mean(volumes_30m_list) / avg_volume_1_month, 2)
                 buy_volume_perc_30m = round_(np.mean(buy_volume_perc_30m_list),2)
                 buy_trades_perc_30m = round_(np.mean(buy_trades_perc_30m_list),2)
-                volumes_30m_std = int(np.std(volumes_30m_list))
+                volumes_30m_std = round_(np.std(volumes_30m_list) / std_volume_1_month, 2)
                 buy_volume_perc_30m_std = round_(np.std(buy_volume_perc_30m_list),2)
                 buy_trades_perc_30m_std = round_(np.std(buy_trades_perc_30m_list),2)
             else:
@@ -203,10 +210,10 @@ class TrackerController:
 
 
             if len(volumes_15m_list) != 0:
-                volumes_15m = int(np.mean(volumes_15m_list))
+                volumes_15m = round_(np.mean(volumes_15m_list) / avg_volume_1_month, 2)
                 buy_volume_perc_15m = round_(np.mean(buy_volume_perc_15m_list),2)
                 buy_trades_perc_15m = round_(np.mean(buy_trades_perc_15m_list),2)
-                volumes_15m_std = int(np.std(volumes_15m_list))
+                volumes_15m_std = round_(np.std(volumes_15m_list) / std_volume_1_month, 2)
                 buy_volume_perc_15m_std = round_(np.std(buy_volume_perc_15m_list),2)
                 buy_trades_perc_15m_std = round_(np.std(buy_trades_perc_15m_list),2)
             else:
@@ -218,10 +225,10 @@ class TrackerController:
                 buy_trades_perc_15m_std = None
 
             if len(volumes_5m_list) != 0:
-                volumes_5m = int(np.mean(volumes_5m_list))
+                volumes_5m = round_(np.mean(volumes_5m_list) / avg_volume_1_month, 2)
                 buy_volume_perc_5m = round_(np.mean(buy_volume_perc_5m_list),2)
                 buy_trades_perc_5m = round_(np.mean(buy_trades_perc_5m_list),2)
-                volumes_5m_std = int(np.std(volumes_5m_list))
+                volumes_5m_std = round_(np.std(volumes_5m_list) / std_volume_1_month, 2)
                 buy_volume_perc_5m_std = round_(np.std(buy_volume_perc_5m_list),2)
                 buy_trades_perc_5m_std = round_(np.std(buy_trades_perc_5m_list),2)
             else:
@@ -242,6 +249,8 @@ class TrackerController:
                       'vol_24h': volumes_24h, 'vol_24h_std': volumes_24h_std, 'buy_vol_24h': buy_volume_perc_24h, 'buy_vol_24h_std': buy_volume_perc_24h_std,'buy_trd_24h': buy_trades_perc_24h, 'buy_trd_24h_std': buy_trades_perc_24h_std,
 
                       }
+        
+            logger.info(doc_db)
 
             db_tracker[coin].insert(doc_db)
 
