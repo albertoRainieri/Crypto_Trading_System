@@ -56,7 +56,7 @@ class TrackerController:
 
             # if benchmark exists, fetch it and use it to compute the relative volume wrt to average,
             #  otherwise I am going to compute only the absolute value of the volume
-            if 'volume_30_avg' in volume_coin[0] and 'volume_30_std' in volume_coin[0]:
+            if len(volume_coin) != 0:
                 avg_volume_1_month = volume_coin[0]['volume_30_avg']
                 std_volume_1_month = volume_coin[0]['volume_30_std']
             else:
