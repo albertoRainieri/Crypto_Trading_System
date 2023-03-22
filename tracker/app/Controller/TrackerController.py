@@ -26,17 +26,56 @@ class TrackerController:
         #logger.info(collection_list)
 
         pass
+
+    def isEqualToReferenceDatetime(actual_timestamp, reference_year_x_ago, reference_month_x_ago, reference_day_x_ago, reference_hour_x_ago, reference_minute_x_ago, logger):
+        '''
+        This function check if actual timestamp is equal to reference datetime (1h, 3h, 6h ago)
+        '''
+        actual_datetime = datetime.fromisoformat(actual_timestamp)
+        #logger.info(f'Actual Datetime: {actual_datetime}')
+
+        year_x_ago = actual_datetime.year
+        month_x_ago = actual_datetime.month
+        day_x_ago = actual_datetime.day
+        hour_x_ago = actual_datetime.hour
+        minute_x_ago =  actual_datetime.minute
+
+        if year_x_ago == reference_year_x_ago and month_x_ago == reference_month_x_ago and day_x_ago == reference_day_x_ago and hour_x_ago == reference_hour_x_ago and minute_x_ago == reference_minute_x_ago:
+            return True
+        else:
+            return False
+
       
     @timer_func
     def db_operations(db_trades, db_tracker, db_benchmark, logger):
         now = datetime.now()
         reference_1day_datetime = now - timedelta(days=1)
-        reference_60m_datetime = now - timedelta(hours=1)
+        reference_6h_datetime = now - timedelta(hours=6)
+        reference_3h_datetime = now - timedelta(hours=3)
+        reference_1h_datetime = now - timedelta(hours=1)
         reference_30m_datetime = now - timedelta(minutes=30)
         reference_15m_datetime = now - timedelta(minutes=15)
         reference_5m_datetime =  now - timedelta(minutes=5)
         
         reference_1day = reference_1day_datetime.isoformat()
+
+        year_1h_ago = reference_1h_datetime.year
+        month_1h_ago = reference_1h_datetime.month
+        day_1h_ago = reference_1h_datetime.day
+        hour_1h_ago = reference_1h_datetime.hour
+        minute_1h_ago =  reference_1h_datetime.minute
+
+        year_3h_ago = reference_3h_datetime.year
+        month_3h_ago = reference_3h_datetime.month
+        day_3h_ago = reference_3h_datetime.day
+        hour_3h_ago = reference_3h_datetime.hour
+        minute_3h_ago =  reference_3h_datetime.minute
+
+        year_6h_ago = reference_6h_datetime.year
+        month_6h_ago = reference_6h_datetime.month
+        day_6h_ago = reference_6h_datetime.day
+        hour_6h_ago = reference_6h_datetime.hour
+        minute_6h_ago =  reference_6h_datetime.minute
 
         coins_list = db_trades.list_collection_names()
         f = open ('/tracker/json/most_traded_coin_list.json', "r")
@@ -91,8 +130,60 @@ class TrackerController:
             i = 1
             for doc in docs:
                 if i == 1:
-                    price_1d = doc['price']
                     i += 1
+
+                    # check how far in the past is the first timestamp of docs. This is needed to compute or not compute the various price changes
+                    max_timedelta_first_last_timestamp = now - datetime.fromisoformat(doc['_id'])
+                    if max_timedelta_first_last_timestamp > timedelta(hours=23, minutes=58):
+                        PRICE_6H_AGO = True
+                        PRICE_3H_AGO = True
+                        PRICE_1H_AGO = True
+                        price_1d_ago = doc['price']
+                    elif max_timedelta_first_last_timestamp > timedelta(hours=5, minutes=58):
+                        price_1d_ago = None
+                        PRICE_6H_AGO = True
+                        PRICE_3H_AGO = True
+                        PRICE_1H_AGO = True
+                    elif max_timedelta_first_last_timestamp > timedelta(hours=2, minutes=58):
+                        price_1d_ago = None
+                        price_6h_ago = None
+                        PRICE_6H_AGO = False
+                        PRICE_3H_AGO = True
+                        PRICE_1H_AGO = True
+                    elif max_timedelta_first_last_timestamp > timedelta(minutes=58):
+                        price_1d_ago = None
+                        price_6h_ago = None
+                        price_3h_ago = None
+                        PRICE_6H_AGO = False
+                        PRICE_3H_AGO = False
+                        PRICE_1H_AGO = True
+                    else:
+                        price_1d_ago = None
+                        price_6h_ago = None
+                        price_3h_ago = None
+                        price_1h_ago = None
+
+                        PRICE_6H_AGO = False
+                        PRICE_3H_AGO = False
+                        PRICE_1H_AGO = False
+
+                
+                if PRICE_6H_AGO:
+                    if TrackerController.isEqualToReferenceDatetime(doc['_id'], year_6h_ago, month_6h_ago, day_6h_ago, hour_6h_ago, minute_6h_ago, logger):
+                        price_6h_ago = doc['price']
+                        PRICE_6H_AGO = False
+                if PRICE_3H_AGO:        
+                    if TrackerController.isEqualToReferenceDatetime(doc['_id'], year_3h_ago, month_3h_ago, day_3h_ago, hour_3h_ago, minute_3h_ago, logger):
+                        price_3h_ago = doc['price']
+                        PRICE_3H_AGO = False
+                if PRICE_1H_AGO:        
+                    if TrackerController.isEqualToReferenceDatetime(doc['_id'], year_1h_ago, month_1h_ago, day_1h_ago, hour_1h_ago, minute_1h_ago, logger):
+                        price_1h_ago = doc['price']
+                        PRICE_1H_AGO = False
+                
+
+
+
       
 
                 #logger.info(doc)
@@ -153,7 +244,7 @@ class TrackerController:
 
                     continue
 
-                elif timestamp_trade > reference_60m_datetime:
+                elif timestamp_trade > reference_1h_datetime:
                     
                     volumes_60m_list.append(doc_vol)
                     buy_volume_perc_60m_list.append(doc_buy_vol)
@@ -162,9 +253,16 @@ class TrackerController:
                     continue
                 
             #logger.info(f"{coin}: {doc['_id']}")
-            
             price_now = doc['price']
-            price_variation = (price_now - price_1d) / price_1d
+
+            if price_1h_ago is not None:
+                price_variation_1h = (price_now - price_1h_ago) / price_1h_ago
+            if price_3h_ago is not None:
+                price_variation_3h = (price_now - price_3h_ago) / price_3h_ago
+            if price_6h_ago is not None:
+                price_variation_6h = (price_now - price_6h_ago) / price_6h_ago
+            if price_1d_ago is not None:
+                price_variation_1d = (price_now - price_1d_ago) / price_1d_ago
             
             
 
@@ -248,7 +346,7 @@ class TrackerController:
 
 
 
-            doc_db = {'_id': now.isoformat(), "price_%" : round_(price_variation,4), 
+            doc_db = {'_id': now.isoformat(), "price_%_1d" : round_(price_variation_1d,4), "price_%_6h" : round_(price_variation_6h,4), "price_%_3h" : round_(price_variation_3h,4), "price_%_1h" : round_(price_variation_1h,4), 
                       'vol_5m': volumes_5m, 'vol_5m_std': volumes_5m_std, 'buy_vol_5m': buy_volume_perc_5m, 'buy_vol_5m_std': buy_volume_perc_5m_std,'buy_trd_5m': buy_trades_perc_5m, 'buy_trd_5m_std': buy_trades_perc_5m_std,
                       'vol_15m': volumes_15m, 'vol_15m_std': volumes_15m_std, 'buy_vol_15m': buy_volume_perc_15m, 'buy_vol_15m_std': buy_volume_perc_15m_std,'buy_trd_15m': buy_trades_perc_15m, 'buy_trd_15m_std': buy_trades_perc_15m_std,
                       'vol_30m': volumes_30m, 'vol_30m_std': volumes_30m_std, 'buy_vol_30m': buy_volume_perc_30m, 'buy_vol_30m_std': buy_volume_perc_30m_std,'buy_trd_30m': buy_trades_perc_30m, 'buy_trd_30m_std': buy_trades_perc_30m_std,
