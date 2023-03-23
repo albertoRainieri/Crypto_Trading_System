@@ -1,0 +1,68 @@
+# Default server configuration
+server {
+   listen 80;
+   listen [::]:80;
+
+
+   server_name algocrypto.eu;
+   server_tokens off;
+
+
+   location /.well-known/acme-challenge/ {
+       root /var/www/certbot;
+   }
+
+
+   location / {
+       return 301 https://algocrypto.eu$request_uri;
+   }
+}
+
+
+
+
+server {
+
+
+       # SSL configuration
+       listen 443 default_server ssl http2;
+       listen [::]:443 ssl http2;
+
+
+       server_name algocrypto.eu;
+
+
+       ssl_certificate /etc/nginx/ssl/live/algocrypto.eu/fullchain.pem;
+       ssl_certificate_key /etc/nginx/ssl/live/algocrypto.eu/privkey.pem;
+
+
+       # root /var/www/html;
+
+
+       server_name algocrypto.eu;
+
+
+       location /getData {
+               proxy_pass http://backend:5000/getData;
+
+               proxy_set_header Authorization $http_authorization;
+               proxy_pass_header Authorization;
+       }
+
+
+       location /mongo {
+
+               proxy_pass http://mongo-express:8081;
+               proxy_set_header        Host            $host;
+               proxy_set_header        X-Real_IP       $remote_addr;
+
+       }
+
+
+       # deny access to .htaccess files, if Apache's document root
+       # concurs with nginx's one
+       #
+       #location ~ /\.ht {
+       #       deny all;
+       #}
+}

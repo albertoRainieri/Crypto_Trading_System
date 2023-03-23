@@ -1,6 +1,5 @@
 import os
 from pymongo import MongoClient
-import asyncio
 import pymongo
 
 

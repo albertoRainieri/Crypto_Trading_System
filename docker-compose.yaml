@@ -94,8 +94,8 @@ services:
           max-size: "5m"
     container_name: mongo-express-crypto
     restart: always
-    ports:
-      - "8081:8081"
+    # ports:
+    #   - "8081:8081"
     environment:
       ME_CONFIG_MONGODB_SERVER: mongo
       ME_CONFIG_MONGODB_PORT: 27017
@@ -108,7 +108,28 @@ services:
     depends_on:
       - mongo
     networks:
+        - local-net
+
+  nginx:
+    build:
+      context: ./nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf/default:/etc/nginx/sites-available/default
+      - ./certbot/www:/var/www/certbot/:ro
+      - ./certbot/conf/:/etc/nginx/ssl/:ro
+    networks:
       - local-net
+
+
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - ./certbot/www/:/var/www/certbot/:rw
+      - ./certbot/conf/:/etc/letsencrypt/:rw
 
   
 networks:
