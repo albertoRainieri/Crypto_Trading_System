@@ -123,6 +123,16 @@ class TrackerController:
             buy_trades_perc_15m_list = []
             buy_trades_perc_5m_list = []
 
+            price_1d_ago = None
+            price_6h_ago = None
+            price_3h_ago = None
+            price_1h_ago = None
+
+            price_variation_1d = None
+            price_variation_6h = None
+            price_variation_3h = None
+            price_variation_1h = None
+
             
             docs = db_trades[coin].find({"_id": {"$gte": reference_1day}})
             
@@ -140,29 +150,18 @@ class TrackerController:
                         PRICE_1H_AGO = True
                         price_1d_ago = doc['price']
                     elif max_timedelta_first_last_timestamp > timedelta(hours=5, minutes=58):
-                        price_1d_ago = None
                         PRICE_6H_AGO = True
                         PRICE_3H_AGO = True
                         PRICE_1H_AGO = True
                     elif max_timedelta_first_last_timestamp > timedelta(hours=2, minutes=58):
-                        price_1d_ago = None
-                        price_6h_ago = None
                         PRICE_6H_AGO = False
                         PRICE_3H_AGO = True
                         PRICE_1H_AGO = True
                     elif max_timedelta_first_last_timestamp > timedelta(minutes=58):
-                        price_1d_ago = None
-                        price_6h_ago = None
-                        price_3h_ago = None
                         PRICE_6H_AGO = False
                         PRICE_3H_AGO = False
                         PRICE_1H_AGO = True
                     else:
-                        price_1d_ago = None
-                        price_6h_ago = None
-                        price_3h_ago = None
-                        price_1h_ago = None
-
                         PRICE_6H_AGO = False
                         PRICE_3H_AGO = False
                         PRICE_1H_AGO = False
@@ -255,14 +254,15 @@ class TrackerController:
             #logger.info(f"{coin}: {doc['_id']}")
             price_now = doc['price']
 
+            # Compute price changes if 
             if price_1h_ago is not None:
-                price_variation_1h = (price_now - price_1h_ago) / price_1h_ago
+                price_variation_1h = round_((price_now - price_1h_ago) / price_1h_ago, 4)
             if price_3h_ago is not None:
-                price_variation_3h = (price_now - price_3h_ago) / price_3h_ago
+                price_variation_3h = round_((price_now - price_3h_ago) / price_3h_ago, 4)
             if price_6h_ago is not None:
-                price_variation_6h = (price_now - price_6h_ago) / price_6h_ago
+                price_variation_6h = round_((price_now - price_6h_ago) / price_6h_ago, 4)
             if price_1d_ago is not None:
-                price_variation_1d = (price_now - price_1d_ago) / price_1d_ago
+                price_variation_1d = round_((price_now - price_1d_ago) / price_1d_ago, 4)
             
             
 
@@ -346,7 +346,7 @@ class TrackerController:
 
 
 
-            doc_db = {'_id': now.isoformat(), "price_%_1d" : round_(price_variation_1d,4), "price_%_6h" : round_(price_variation_6h,4), "price_%_3h" : round_(price_variation_3h,4), "price_%_1h" : round_(price_variation_1h,4), 
+            doc_db = {'_id': now.isoformat(), "price_%_1d" : price_variation_1d, "price_%_6h" : price_variation_6h, "price_%_3h" : price_variation_3h, "price_%_1h" : price_variation_1h, 
                       'vol_5m': volumes_5m, 'vol_5m_std': volumes_5m_std, 'buy_vol_5m': buy_volume_perc_5m, 'buy_vol_5m_std': buy_volume_perc_5m_std,'buy_trd_5m': buy_trades_perc_5m, 'buy_trd_5m_std': buy_trades_perc_5m_std,
                       'vol_15m': volumes_15m, 'vol_15m_std': volumes_15m_std, 'buy_vol_15m': buy_volume_perc_15m, 'buy_vol_15m_std': buy_volume_perc_15m_std,'buy_trd_15m': buy_trades_perc_15m, 'buy_trd_15m_std': buy_trades_perc_15m_std,
                       'vol_30m': volumes_30m, 'vol_30m_std': volumes_30m_std, 'buy_vol_30m': buy_volume_perc_30m, 'buy_vol_30m_std': buy_volume_perc_30m_std,'buy_trd_30m': buy_trades_perc_30m, 'buy_trd_30m_std': buy_trades_perc_30m_std,
