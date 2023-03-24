@@ -16,4 +16,4 @@ RUN chown -R nginx:nginx /app && chmod -R 755 /app && \
 RUN touch /var/run/nginx.pid && \
         chown -R nginx:nginx /var/run/nginx.pid
 
-USER nginx
+#USER nginx
