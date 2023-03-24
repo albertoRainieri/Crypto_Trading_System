@@ -18,4 +18,4 @@ RUN chown -R bot:bot /app && chmod -R 755 /app && \
 RUN touch /var/run/nginx.pid && \
         chown -R bot:bot /var/run/nginx.pid
 
-USER bot
+#USER bot
