@@ -2,8 +2,8 @@ FROM ubuntu/nginx
 
 WORKDIR /app
 
-RUN groupadd bot 
-RUN useradd -g bot bot 
+RUN groupadd -g 1001 bot && \
+    useradd -u 1001 -g 1001 -m -s /bin/bash bot
 
 COPY ./conf/default /etc/nginx/sites-available/default
 RUN apt-get update
