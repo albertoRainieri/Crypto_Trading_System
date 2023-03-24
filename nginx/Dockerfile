@@ -5,7 +5,7 @@ COPY ./conf/default /etc/nginx/sites-available/default
 RUN apt-get update
 # RUN apt-get -y install vim
 # RUN yes | apt-get install iputils-ping
-RUN mkdir /etc/nginx/ssl
+RUN mkdir /etc/nginx/ssl && chown -R nginx:nginx /etc/nginx/ssl
 
 WORKDIR /app
 
