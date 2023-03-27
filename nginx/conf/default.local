@@ -2,6 +2,10 @@
 ##
 
 # Default server configuration
+limit_req_zone $binary_remote_addr zone=backend:10m rate=3r/m;
+limit_req_zone $binary_remote_addr zone=mongo:10m rate=10r/s;
+
+
 server {
         listen 80 default_server;
         listen [::]:80 default_server;
@@ -31,34 +35,27 @@ server {
 
         server_name _;
         location /getData {
+                limit_req zone=backend burst=1;
+
                 proxy_pass http://backend:5000/getData;
                 proxy_set_header Authorization $http_authorization;
-                proxy_pass_header Authorization; 
+                proxy_pass_header Authorization;
+
+                if ($limit_req_status = "503") {
+                        return 403;
+                }
         }
 
         location /mongo {
-                
+                limit_req zone=mongo burst=5;
+
                 proxy_pass http://mongo-express:8081;
                 proxy_set_header	Host		$host;
                 proxy_set_header	X-Real_IP	$remote_addr;
 
+                if ($limit_req_status = "503") {
+                        return 403;
+                }
+
         }
-
-        # pass PHP scripts to FastCGI server
-        #
-        #location ~ \.php$ {
-        #       include snippets/fastcgi-php.conf;
-        #
-        #       # With php-fpm (or other unix sockets):
-        #       fastcgi_pass unix:/run/php/php7.4-fpm.sock;
-        #       # With php-cgi (or other tcp sockets):
-        #       fastcgi_pass 127.0.0.1:9000;
-        #}
-
-        # deny access to .htaccess files, if Apache's document root
-        # concurs with nginx's one
-        #
-        #location ~ /\.ht {
-        #       deny all;
-        #}
 }

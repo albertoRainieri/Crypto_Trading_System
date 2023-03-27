@@ -1,4 +1,8 @@
 # Default server configuration
+limit_req_zone $binary_remote_addr zone=backend:10m rate=3r/m;
+limit_req_zone $binary_remote_addr zone=mongo:10m rate=10r/s;
+
+
 server {
    listen 80;
    listen [::]:80;
@@ -9,7 +13,9 @@ server {
 
 
    location /.well-known/acme-challenge/ {
-       root /var/www/certbot;
+        limit_req zone=one burst=5;
+
+        root /var/www/certbot;
    }
 
 
@@ -43,18 +49,20 @@ server {
 
 
        location /getData {
-               proxy_pass http://backend:5000/getData;
+                limit_req zone=backend burst=3;
 
-               proxy_set_header Authorization $http_authorization;
-               proxy_pass_header Authorization;
+                proxy_pass http://backend:5000/getData;
+
+                proxy_set_header Authorization $http_authorization;
+                proxy_pass_header Authorization;
        }
 
 
        location /mongo {
-
-               proxy_pass http://mongo-express:8081;
-               proxy_set_header        Host            $host;
-               proxy_set_header        X-Real_IP       $remote_addr;
+                limit_req zone=mongo burst=5;
+                proxy_pass http://mongo-express:8081;
+                proxy_set_header        Host            $host;
+                proxy_set_header        X-Real_IP       $remote_addr;
 
        }
 
