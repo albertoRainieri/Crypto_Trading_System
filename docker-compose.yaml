@@ -10,12 +10,17 @@ services:
           max-size: "2m"
     build: 
       context: ./backend
+      args:
+        - UID=${UID}
+        - GID=${GID}
     restart: always
     # ports:
     #   - "5000:5000"
     volumes:
       - ./backend/:/backend
       - ./tracker/json:/backend/json:ro
+    env_file:
+      - .env
     environment:
       - BACKEND_URL= $BACKEND_URL
       - MONGO_USERNAME=$MONGO_USERNAME
@@ -32,9 +37,13 @@ services:
     logging:
       driver: "json-file"
       options:
-          max-size: "2m"
+          max-size: "10m"
     build: 
       context: ./tracker
+      args:
+        - UID=${UID}
+        - GID=${GID}
+    
     restart: always
     # ports:
     #   - "5001:5001"
@@ -64,6 +73,9 @@ services:
           max-size: "5m"
     build: 
       context: ./mongodb
+      args:
+        - UID=${UID}
+        - GID=${GID}
     environment:
       - PUID=$PUID
       - PGID=$PGID
@@ -88,6 +100,7 @@ services:
 
   mongo-express:
     image: mongo-express
+    user: 1000:1000
     logging:
       driver: "json-file"
       options:
@@ -113,11 +126,15 @@ services:
   nginx:
     build:
       context: ./nginx
+      args:
+        - UID=${UID}
+        - GID=${GID}
     restart: always
     ports:
       - "80:80"
       - "443:443"
     volumes:
+      - ./nginx/logs/:/var/log/nginx
       - ./nginx/conf/default:/etc/nginx/sites-available/default
       - ./certbot/www:/var/www/certbot/:ro
       - ./certbot/conf/:/etc/nginx/ssl/:ro

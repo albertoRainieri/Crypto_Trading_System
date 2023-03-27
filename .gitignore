@@ -4,3 +4,5 @@ mongodb/db
 *.pyc
 *.log
 backend/logs/*
+analysis/database.py
+nginx/conf/default
