@@ -13,7 +13,7 @@ server {
 
 
    location /.well-known/acme-challenge/ {
-        limit_req zone=one burst=5;
+        limit_req zone=backend burst=5;
 
         root /var/www/certbot;
    }
