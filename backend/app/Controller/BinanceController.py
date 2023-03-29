@@ -96,7 +96,7 @@ class BinanceController:
 
         for instrument_name in coin_list:
             resp[instrument_name] = []
-            doc_db[instrument_name] = {"_id": None, "price": None, "n_trades": 0,"volume": 0 , "buy_volume": 0, "sell_volume": 0, "buy_n": 0, "sell_n": 0, "quantity": 0, "n_trades_p_s": []}
+            doc_db[instrument_name] = {"_id": None, "price": None, "n_trades": 0,"volume": 0 , "buy_volume": 0, "sell_volume": 0, "buy_n": 0, "sell_n": 0, "quantity": 0}
             prices[instrument_name] = None
             trades_sorted[instrument_name] = []
             n_trades[instrument_name] = 0
