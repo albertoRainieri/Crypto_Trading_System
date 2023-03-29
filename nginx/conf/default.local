@@ -3,7 +3,7 @@
 
 # Default server configuration
 limit_req_zone $binary_remote_addr zone=backend:10m rate=3r/m;
-limit_req_zone $binary_remote_addr zone=mongo:10m rate=10r/s;
+limit_req_zone $binary_remote_addr zone=mongo:10m rate=15r/s;
 
 
 server {
@@ -34,10 +34,29 @@ server {
         # index index.html index.htm index.nginx-debian.html;
 
         server_name _;
+        location /docs {
+                proxy_pass http://backend:5000/docs;
+
+                if ($limit_req_status = "503") {
+                        return 403;
+                }
+        }
+
+        location /binance/get-trades {
+                proxy_pass http://backend:5000/binance/get-trades;
+                proxy_set_header	Host		$host;
+                proxy_set_header	X-Real_IP	$remote_addr;
+
+                if ($limit_req_status = "503") {
+                        return 403;
+                }
+        }
+
+
         location /getData {
                 limit_req zone=backend burst=1;
 
-                proxy_pass http://backend:5000/getData;
+                proxy_pass http://backend:5000/crypto/getData;
                 proxy_set_header Authorization $http_authorization;
                 proxy_pass_header Authorization;
 
@@ -47,7 +66,7 @@ server {
         }
 
         location /mongo {
-                limit_req zone=mongo burst=5;
+                limit_req zone=mongo burst=15;
 
                 proxy_pass http://mongo-express:8081;
                 proxy_set_header	Host		$host;
