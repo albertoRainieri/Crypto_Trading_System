@@ -72,23 +72,6 @@ class BinanceController:
         #header = CryptoController.getHeader()
         async with httpx.AsyncClient() as client:
             return await client.get(url)
-            
-
-    def get_live_trades(logger=LoggingController.start_logging()):
-        
-        coin_list = ['BTCUSDT', 'ETHUSDT']
-        # JSON file
-        f = open ('/backend/json/most_traded_coins.json', "r")
-        
-        # Reading from file
-        coin_dict = json.loads(f.read())
-        coin_list = coin_dict['most_traded_coins'][:40]
-        limit = 1000
-        print(coin_list)
-        try:
-            trades = BinanceController.launch(coin_list=coin_list, logger=logger, limit=limit)
-        except Exception as e:
-            logger.error(f'Binance API Request Error')
     
 
     @staticmethod
@@ -105,7 +88,7 @@ class BinanceController:
 
         # JSON file
         # Overwrite coin_list variable
-        f = open ('/backend/most_traded_coins.json', "r")
+        f = open ('/backend/json/most_traded_coins.json', "r")
         data = json.loads(f.read())
         coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
         #coin_list[0]
