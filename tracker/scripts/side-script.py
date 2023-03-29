@@ -5,13 +5,12 @@ sys.path.insert(1, os.path.join(sys.path[0], '..'))
 from time import sleep
 from app.Controller.LoggingController import LoggingController
 from database.DatabaseConnection import DatabaseConnection
-from app.Controller.CryptoController import CryptoController
+from app.Controller.BinanceController import BinanceController
 from app.Controller.BenchmarkController import Benchmark
 from datetime import datetime
 
 
 def main(db, logger):
-    crypto = CryptoController()
     while True:
         now=datetime.now()
         minute = now.minute
@@ -23,8 +22,8 @@ def main(db, logger):
             logger.info("volumes have been updated")
 
         
-        if minute == 15 and second == 0 and hour == 0:
-            crypto.getMostTradedCoins()
+        if minute == 59 and second == 20 and hour == 23:
+            BinanceController.main_sort_pairs_list()
             logger.info("list of instruments updated")
         
         sleep(0.8)

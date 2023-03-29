@@ -44,6 +44,9 @@ class CryptoController:
         return db
     
 
+    
+    
+
     def getMostTradedCoins(self):
         '''
         This function outputs the list of the pairs that will be traded
@@ -286,8 +289,10 @@ class CryptoController:
                 LAST_TRADE_TIMESTAMP = os.getenv(f"LAST_TRADE_TIMESTAMP_{instrument_name}")
 
                 if LAST_TRADE_TIMESTAMP == None:
-                    LAST_TRADE_TIMESTAMP = (datetime.now() - timedelta(seconds=5)).isoformat()
-                
+                    now = datetime.now()
+                    seconds = now.second
+                    LAST_TRADE_TIMESTAMP = (datetime.now() - timedelta(seconds=seconds)).isoformat()
+       
                 
                 # if db is None
                 if database == None:

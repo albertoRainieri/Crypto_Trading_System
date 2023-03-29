@@ -8,7 +8,12 @@ from app.Controller.TrackerController import TrackerController
 from datetime import datetime
 
 def main(db, logger):
-    logger.info('Hello there')
+    '''
+    This function tracks the statistics of the most traded pairs each minute
+    '''
+    
+    logger.info('Tracker Started')
+
     while True:
         now=datetime.now()
         second = now.second

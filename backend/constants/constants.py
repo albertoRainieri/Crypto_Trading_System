@@ -5,6 +5,7 @@ WSS_UAT_SANDBOX_ENDPOINT_USER="wss://uat-stream.3ona.co/v2/user"
 WSS_UAT_SANDBOX_ENDPOINT_MARKET="wss://uat-stream.3ona.co/v2/market"
 WSS_PRODUCTION_USER="wss://stream.crypto.com/v2/user"
 WSS_PRODUCTION_MARKET="wss://stream.crypto.com/v2/market"
+BINANCE_ENDPOINT = "https://api.binance.com/api/v3/"
 
 #DATABASE
 COLLECTION_TRADES_OVER_Q="Trades_over_q"
@@ -29,7 +30,8 @@ DAY_14="14D"
 MONTH_1="1M"
 
 # PARAMETERS FOR FETCHING DATA
-NUMBER_COINS_TO_TRADE=15
-SLICES=10
+NUMBER_COINS_TO_TRADE=30
+SLICES=5
 COINS_PRIORITY=5
-SLEEP_SECONDS=0.5
+SLEEP_SECONDS=2
+LIMIT=1000

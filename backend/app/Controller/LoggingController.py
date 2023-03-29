@@ -33,9 +33,12 @@ class LoggingController:
         # logger.warning("This is warn [error+warning]")
 
         logger = logging.getLogger()
-        handler = RotatingFileHandler(filename="logs/debug.log", maxBytes=500000,
-                                  backupCount=5)
-        handler = RotatingFileHandler(filename="logs/error.log", maxBytes=500000,
-                                  backupCount=5)
-        logger.addHandler(handler)
+        #logger.error("This is error  [error only]")
+
+        handler = RotatingFileHandler(filename="logs/debug.log", maxBytes=50000,
+                                  backupCount=1)
+        handler2 = RotatingFileHandler(filename="logs/error.log", maxBytes=50000,
+                                  backupCount=1)
+        #logger.addHandler(handler2)
+        #logger.addHandler(handler2)
         return logger

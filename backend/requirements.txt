@@ -14,3 +14,4 @@ pytz
 passlib[bcrypt]
 numpy
 httpx
+python-binance

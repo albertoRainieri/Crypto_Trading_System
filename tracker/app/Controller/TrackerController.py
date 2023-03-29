@@ -78,9 +78,9 @@ class TrackerController:
         minute_6h_ago =  reference_6h_datetime.minute
 
         coins_list = db_trades.list_collection_names()
-        f = open ('/tracker/json/most_traded_coin_list.json', "r")
+        f = open ('/tracker/json/most_traded_coins.json', "r")
         data = json.loads(f.read())
-        coin_list_subset = data["most_traded_coin_list"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
+        coin_list_subset = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
         # logger.info(coin_list_subset)
         # logger.info(len(coin_list_subset))
         
