@@ -5,6 +5,13 @@
 limit_req_zone $binary_remote_addr zone=backend:10m rate=3r/m;
 limit_req_zone $binary_remote_addr zone=mongo:10m rate=15r/s;
 
+log_format access '$remote_addr - $remote_user [$time_local] '
+                    '"$request" $status $body_bytes_sent '
+                    '"$http_referer" "$http_user_agent"';
+
+log_format error '$remote_addr - $remote_user [$time_local] '
+                    '"$request" $status $body_bytes_sent '
+                    '"$http_referer" "$http_user_agent"';
 
 server {
         listen 80 default_server;
@@ -44,8 +51,8 @@ server {
 
         location /binance/get-trades {
                 proxy_pass http://backend:5000/binance/get-trades;
-                proxy_set_header	Host		$host;
-                proxy_set_header	X-Real_IP	$remote_addr;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
 
                 if ($limit_req_status = "503") {
                         return 403;
@@ -54,9 +61,15 @@ server {
 
 
         location /getData {
+                access_log /var/log/nginx/backend.access.log access;
+                error_log /var/log/nginx/backend.error.log error;
+
+
                 limit_req zone=backend burst=1;
 
                 proxy_pass http://backend:5000/crypto/getData;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header Authorization $http_authorization;
                 proxy_pass_header Authorization;
 
@@ -66,6 +79,10 @@ server {
         }
 
         location /mongo {
+                access_log /var/log/nginx/mongo.access.log access;
+                error_log /var/log/nginx/mongo.error.log error;
+
+
                 limit_req zone=mongo burst=15;
 
                 proxy_pass http://mongo-express:8081;
