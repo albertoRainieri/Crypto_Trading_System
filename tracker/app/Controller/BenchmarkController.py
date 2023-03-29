@@ -46,9 +46,9 @@ class Benchmark:
 
         # Get the updated coin list
         coins_list = db_market.list_collection_names()
-        f = open ('/tracker/json/most_traded_coin_list.json', "r")
+        f = open ('/tracker/json/most_traded_coins.json', "r")
         data = json.loads(f.read())
-        coin_list_subset = data["most_traded_coin_list"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
+        coin_list_subset = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
         #coin_list_subset = ['BTC_USD']
 
         now_datetime = datetime.now()
