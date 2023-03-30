@@ -36,10 +36,10 @@ class BinanceController:
     
 
 
-    async def get_async(url):
-        #header = CryptoController.getHeader()
-        async with httpx.AsyncClient() as client:
-            return await client.get(url)
+    # async def get_async(url):
+    #     #header = CryptoController.getHeader()
+    #     async with httpx.AsyncClient() as client:
+    #         return await client.get(url)
 
 
     #@timer_func
@@ -56,8 +56,14 @@ class BinanceController:
             urls.append(BINANCE_ENDPOINT + 'trades?symbol=' + coin + '&limit=' + str(limit))
         
         #logger.info(coin_list)
-        resps = await asyncio.gather(*map(BinanceController.get_async, urls))
-        
+        try: 
+            resps = await asyncio.gather(*map(BinanceController.get_async, urls))
+            if not resps:
+                logger.error('Error Binance API. function getAsync')
+                return False
+        except:
+            logger.error('Error Binance API. function getTrades')
+            return False
 
 
         data = [json.loads(resp.text) for resp in resps]
@@ -71,7 +77,10 @@ class BinanceController:
     async def get_async(url):
         #header = CryptoController.getHeader()
         async with httpx.AsyncClient() as client:
-            return await client.get(url)
+            try:
+                return await client.get(url)
+            except:
+                return False
     
 
     @staticmethod
@@ -103,6 +112,8 @@ class BinanceController:
             # n_trades_p_s_dict[instrument_name] = []
         
         slice_i=0
+        errors = 0
+        attempts = 0
 
         while start_minute == datetime.now().minute:
             
@@ -115,23 +126,26 @@ class BinanceController:
                 coin_list = data["most_traded_coins"][:COINS_PRIORITY] + data["most_traded_coins"][NUMBER_COINS_TO_TRADE*(slice_coins_to_trade-1)+COINS_PRIORITY:NUMBER_COINS_TO_TRADE*slice_coins_to_trade+COINS_PRIORITY]
             
             try:
+                attempts += 1
                 trades = BinanceController.launch(coin_list=coin_list, logger=logger, limit=LIMIT)
-                #logger.info(trades)
+
+                # if something goes wrong
+                if not trades:
+                    errors += 1
+                    #logger.error('Trades is False')
+                    sleep(SLEEP_SECONDS)
+                    continue
+
             except Exception as e:
-                logger.error(f'Binance API Request Error')
+                logger.error(f'Binance API Request Error. function getStatisticOnTrades')
+                errors += 1
+                sleep(SLEEP_SECONDS)
                 continue
-                # if e.errno != errno.ECONNRESET:
-                #     raise # Not error we are looking for
-                # pass # Handle error here.
-            
-            #print(trades)
-            #return trades
+
             
             instrument_names = list(trades.keys())
             
             for instrument_name in instrument_names:
-
-                #logger.info(trades)
                 if len(trades[instrument_name]) == 0:
                     pass
 
@@ -151,13 +165,9 @@ class BinanceController:
                         if datetime_trade > datetime.fromisoformat(LAST_TRADE_TIMESTAMP):
                             doc = {"order":trade["s"], "price": trade["p"], "quantity": trade["q"], "timestamp": datetime_trade, "trade_id": trade["d"]}
                             resp[instrument_name].append(doc)
+
                 # if db in not None. save the data
                 else:
-                    # number of seconds between each trade
-                    # n_trades_p_s = 0
-
-                    #print("N_SEC_P_TRADE: ", datetime.now() - datetime.fromisoformat(LAST_TRADE_TIMESTAMP))
-                    
                     timestamps=[]
                     current_n_trades = 0
                     for trade in trades[instrument_name]:
@@ -213,9 +223,13 @@ class BinanceController:
         
         if pairs_not_traded == 0:
             logger.info('All pairs have been traded in the last minute')
+            if errors != 0:
+                logger.error(f'{errors}/{attempts} errors/attempts in the last minute for reaching Binance API')
         else:
             total_traded = pairs_traded + pairs_not_traded
             logger.info(f'{pairs_traded}/{total_traded} have been traded in the last minute')
+            if errors != 0:
+                logger.error(f'{errors}/{attempts} errors/attempts in the last minute for reaching Binance API')
         
         if database != None:
             trades_sorted = BinanceController.saveTrades_toDB(n_trades, prices, doc_db, database, trades_sorted, resp)
