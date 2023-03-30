@@ -192,7 +192,7 @@ class BinanceController:
                             else:
                                 order = 'BUY'
                             
-                            doc = {"order":order, "price": trade["price"], "quantity": trade["qty"], "volume": trade["quoteQty"], "timestamp": datetime_trade, "trade_id": trade["id"], }
+                            doc = {"order":order, "price": trade["price"], "quantity": trade["qty"], "volume": trade["quoteQty"], "timestamp": datetime_trade, "trade_id": trade["id"]}
                             resp[instrument_name].append(doc)
 
                             # ANALYZE STATISTICS TO SAVE TO DB
@@ -218,11 +218,11 @@ class BinanceController:
                         #logger.error(f'{instrument_name}: {current_n_trades}/{limit[instrument_name]}')
                         if current_n_trades >= limit[instrument_name]:
                             
-                            logger.error(f'Limit of {limit[instrument_name]} trades for {instrument_name} has been reached')
+                            logger.error(f'Limit of {limit[instrument_name]} trades for {instrument_name} has been reached; Position Coin: {data["most_traded_coins"].index(instrument_name)}')
                         elif current_n_trades >= limit[instrument_name] * 0.8:
-                            logger.error(f'Number of trades for {instrument_name} are more than the 80% of the capacity limit {limit[instrument_name]}')
-                        elif current_n_trades >= limit[instrument_name] * 0.6:
-                            logger.error(f'Number of trades for {instrument_name} are more than the 60% of the capacity limit {limit[instrument_name]}') 
+                            logger.error(f'Number of trades for {instrument_name} are more than the 80% of the capacity limit {limit[instrument_name]}; Position Coin: {data["most_traded_coins"].index(instrument_name)}')
+                        # elif current_n_trades >= limit[instrument_name] * 0.6:
+                        #     logger.error(f'Number of trades for {instrument_name} are more than the 60% of the capacity limit {limit[instrument_name]}') 
 
             #logger.info(f'Sleep Time: {SLEEP_SECONDS}s')
             sleep(SLEEP_SECONDS)
