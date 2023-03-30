@@ -48,12 +48,12 @@ class BinanceController:
         return trades
     
     @staticmethod
-    async def getTrades(coin_list, logger, limit=1):
+    async def getTrades(coin_list, logger, limit):
         urls= []
         trades = {}
             
         for coin in coin_list:
-            urls.append(BINANCE_ENDPOINT + 'trades?symbol=' + coin + '&limit=' + str(limit))
+            urls.append(BINANCE_ENDPOINT + 'trades?symbol=' + coin + '&limit=' + str(limit[coin]))
         
         #logger.info(coin_list)
         try: 
@@ -93,7 +93,7 @@ class BinanceController:
         prices = {}
         trades_sorted = {}
         n_trades = {}
-        
+        limit = {}
 
         # JSON file
         # Overwrite coin_list variable
@@ -101,14 +101,21 @@ class BinanceController:
         data = json.loads(f.read())
         coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
         #coin_list[0]
+        
+        range_limits = [(range(0,3), 1000), (range(3,10), 800), (range(10,20), 700), (range(20,30), 600), (range(30,50), 500), (range(50,100), 400), (range(100,200), 300), (range(20,500), 200)]
 
-
-        for instrument_name in coin_list:
+        for instrument_name, n_instrument in zip(coin_list, range(len(coin_list))):
             resp[instrument_name] = []
             doc_db[instrument_name] = {"_id": None, "price": None, "n_trades": 0,"volume": 0 , "buy_volume": 0, "sell_volume": 0, "buy_n": 0, "sell_n": 0, "quantity": 0}
             prices[instrument_name] = None
             trades_sorted[instrument_name] = []
             n_trades[instrument_name] = 0
+
+            for range_limit in range_limits:
+                if n_instrument in range_limit[0]:
+                    limit[instrument_name] = range_limit[1]
+                    break
+
             # n_trades_p_s_dict[instrument_name] = []
         
         slice_i=0
@@ -127,7 +134,7 @@ class BinanceController:
             
             try:
                 attempts += 1
-                trades = BinanceController.launch(coin_list=coin_list, logger=logger, limit=LIMIT)
+                trades = BinanceController.launch(coin_list=coin_list, logger=logger, limit=limit)
 
                 # if something goes wrong
                 if not trades:
@@ -208,13 +215,22 @@ class BinanceController:
                         resp[instrument_name] = sorted(resp[instrument_name], key=itemgetter('timestamp'), reverse=False)
                         os.environ[f"LAST_TRADE_TIMESTAMP_{instrument_name}"] = resp[instrument_name][-1]['timestamp'].isoformat()
 
+                        #logger.error(f'{instrument_name}: {current_n_trades}/{limit[instrument_name]}')
+                        if current_n_trades >= limit[instrument_name]:
+                            
+                            logger.error(f'Limit of {limit[instrument_name]} trades for {instrument_name} has been reached')
+                        elif current_n_trades >= limit[instrument_name] * 0.8:
+                            logger.error(f'Number of trades for {instrument_name} are more than the 80% of the capacity limit {limit[instrument_name]}')
+                        elif current_n_trades >= limit[instrument_name] * 0.6:
+                            logger.error(f'Number of trades for {instrument_name} are more than the 60% of the capacity limit {limit[instrument_name]}') 
+
             #logger.info(f'Sleep Time: {SLEEP_SECONDS}s')
             sleep(SLEEP_SECONDS)
             slice_i += 1
         
         pairs_traded = 0
         pairs_not_traded = 0
-        for instrument_name in list(n_trades.keys()):                    
+        for instrument_name in list(n_trades.keys()):                
             if n_trades[instrument_name] != 0:
                 # logger.info({'instrument_name': instrument_name, 'price': prices[instrument_name], 'n_trades': doc_db[instrument_name]["n_trades"], 'volume': round_(doc_db[instrument_name]["volume"],2), 'quantity': round_(doc_db[instrument_name]["quantity"],2)})
                 pairs_traded += 1
@@ -229,7 +245,7 @@ class BinanceController:
             total_traded = pairs_traded + pairs_not_traded
             logger.info(f'{pairs_traded}/{total_traded} have been traded in the last minute')
             if errors != 0:
-                logger.error(f'{errors}/{attempts} errors/attempts in the last minute for reaching Binance API')
+                logger.error(f'{errors}/{attempts} errors in the last minute for reaching Binance API')
         
         if database != None:
             trades_sorted = BinanceController.saveTrades_toDB(n_trades, prices, doc_db, database, trades_sorted, resp)
