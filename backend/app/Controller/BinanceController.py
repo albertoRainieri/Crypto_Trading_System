@@ -102,7 +102,7 @@ class BinanceController:
         coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
         #coin_list[0]
         
-        range_limits = [(range(0,3), 1000), (range(3,10), 800), (range(10,30), 700), (range(30,80), 650), (range(80,160), 600), (range(160,250), 500), (range(250,500), 400)]
+        range_limits = [(range(0,10), 1000), (range(10,25),900) (range(25,50), 800), (range(50,100), 700), (range(100,200), 600), (range(200,500), 500)]
 
         for instrument_name, n_instrument in zip(coin_list, range(len(coin_list))):
             resp[instrument_name] = []
@@ -218,7 +218,7 @@ class BinanceController:
                         #logger.error(f'{instrument_name}: {current_n_trades}/{limit[instrument_name]}')
                         if current_n_trades >= limit[instrument_name]:
                             
-                            logger.error(f'Limit of {limit[instrument_name]} trades for {instrument_name} has been reached; Position Coin: {data["most_traded_coins"].index(instrument_name)}')
+                            logger.error(f'CRITICAL: Limit of {limit[instrument_name]} trades for {instrument_name} has been reached; Position Coin: {data["most_traded_coins"].index(instrument_name)}')
                         elif current_n_trades >= limit[instrument_name] * 0.8:
                             logger.error(f'Number of trades for {instrument_name} are more than the 80% of the capacity limit {limit[instrument_name]}; Position Coin: {data["most_traded_coins"].index(instrument_name)}')
                         # elif current_n_trades >= limit[instrument_name] * 0.6:
