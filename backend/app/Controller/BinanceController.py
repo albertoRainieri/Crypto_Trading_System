@@ -102,7 +102,7 @@ class BinanceController:
         coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
         #coin_list[0]
         
-        range_limits = [(range(0,3), 1000), (range(3,10), 800), (range(10,20), 700), (range(20,30), 600), (range(30,50), 500), (range(50,100), 400), (range(100,200), 300), (range(20,500), 200)]
+        range_limits = [(range(0,3), 1000), (range(3,10), 800), (range(10,30), 700), (range(30,80), 650), (range(80,160), 600), (range(160,250), 500), (range(250,500), 400)]
 
         for instrument_name, n_instrument in zip(coin_list, range(len(coin_list))):
             resp[instrument_name] = []
