@@ -44,7 +44,7 @@ class BinanceController:
             except:
                 return False
         
-    async def gather_total(coins_list, logger, interval='1d', limit=1):
+    async def gather_total(coins_list, logger, interval, limit=1):
 
         total_data = []
         for slice_coin_list in coins_list:
@@ -58,12 +58,13 @@ class BinanceController:
 
 
 
-    async def gather(coins_list, logger, interval='1d', limit=1):
+    async def gather(coins_list, logger, interval, limit=1):
         urls = []
 
 
         for coin in coins_list:
             urls.append(BINANCE_ENDPOINT + 'klines?symbol=' + coin + '&interval=' + interval + '&limit=' + str(limit))
+            #print(BINANCE_ENDPOINT + 'klines?symbol=' + coin + '&interval=' + interval + '&limit=' + str(limit))
 
         try:
             resps = await asyncio.gather(*map(BinanceController.get_async, urls))
@@ -107,7 +108,7 @@ class BinanceController:
         This function takes the list of pair (from "ExchangeInfo" function) and gathers information for each one of them.
         Finally it creates a sorted list of pair by volume
         '''
-
+        interval = '1w'
         #print('res', res)
         all_usdt_coins = []
         for coin in res['symbols']:
@@ -131,7 +132,7 @@ class BinanceController:
                 slice_usdt_coin_list.append(all_usdt_coins[slice*i:])
 
         #total_pairs = asyncio.run(BinanceController.gather(coins_list=all_usdt_coins))
-        total_pairs = asyncio.run(BinanceController.gather_total(coins_list=slice_usdt_coin_list, logger=logger))
+        total_pairs = asyncio.run(BinanceController.gather_total(coins_list=slice_usdt_coin_list, logger=logger, interval=interval))
 
         if not total_pairs:
             if tries < 2:

@@ -22,8 +22,8 @@ def main(db, logger):
             logger.info("volumes have been updated")
 
         
-        if minute == 59 and second == 20 and hour == 23:
-            BinanceController.main_sort_pairs_list()
+        if minute == 59 and second == 12 and hour == 23:
+            BinanceController.main_sort_pairs_list(logger=logger)
             logger.info("list of instruments updated")
         
         sleep(0.8)
