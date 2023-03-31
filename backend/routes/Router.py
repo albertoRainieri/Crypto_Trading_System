@@ -1,9 +1,10 @@
+from backend.routes import Analysis
 from fastapi import APIRouter
 import sys, os
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 
-from routes import CryptoCom, Binance
+from routes import CryptoCom
 
 router_api = APIRouter()
 router_api.include_router(CryptoCom.router, prefix="/crypto", tags=["Crypto"])
-router_api.include_router(Binance.router, prefix="/binance", tags=["Binance"])
+router_api.include_router(Analysis.router, prefix="/analysis", tags=["Analysis"])
