@@ -25,7 +25,7 @@ class BinanceController:
     def __init__(self) -> None:
         self.db = DatabaseConnection()
 
-    def get_db(self, db_name):
+    def get_db(db_name):
         '''
         Establish connectivity with db
         '''
@@ -107,7 +107,6 @@ class BinanceController:
         This function takes the list of pair (from "ExchangeInfo" function) and gathers information for each one of them.
         Finally it creates a sorted list of pair by volume
         '''
-        FAILED = False
 
         #print('res', res)
         all_usdt_coins = []
@@ -126,7 +125,7 @@ class BinanceController:
         slice_usdt_coin_list.append(all_usdt_coins[:slice])
 
         for i in range(1,number_slices):
-            if i != number_slices:
+            if i != number_slices - 1:
                 slice_usdt_coin_list.append(all_usdt_coins[slice*i:slice*(i+1)])
             else:
                 slice_usdt_coin_list.append(all_usdt_coins[slice*i:])
@@ -168,6 +167,79 @@ class BinanceController:
         most_traded_coins = {'most_traded_coins': most_traded_coins_list}
         with open("/tracker/json/most_traded_coins.json", "w") as outfile_volume:
             outfile_volume.write(json.dumps(most_traded_coins))
+
+        
+        # UPDATE DB BENCHMARK. THE INFO UPDATED IS ABOUT THE FREQUENCY OF THE COIN TRADED.
+        # IF A COIN FALLS OUT OF THE BEST POSITIONS, IT WILL GET A NEGATIVE SCORE.
+
+        db_benchmark = BinanceController.get_db(DATABASE_BENCHMARK)
+        list_coins_benchmark = db_benchmark.list_collection_names()
+
+        # iterate through each pair in the db
+        for coin in list_coins_benchmark:
+            # update benchmark db --> (field: best trades)
+            cursor_benchmark = list(db_benchmark[coin].find())
+            id_benchmark = cursor_benchmark[0]['_id']
+
+            # if the coin from db is not present in the list updated "most_traded_coins_list"
+            if coin in most_traded_coins_list[:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]:
+                
+                # In case it is not the first time to compute this statistics on db benchmark
+                if 'Best_Trades' in cursor_benchmark[0]:
+                    trade_score = cursor_benchmark[0]['Best_Trades']
+                    trade_score_split = trade_score.split('/')
+                    new_score = int(trade_score_split[0]) + 1
+                    new_total = int(trade_score_split[-1]) + 1
+                    new_trade_score = str(new_score) + '/' + str(new_total)
+
+                    last_30_trades = cursor_benchmark[0]['Last_30_Trades']
+
+                    # if len of this list is greater than 30 (1 month) I delete the oldest one (first element of the list)
+                    if len(last_30_trades['list_last_30_trades']) == 30:
+                        last_30_trades['list_last_30_trades'].append(1)
+                        last_30_trades['list_last_30_trades'] = last_30_trades['list_last_30_trades'][1:]
+                    else:
+                        last_30_trades['list_last_30_trades'].append(1)
+                    last_30_trades['score_last_30_trades'] = sum(last_30_trades['list_last_30_trades']) / len(last_30_trades['list_last_30_trades'])
+
+                    db_benchmark[coin].update_one({"_id": id_benchmark}, {"$set": {"Best_Trades": new_trade_score, 'Last_30_Trades': last_30_trades}})
+                # this is the first time that this statistics is computed
+                else:
+                    new_score = 1
+                    new_total = 1
+                    new_trade_score = str(new_score) + '/' + str(new_total)
+                    last_30_trades = {'list_last_30_trades': [1], 'score_last_30_trades': 1}
+
+                    db_benchmark[coin].update_one({"_id": id_benchmark}, {"$set": {"Best_Trades": new_trade_score, 'Last_30_Trades': last_30_trades}})
+            else:
+                if 'Best_Trades' in cursor_benchmark[0]:
+                    trade_score = cursor_benchmark[0]['Best_Trades']
+                    trade_score_split = trade_score.split('/')
+                    score = trade_score_split[0]
+                    new_total = int(trade_score_split[-1]) + 1
+                    new_trade_score = score + '/' + str(new_total)
+
+                    last_30_trades = cursor_benchmark[0]['Last_30_Trades']
+
+                    # if len of this list is greater than 30 (1 month) I delete the oldest one (first element of the list)
+                    if len(last_30_trades['list_last_30_trades']) == 30:
+                        last_30_trades['list_last_30_trades'].append(0)
+                        last_30_trades['list_last_30_trades'] = last_30_trades['list_last_30_trades'][1:]
+                    else:
+                        last_30_trades['list_last_30_trades'].append(0)
+                    last_30_trades['score_last_30_trades'] = sum(last_30_trades['list_last_30_trades']) / len(last_30_trades['list_last_30_trades'])
+
+                    db_benchmark[coin].update_one({"_id": id_benchmark}, {"$set": {"Best_Trades": new_trade_score, 'Last_30_Trades': last_30_trades}})
+                
+                else:
+                    new_score = 0
+                    new_total = 1
+                    new_trade_score = str(new_score) + '/' + str(new_total)
+                    last_30_trades = {'list_last_30_trades': [0], 'score_last_30_trades': 0}
+
+                    db_benchmark[coin].update_one({"_id": id_benchmark}, {"$set": {"Best_Trades": new_trade_score, 'Last_30_Trades': last_30_trades}})
+
+
 
     def main_sort_pairs_list(logger=LoggingController.start_logging()):
         loop = asyncio.get_event_loop()
