@@ -153,7 +153,7 @@ class BinanceController:
         for coin,trade in zip(all_usdt_coins, total_pairs):
             print(trade)
             print(coin)
-            if len(trade) != 0 or type(trade) != list:
+            if len(trade) != 0 and type(trade) == list:
                 dict_volume = {'coin': coin, 'volume': float(trade[0][7])}
             else:
                 print(trade)
