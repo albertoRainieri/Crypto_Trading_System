@@ -151,11 +151,13 @@ class BinanceController:
         most_traded_coins_list = []
 
         for coin,trade in zip(all_usdt_coins, total_pairs):
-            #print(trade)
-            if len(trade) != 0:
+            print(trade)
+            print(coin)
+            if len(trade) != 0 or type(trade) != list:
                 dict_volume = {'coin': coin, 'volume': float(trade[0][7])}
             else:
                 print(trade)
+                print('FOUND')
                 print(coin)
                 dict_volume = {'coin': coin, 'volume': 0}
 
