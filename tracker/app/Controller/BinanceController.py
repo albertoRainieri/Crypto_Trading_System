@@ -154,9 +154,9 @@ class BinanceController:
             try:
                 dict_volume = {'coin': coin, 'volume': float(trade[0][7])}
             except:
-                print(trade)
-                print(type(trade))
-                print(coin)
+                logger.error(trade)
+                logger.error(type(trade))
+                logger.error(coin)
                 dict_volume = {'coin': coin, 'volume': 0}
 
             list_volumes.append(dict_volume)

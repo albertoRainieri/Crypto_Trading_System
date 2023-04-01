@@ -240,7 +240,9 @@ class BinanceController:
         if pairs_not_traded == 0:
             logger.info('All pairs have been traded in the last minute')
             if errors != 0:
-                logger.error(f'{errors}/{attempts} errors/attempts in the last minute for reaching Binance API')
+                logger.error(f'{errors}/{attempts} errors in the last minute for reaching Binance API')
+        elif pairs_traded == 0:
+            logger.error('SUPER CRITICAL: NO PAIRS HAS BEEN TRADED, POSSIBLE IP BAN')
         else:
             total_traded = pairs_traded + pairs_not_traded
             logger.info(f'{pairs_traded}/{total_traded} have been traded in the last minute')
