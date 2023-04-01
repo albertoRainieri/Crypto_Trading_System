@@ -152,7 +152,13 @@ class BinanceController:
 
         for coin,trade in zip(all_usdt_coins, total_pairs):
             #print(trade)
-            dict_volume = {'coin': coin, 'volume': float(trade[0][7])}
+            if len(trade) != 0:
+                dict_volume = {'coin': coin, 'volume': float(trade[0][7])}
+            else:
+                print(trade)
+                print(coin)
+                dict_volume = {'coin': coin, 'volume': 0}
+
             list_volumes.append(dict_volume)
 
         list_volumes.sort(key=lambda x: x['volume'], reverse=True)
