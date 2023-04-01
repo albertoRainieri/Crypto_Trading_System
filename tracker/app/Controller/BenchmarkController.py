@@ -238,7 +238,7 @@ class Benchmark:
                         year = split_date[0]
                         month = split_date[1]
                         day = split_date[2]
-                        datetime_i = datetime(year=int(year), month=int(month), day=int(day) + 1)
+                        datetime_i = datetime(year=int(year), month=int(month), day=int(day)) + timedelta(days=1)
 
                         if datetime_i > reference_30days_datetime:
                             volumes_30days_list_avg.append(volume_info[date][0])
