@@ -187,8 +187,15 @@ class TrackerController:
 
                 #logger.info(doc)
                 doc_vol = doc['volume']
-                doc_buy_vol = doc['buy_volume'] / doc['volume']
-                doc_buy_trd = doc['buy_n'] / doc['n_trades']
+                if doc['volume'] != 0:
+                    doc_buy_vol = doc['buy_volume'] / doc['volume']
+                else:
+                    doc_buy_vol = 0.5
+                
+                if doc['n_trades'] != 0:
+                    doc_buy_trd = doc['buy_n'] / doc['n_trades']
+                else:
+                    doc_buy_trd = 0.5
 
                 volumes_24h_list.append(doc_vol)
                 buy_volume_perc_24h_list.append(doc_buy_vol)
