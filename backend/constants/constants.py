@@ -35,3 +35,17 @@ SLICES=8
 COINS_PRIORITY=10
 SLEEP_SECONDS=0.8
 LIMIT=1000
+
+
+#PARAMETER FOR AUTHORIZATION
+SECRET_KEY = "3148a55fb6cb73cb67f7e8bb8c5a631d7127b5b5f3fe7db0c1a8139f7793a06a"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60*24*3650
+clients_oauth2 = {
+    "Crypto_User_2023!": {
+        "username": "Crypto_User_2023!",
+        "hashed_password": "$2b$12$HdmhpU5RyeOfjuYu/8w81OciGkE/mrGyBenp6iTCt.4MZCG6qSSbS",
+        "disabled": False
+    },
+}
+ACCESS_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJDcnlwdG9fVXNlcl8yMDIzISIsImV4cCI6MTk5NTg5MjA4N30.hNzb8EWsNyaxc1ocA55kYaHCwBZ04PatYy01ttw7O2Y"

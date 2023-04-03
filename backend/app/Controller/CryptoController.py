@@ -376,7 +376,7 @@ class CryptoController:
         
 
     
-    def getTrades_BTC_over_Q(self, coin_list=["BTC_USD"], logger=LoggingController.start_logging()):
+    def start_live_trades(self, coin_list=["BTC_USD"], logger=LoggingController.start_logging()):
 
         limit=0.5
         resp = {}

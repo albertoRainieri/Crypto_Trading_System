@@ -1,11 +1,16 @@
+
 import sys, os
 from fastapi import APIRouter
 from app.Controller.AnalysisController import AnalysisController
+from app.Controller.AuthController import Authorization
+from fastapi import Depends, Request
+
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 
 router = APIRouter(
 )
 
 @router.get("/get-data")
-async def getTrades(datetime_start = None):
+async def getTrades(datetime_start = None, request: Request = Depends(Authorization.get_current_active_user)):
     return AnalysisController.getData(datetime_start)
+
