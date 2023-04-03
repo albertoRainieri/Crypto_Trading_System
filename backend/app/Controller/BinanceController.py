@@ -144,7 +144,7 @@ class BinanceController:
                     continue
 
             except Exception as e:
-                logger.error(f'Binance API Request Error. function getStatisticOnTrades')
+                #logger.error(f'Binance API Request Error. function getStatisticOnTrades')
                 errors += 1
                 sleep(sleep_seconds)
                 continue
