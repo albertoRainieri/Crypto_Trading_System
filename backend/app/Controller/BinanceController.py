@@ -300,6 +300,6 @@ class BinanceController:
             logger.info(f'Sleep seconds variable is switched to {sleep_seconds}')
         else:
             sleep_seconds = SLEEP_SECONDS
-            logger.info(f'Sleep seconds variable is switched to {sleep_seconds}')
+            #logger.info(f'Sleep seconds variable is switched to {sleep_seconds}')
 
         return sleep_seconds
