@@ -84,7 +84,7 @@ class BinanceController:
     
 
     @staticmethod
-    def getStatistics_onTrades(coin_list=["BTCUSDT"], database=None, logger=None, start_minute=datetime.now().minute):
+    def getStatistics_onTrades(coin_list=["BTCUSDT"], database=None, logger=None, start_minute=datetime.now().minute, sleep_seconds=SLEEP_SECONDS):
         '''
         This API returns the last 150 transactions for a particular instrument
         '''
@@ -140,13 +140,13 @@ class BinanceController:
                 if not trades:
                     errors += 1
                     #logger.error('Trades is False')
-                    sleep(SLEEP_SECONDS)
+                    sleep(sleep_seconds)
                     continue
 
             except Exception as e:
                 logger.error(f'Binance API Request Error. function getStatisticOnTrades')
                 errors += 1
-                sleep(SLEEP_SECONDS)
+                sleep(sleep_seconds)
                 continue
 
             
@@ -224,8 +224,8 @@ class BinanceController:
                         # elif current_n_trades >= limit[instrument_name] * 0.6:
                         #     logger.error(f'Number of trades for {instrument_name} are more than the 60% of the capacity limit {limit[instrument_name]}') 
 
-            #logger.info(f'Sleep Time: {SLEEP_SECONDS}s')
-            sleep(SLEEP_SECONDS)
+            #logger.info(f'Sleep Time: {sleep_seconds}s')
+            sleep(sleep_seconds)
             slice_i += 1
         
         pairs_traded = 0
@@ -274,7 +274,32 @@ class BinanceController:
     
 
     def start_live_trades(self, coin_list=["BTC_USD"], logger=LoggingController.start_logging()):
+        
+        now = datetime.now()
 
-        current_minute = datetime.now().minute
+        sleep_seconds = BinanceController.isIncreaseSleepSeconds(now, logger)
+        current_minute = now.minute
         db = self.get_db('Market_Trades')
-        BinanceController.getStatistics_onTrades(coin_list=coin_list, database=db, logger=logger, start_minute=current_minute)
+        BinanceController.getStatistics_onTrades(coin_list=coin_list, database=db, logger=logger, start_minute=current_minute, sleep_seconds=sleep_seconds)
+
+
+    def isIncreaseSleepSeconds(now, logger):
+        '''
+        This function increases the sleep seconds during midnight for
+        allowing the update of the instrument in the Tracker Controller.
+        This is done to not incur over IP Ban
+
+        It return the variable sleep_seconds
+        '''
+
+        hour = now.hour
+        minute = now.minute
+        
+        if hour == 23 and minute >= 58:
+            sleep_seconds = 3
+            logger.info(f'Sleep seconds variable is switched to {sleep_seconds}')
+        else:
+            sleep_seconds = SLEEP_SECONDS
+            logger.info(f'Sleep seconds variable is switched to {sleep_seconds}')
+
+        return sleep_seconds
