@@ -171,8 +171,8 @@ class Benchmark:
                 year = split_date[0]
                 month = split_date[1]
                 day = split_date[2]
-                # this is the starting time from which lookig for new observation. 
-                st_datetime = datetime(year=int(year), month=int(month), day=int(day) + 1)
+                # this is the starting time from which looking for new observation. 
+                st_datetime = datetime(year=int(year), month=int(month), day=int(day)) + timedelta(days=1)
                 et_datetime = (now_datetime - timedelta(days=1)).replace(hour=23, minute=59, second=59)
 
                 # this should happen during development, not in production
