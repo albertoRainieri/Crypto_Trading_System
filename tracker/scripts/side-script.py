@@ -17,7 +17,7 @@ def main(db, logger):
         second = now.second
         hour = now.hour
 
-        if minute == 0 and second == 5 and hour == 0:
+        if minute == 0 and second == 15 and hour == 0:
             Benchmark.computeVolumeAverage(db=db)
             logger.info("volumes have been updated")
 

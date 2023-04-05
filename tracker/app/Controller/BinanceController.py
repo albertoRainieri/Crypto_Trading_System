@@ -87,7 +87,7 @@ class BinanceController:
         return data
 
 
-    async def exchange_info():
+    async def exchange_info(logger):
         '''
         This function call "ExchangeInfo" Binance API for all the available pairs
         '''
@@ -101,6 +101,7 @@ class BinanceController:
             sleep(5)
             return False
 
+        logger.info('The request to the API "ExchangeInfo" was succesfull')
         return res
 
     def sort_pairs_by_volume(res, logger=LoggingController.start_logging(), tries=0):
@@ -108,6 +109,8 @@ class BinanceController:
         This function takes the list of pair (from "ExchangeInfo" function) and gathers information for each one of them.
         Finally it creates a sorted list of pair by volume
         '''
+
+        logger.info("function 'sort_pairs_by_volume' has started.")
         interval = '1w'
         #print('res', res)
         all_usdt_coins = []
@@ -188,7 +191,7 @@ class BinanceController:
             cursor_benchmark = list(db_benchmark[coin].find())
             id_benchmark = cursor_benchmark[0]['_id']
 
-            # if the coin from db is not present in the list updated "most_traded_coins_list"
+            # if the coin from db is present in the list updated "most_traded_coins_list", then it will be marked as a live coin
             if coin in most_traded_coins_list[:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]:
                 
                 # In case it is not the first time to compute this statistics on db benchmark
@@ -218,6 +221,7 @@ class BinanceController:
                     last_30_trades = {'list_last_30_trades': [1], 'score_last_30_trades': 1}
 
                     db_benchmark[coin].update_one({"_id": id_benchmark}, {"$set": {"Best_Trades": new_trade_score, 'Last_30_Trades': last_30_trades}})
+            # in this case the coin is not between the best coins. it will be marked as non-live coin
             else:
                 if 'Best_Trades' in cursor_benchmark[0]:
                     trade_score = cursor_benchmark[0]['Best_Trades']
@@ -249,9 +253,24 @@ class BinanceController:
 
 
     def main_sort_pairs_list(logger=LoggingController.start_logging()):
-        loop = asyncio.get_event_loop()
-        info = loop.run_until_complete(BinanceController.exchange_info())
+        loop = BinanceController.get_or_create_eventloop()
+        
+        info = loop.run_until_complete(BinanceController.exchange_info(logger))
+
         if not info:
             logger.error('Something went wrong with BinanceController.exchange_info')
             info = loop.run_until_complete(BinanceController.exchange_info())
-        BinanceController.sort_pairs_by_volume(info, logger)
+        try:
+            BinanceController.sort_pairs_by_volume(info, logger)
+        except Exception as e:
+            logger.error(e)
+            logger.error('Something wrong happened. Check the log above')
+
+    def get_or_create_eventloop():
+        try:
+            return asyncio.get_event_loop()
+        except RuntimeError as ex:
+            if "There is no current event loop in thread" in str(ex):
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                return asyncio.get_event_loop()

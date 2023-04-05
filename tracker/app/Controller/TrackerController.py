@@ -22,8 +22,11 @@ class TrackerController:
         db = DatabaseConnection()
         db_tracker = db.get_db(database=DATABASE_TRACKER)
         db_benchmark = db.get_db(database=DATABASE_BENCHMARK)
-        TrackerController.db_operations(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, logger=logger)
-        #logger.info(collection_list)
+        try:
+            TrackerController.db_operations(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, logger=logger)
+        except Exception as e:
+            logger.error(e)
+            logger.error('Something Wrong Happened. Check the logs above')
 
         pass
 
@@ -46,7 +49,7 @@ class TrackerController:
             return False
 
       
-    @timer_func
+    #@timer_func
     def db_operations(db_trades, db_tracker, db_benchmark, logger):
         now = datetime.now()
         reference_1day_datetime = now - timedelta(days=1)
