@@ -11,6 +11,6 @@ router = APIRouter(
 )
 
 @router.get("/get-data")
-async def getTrades(datetime_start = None, request: Request = Depends(Authorization.get_current_active_user)):
-    return AnalysisController.getData(datetime_start)
+async def getTrades(datetime_start, datetime_end, request: Request = Depends(Authorization.get_current_active_user)):
+    return AnalysisController.getData(datetime_start, datetime_end)
 
