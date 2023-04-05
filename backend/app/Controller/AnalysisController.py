@@ -3,7 +3,8 @@ sys.path.insert(0,'../..')
 from database.DatabaseConnection import DatabaseConnection
 from app.Helpers.Helpers import round_, timer_func
 import requests
-
+from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 from constants.constants import *
 import json
 
@@ -22,14 +23,14 @@ class AnalysisController:
         coins_list = db_market.list_collection_names()
 
         dict_ = {}
-        
+
 
         for instrument_name in coins_list:
             docs = list(db_market[instrument_name].find({"_id": {"$gte": datetime_start, "$lt": datetime_end}}))
             dict_[instrument_name] = docs
         
-
-        return dict_
+        json_string = jsonable_encoder(dict_)
+        return JSONResponse(content=json_string)
 
         
         
