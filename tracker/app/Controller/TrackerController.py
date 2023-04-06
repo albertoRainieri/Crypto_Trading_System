@@ -261,8 +261,20 @@ class TrackerController:
 
                     continue
                 
-            #logger.info(f"{coin}: {doc['_id']}")
+            # Compute the volume statistics of the last minute. Since we reach the end of the "docs" variable
+
             price_now = doc['price']
+            #logger.info(doc)
+            volume_1m = round_(doc['volume'] / avg_volume_1_month,2)
+            if doc['volume'] != 0:
+                buy_volume_perc_1m = round_(doc['buy_volume'] / doc['volume'],2)
+            else:
+                buy_volume_perc_1m = 0.5
+            
+            if doc['n_trades'] != 0:
+                buy_trades_perc_1m = round_(doc['buy_n'] / doc['n_trades'],2)
+            else:
+                buy_trades_perc_1m = 0.5
 
             # Compute price changes if 
             if price_1h_ago is not None:
@@ -356,13 +368,13 @@ class TrackerController:
 
 
 
-            doc_db = {'_id': now.isoformat(), "price_%_1d" : price_variation_1d, "price_%_6h" : price_variation_6h, "price_%_3h" : price_variation_3h, "price_%_1h" : price_variation_1h, 
+            doc_db = {'_id': now.isoformat(),"price": price_now, "price_%_1d" : price_variation_1d, "price_%_6h" : price_variation_6h, "price_%_3h" : price_variation_3h, "price_%_1h" : price_variation_1h,
+                      'vol_1m': volume_1m, 'buy_vol_1m': buy_volume_perc_1m, 'buy_trd_1m': buy_trades_perc_1m,
                       'vol_5m': volumes_5m, 'vol_5m_std': volumes_5m_std, 'buy_vol_5m': buy_volume_perc_5m, 'buy_vol_5m_std': buy_volume_perc_5m_std,'buy_trd_5m': buy_trades_perc_5m, 'buy_trd_5m_std': buy_trades_perc_5m_std,
                       'vol_15m': volumes_15m, 'vol_15m_std': volumes_15m_std, 'buy_vol_15m': buy_volume_perc_15m, 'buy_vol_15m_std': buy_volume_perc_15m_std,'buy_trd_15m': buy_trades_perc_15m, 'buy_trd_15m_std': buy_trades_perc_15m_std,
                       'vol_30m': volumes_30m, 'vol_30m_std': volumes_30m_std, 'buy_vol_30m': buy_volume_perc_30m, 'buy_vol_30m_std': buy_volume_perc_30m_std,'buy_trd_30m': buy_trades_perc_30m, 'buy_trd_30m_std': buy_trades_perc_30m_std,
                       'vol_60m': volumes_60m, 'vol_60m_std': volumes_60m_std, 'buy_vol_60m': buy_volume_perc_60m, 'buy_vol_60m_std': buy_volume_perc_60m_std,'buy_trd_60m': buy_trades_perc_60m, 'buy_trd_60m_std': buy_trades_perc_60m_std,
                       'vol_24h': volumes_24h, 'vol_24h_std': volumes_24h_std, 'buy_vol_24h': buy_volume_perc_24h, 'buy_vol_24h_std': buy_volume_perc_24h_std,'buy_trd_24h': buy_trades_perc_24h, 'buy_trd_24h_std': buy_trades_perc_24h_std,
-
                       }
         
             #logger.info(doc_db)
