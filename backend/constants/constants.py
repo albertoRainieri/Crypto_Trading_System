@@ -48,4 +48,4 @@ clients_oauth2 = {
         "disabled": False
     },
 }
-ACCESS_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJDcnlwdG9fVXNlcl8yMDIzISIsImV4cCI6MTk5NTg5MjA4N30.hNzb8EWsNyaxc1ocA55kYaHCwBZ04PatYy01ttw7O2Y"
+ACCESS_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJDcnlwdG9fVXNlcl8yMDIzISIsImV4cCI6MTk5NjE0ODAwOH0.kv5FpZBLrCShvwIeccqh01qMeBihA1ySs43MrjM5AEc"
