@@ -61,6 +61,9 @@ class Authorization:
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
+        print(token)
+        print(SECRET_KEY)
+        print(ALGORITHM)
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             username: str = payload.get("sub")
