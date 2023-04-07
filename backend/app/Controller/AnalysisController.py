@@ -31,6 +31,14 @@ class AnalysisController:
         
         json_string = jsonable_encoder(dict_)
         return JSONResponse(content=json_string)
+    
+
+    def getMostTradedCoins():
+        f = open ('/backend/json/most_traded_coins.json', "r")
+        data = json.loads(f.read())
+        coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
+
+        return JSONResponse(json.dumps(coin_list))
 
         
         

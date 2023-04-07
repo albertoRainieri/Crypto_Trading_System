@@ -14,3 +14,6 @@ router = APIRouter(
 async def getTrades(datetime_start, datetime_end):#, request: Request = Depends(Authorization.get_current_active_user)):
     return AnalysisController.getData(datetime_start, datetime_end)
 
+@router.get("/get-mosttradedcoins")
+async def getMostTradedCoins():#, request: Request = Depends(Authorization.get_current_active_user)):
+    return AnalysisController.getMostTradedCoins()
