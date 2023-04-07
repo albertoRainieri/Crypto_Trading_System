@@ -37,6 +37,7 @@ class AnalysisController:
         f = open ('/backend/json/most_traded_coins.json', "r")
         data = json.loads(f.read())
         coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
+        coin_list = {"most_traded_coins": coin_list}
 
         return JSONResponse(json.dumps(coin_list))
 
