@@ -7,7 +7,7 @@ import json
 from constants.constants import *
 import requests
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from operator import itemgetter
 from database.DatabaseConnection import DatabaseConnection
 from app.Controller.LoggingController import LoggingController
@@ -84,7 +84,7 @@ class BinanceController:
     
 
     @staticmethod
-    def getStatistics_onTrades(coin_list=["BTCUSDT"], database=None, logger=None, start_minute=datetime.now().minute, sleep_seconds=SLEEP_SECONDS):
+    def getStatistics_onTrades(coin_list=["BTCUSDT"], database=None, db_logger=None, logger=None, start_minute=datetime.now().minute, sleep_seconds=SLEEP_SECONDS):
         '''
         This API returns the last 150 transactions for a particular instrument
         '''
@@ -217,10 +217,13 @@ class BinanceController:
 
                         #logger.error(f'{instrument_name}: {current_n_trades}/{limit[instrument_name]}')
                         if current_n_trades >= limit[instrument_name]:
-                            
-                            logger.error(f'CRITICAL: Limit of {limit[instrument_name]} trades for {instrument_name} has been reached; Position Coin: {data["most_traded_coins"].index(instrument_name)}')
+                            position = data["most_traded_coins"].index(instrument_name)
+                            logger.error(f'CRITICAL: Limit of {limit[instrument_name]} trades for {instrument_name}; Position Coin: {position}')
+                            # save log to db{instrument_name} has been reached; Position Coin: {data["most_traded_coins"].index(instrument_name)}
+                            BinanceController.save_logs_to_db(instrument_name, position, range_limits, db_logger)
                         elif current_n_trades >= limit[instrument_name] * 0.8:
-                            logger.error(f'Number of trades for {instrument_name} are more than the 80% of the capacity limit {limit[instrument_name]}; Position Coin: {data["most_traded_coins"].index(instrument_name)}')
+                            position = data["most_traded_coins"].index(instrument_name)
+                            logger.error(f'Number of trades for {instrument_name} are more than the 80% of the capacity limit {limit[instrument_name]}; Position Coin: {position}')
                         # elif current_n_trades >= limit[instrument_name] * 0.6:
                         #     logger.error(f'Number of trades for {instrument_name} are more than the 60% of the capacity limit {limit[instrument_name]}') 
 
@@ -239,15 +242,24 @@ class BinanceController:
         
         if pairs_not_traded == 0:
             logger.info('All pairs have been traded in the last minute')
+            
             if errors != 0:
-                logger.error(f'{errors}/{attempts} errors in the last minute for reaching Binance API')
+                msg = f'{errors}/{attempts} errors in the last minute for reaching Binance API'
+                logger.error(msg)
+                db_logger[DATABASE_API_ERROR].insert({'_id': datetime.now().isoformat(), 'msg': msg})
+
         elif pairs_traded == 0:
-            logger.error('SUPER CRITICAL: NO PAIRS HAS BEEN TRADED, POSSIBLE IP BAN')
+            msg = 'SUPER CRITICAL: NO PAIRS HAS BEEN TRADED, POSSIBLE IP BAN'
+            logger.error(msg)
+            db_logger[DATABASE_API_ERROR].insert({'_id': datetime.now().isoformat(), 'msg': msg})
+
         else:
             total_traded = pairs_traded + pairs_not_traded
             logger.info(f'{pairs_traded}/{total_traded} have been traded in the last minute')
             if errors != 0:
-                logger.error(f'{errors}/{attempts} errors in the last minute for reaching Binance API')
+                msg = f'{errors}/{attempts} errors in the last minute for reaching Binance API'
+                logger.error(msg)
+                db_logger[DATABASE_API_ERROR].insert({'_id': datetime.now().isoformat(), 'msg': msg})
         
         if database != None:
             trades_sorted = BinanceController.saveTrades_toDB(n_trades, prices, doc_db, database, trades_sorted, resp)
@@ -273,14 +285,90 @@ class BinanceController:
         return trades_sorted
     
 
-    def start_live_trades(self, coin_list=["BTC_USD"], logger=LoggingController.start_logging()):
+    def start_live_trades(self, coin_list, logger=LoggingController.start_logging()):
         
         now = datetime.now()
 
         sleep_seconds = BinanceController.isIncreaseSleepSeconds(now, logger)
         current_minute = now.minute
-        db = self.get_db('Market_Trades')
-        BinanceController.getStatistics_onTrades(coin_list=coin_list, database=db, logger=logger, start_minute=current_minute, sleep_seconds=sleep_seconds)
+        db = self.get_db(DATABASE_MARKET)
+        db_logger = self.get_db(DATABASE_LOGGING)
+        BinanceController.getStatistics_onTrades(coin_list=coin_list, database=db, db_logger=db_logger, logger=logger, start_minute=current_minute, sleep_seconds=sleep_seconds)
+
+    def save_logs_to_db(instrument_name, position, range_limits, db_logger):
+        
+        
+        now = datetime.now(tz=timezone.utc)
+        id = str(now.day) + "-" + str(now.month) + "-" + str(now.year)
+        last_id = list(db_logger[DATABASE_MARKET].find({'_id': id}))
+        #print(last_id)
+        # initialize range based on var "rabge_limits"
+        range_dict = {'Top_0_2': 0}
+        print(instrument_name, position)
+
+        # update current record
+        if last_id :
+            #last_id = list(last_id)
+            #print('last_id[0]: ', last_id[0])
+            # update keys of the current record
+            last_id[0]['total_errors'] += 1
+            if instrument_name in last_id[0]['errors_per_coin']:
+                last_id[0]['errors_per_coin'][instrument_name] += 1
+            else:
+                last_id[0]['errors_per_coin'][instrument_name] = 1
+
+            # update info on errors by position
+            errors_by_position = last_id[0]['errors_by_position']
+
+            #if instrument is bitcoin or etheurem
+            if instrument_name == 'BTCUSDT' or instrument_name == 'ETHUSDT':
+                last_id[0]['errors_by_position']['Top_0_2'] += 1
+            else:
+                for range_error in list(errors_by_position.keys()):
+                    range_split = range_error.split('_')
+                    min_range = range_split[1]
+                    max_range = range_split[2]
+                    current_range = range(int(min_range), int(max_range))
+                    if position in current_range:
+                        last_id[0]['errors_by_position'][range_error] += 1
+                        break
+            
+            last_id[0].pop('_id')
+            db_logger[DATABASE_MARKET].update_one({'_id': id}, {"$set": last_id[0]})
+        
+        else:
+            # initialize doc_id
+            range_dict = {'Top_0_2': 0}
+            for range_error in range_limits:
+                min_range = str(range_error[0][0])
+                max_range = str(range_error[0][-1] + 1)
+                key = 'Top_' + min_range + '_' + max_range
+                range_dict[key] = 0
+
+            if instrument_name == 'BTCUSDT' or instrument_name == 'ETHUSDT':
+                range_dict['Top_0_2'] += 1
+            else:
+                for range_error in list(range_dict.keys()):
+                    range_split = range_error.split('_')
+                    #print(range_split)
+                    min_range = int(range_split[1])
+                    max_range = int(range_split[2])
+                    #print(min_range)
+                    #print(max_range)
+                    current_range = range(min_range, max_range)
+                    #print(current_range)
+                    if position in current_range:
+                        range_dict[range_error] += 1
+                        break
+
+            doc_ = {"_id": id, "total_errors": 1, "errors_per_coin": {instrument_name: 1}, "errors_by_position": range_dict}
+            
+            db_logger[DATABASE_MARKET].insert_one(doc_)
+            
+
+
+        
+        pass
 
 
     def isIncreaseSleepSeconds(now, logger):
