@@ -84,7 +84,7 @@ class BinanceController:
     
 
     @staticmethod
-    def getStatistics_onTrades(coin_list=["BTCUSDT"], database=None, db_logger=None, logger=None, start_minute=datetime.now().minute, sleep_seconds=SLEEP_SECONDS):
+    def getStatistics_onTrades(coin_list, database=None, db_logger=None, logger=None, start_minute=datetime.now().minute, sleep_seconds=SLEEP_SECONDS):
         '''
         This API returns the last 150 transactions for a particular instrument
         '''
@@ -99,7 +99,11 @@ class BinanceController:
         # Overwrite coin_list variable
         f = open ('/backend/json/most_traded_coins.json', "r")
         data = json.loads(f.read())
-        coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
+        if coin_list != ["BTCUSDT", "ETHUSDT"]:
+            coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
+            coin_list.remove("BTCUSDT")
+            coin_list.remove("ETHUSDT")
+
         #coin_list[0]
         
         range_limits = [(range(0,10), 1000), (range(10,25),900), (range(25,50), 800), (range(50,100), 700), (range(100,200), 600), (range(200,500), 500)]
@@ -127,11 +131,15 @@ class BinanceController:
             slice_coins_to_trade = (slice_i % SLICES)+1
             #logger.info(f'Slice: {slice_coins_to_trade}/{SLICES}  ---  Fetched {COINS_PRIORITY} priority coins + {NUMBER_COINS_TO_TRADE} regular coins')
 
-            if slice_coins_to_trade == 1:
-                coin_list = data["most_traded_coins"][:COINS_PRIORITY] + data["most_traded_coins"][COINS_PRIORITY:NUMBER_COINS_TO_TRADE*slice_coins_to_trade+COINS_PRIORITY]
-            else:
-                coin_list = data["most_traded_coins"][:COINS_PRIORITY] + data["most_traded_coins"][NUMBER_COINS_TO_TRADE*(slice_coins_to_trade-1)+COINS_PRIORITY:NUMBER_COINS_TO_TRADE*slice_coins_to_trade+COINS_PRIORITY]
-            
+            # In case, I want to get data from all the coins except BTCUSDT and ETHUSDT
+            if coin_list != ["BTCUSDT", "ETHUSDT"]:
+                if slice_coins_to_trade == 1:
+                    coin_list = data["most_traded_coins"][:COINS_PRIORITY] + data["most_traded_coins"][COINS_PRIORITY:NUMBER_COINS_TO_TRADE*slice_coins_to_trade+COINS_PRIORITY]
+                else:
+                    coin_list = data["most_traded_coins"][:COINS_PRIORITY] + data["most_traded_coins"][NUMBER_COINS_TO_TRADE*(slice_coins_to_trade-1)+COINS_PRIORITY:NUMBER_COINS_TO_TRADE*slice_coins_to_trade+COINS_PRIORITY]
+                coin_list.remove("BTCUSDT")
+                coin_list.remove("ETHUSDT")
+            #logger.info(coin_list)
             try:
                 attempts += 1
                 trades = BinanceController.launch(coin_list=coin_list, logger=logger, limit=limit)
@@ -285,11 +293,11 @@ class BinanceController:
         return trades_sorted
     
 
-    def start_live_trades(self, coin_list, logger=LoggingController.start_logging()):
+    def start_live_trades(self, coin_list, logger=LoggingController.start_logging(), sleep_seconds=0.8):
         
         now = datetime.now()
 
-        sleep_seconds = BinanceController.isIncreaseSleepSeconds(now, logger)
+        sleep_seconds = BinanceController.isIncreaseSleepSeconds(now, sleep_seconds, logger)
         current_minute = now.minute
         db = self.get_db(DATABASE_MARKET)
         db_logger = self.get_db(DATABASE_LOGGING)
@@ -371,7 +379,7 @@ class BinanceController:
         pass
 
 
-    def isIncreaseSleepSeconds(now, logger):
+    def isIncreaseSleepSeconds(now, sleep_seconds, logger):
         '''
         This function increases the sleep seconds during midnight for
         allowing the update of the instrument in the Tracker Controller.
@@ -386,8 +394,5 @@ class BinanceController:
         if hour == 23 and minute >= 58:
             sleep_seconds = 3
             logger.info(f'Sleep seconds variable is switched to {sleep_seconds}')
-        else:
-            sleep_seconds = SLEEP_SECONDS
-            #logger.info(f'Sleep seconds variable is switched to {sleep_seconds}')
 
         return sleep_seconds
