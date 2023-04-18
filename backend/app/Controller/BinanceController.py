@@ -249,7 +249,7 @@ class BinanceController:
                 pairs_not_traded += 1
         
         if pairs_not_traded == 0:
-            logger.info('All pairs have been traded in the last minute')
+            #logger.info('All pairs have been traded in the last minute')
             
             if errors != 0:
                 msg = f'{errors}/{attempts} errors in the last minute for reaching Binance API'
