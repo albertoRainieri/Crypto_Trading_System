@@ -1,0 +1,1 @@
+python3 /backend/scripts/python-script-btc-eth.py

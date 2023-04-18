@@ -6,6 +6,8 @@
 # Start the second process
 /bin/bash /backend/scripts/python_process.sh &
 
+/bin/bash /backend/scripts/python_process_btc_eth.sh &
+
 # Wait for any process to exit
 wait -n
   

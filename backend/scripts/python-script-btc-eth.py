@@ -12,14 +12,10 @@ from constants.constants import *
 logger = LoggingController.start_logging()
 
 def main(db, crypto_instance, coin_list, logger):
+
   
   while True:
     crypto_instance.start_live_trades(coin_list=coin_list, logger=logger, sleep_seconds=SLEEP_SECONDS)
-
-
-       
-
-
     
 
 
@@ -31,7 +27,7 @@ if __name__ == '__main__':
     #crypto = CryptoController()
     binance = BinanceController()
 
-    # set coin_list to None, then all the most traded coins will be downloaded
-    coin_list = None
+    # these are the coins that will be traded in this process
+    coin_list = ["BTCUSDT", "ETHUSDT"]
     
     main(db=db, crypto_instance=binance, coin_list=coin_list, logger=logger)
