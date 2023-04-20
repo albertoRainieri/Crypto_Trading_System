@@ -5,5 +5,13 @@ mongodb/db
 *.log
 backend/logs/*
 analysis/database.py
+analysis/json/
+analysis/json_test
+analysis/json_old
+backend/test
+tracker/logs
+tracker/test
+# tracker/json
+!tracker/json/most_traded_coins_btc_eth.json
 nginx/conf/default
 tracker/json/most_traded_coins_sample.json

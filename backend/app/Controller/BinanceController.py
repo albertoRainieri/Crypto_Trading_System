@@ -86,8 +86,8 @@ class BinanceController:
     @staticmethod
     def getStatistics_onTrades(coin_list, database=None, db_logger=None, logger=None, start_minute=datetime.now().minute, sleep_seconds=SLEEP_SECONDS, isAggrTrades=True):
         '''
-        This API returns the last [0-1000] transactions for a particular instrument
-        this function can handle both "trades" and "aggTrades". "isAggrTrades" is the variable that determines it.
+        This API returns the last [0-1000] transactions for a set of instruments
+        this function can handle both "trades" and "aggTrades" binance methods. "isAggrTrades" is the variable that determines it.
         '''
 
         if isAggrTrades:
@@ -112,7 +112,7 @@ class BinanceController:
         limit = {}
 
         # JSON file
-        # Overwrite coin_list variable
+        # get list of instruments name based on their volume
         f = open ('/backend/json/most_traded_coins.json', "r")
         data = json.loads(f.read())
         if coin_list != ["BTCUSDT", "ETHUSDT"]:
@@ -121,7 +121,7 @@ class BinanceController:
             coin_list.remove("ETHUSDT")
 
         #coin_list[0]
-        
+        # determines the limit of number of the most recente trades for fetching the data from binance platform, priority is given to the most traded coins
         range_limits = [(range(0,10), 1000), (range(10,25),900), (range(25,50), 800), (range(50,100), 700), (range(100,200), 600), (range(200,500), 500)]
 
         for instrument_name, n_instrument in zip(coin_list, range(len(coin_list))):

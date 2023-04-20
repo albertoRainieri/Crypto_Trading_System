@@ -109,18 +109,24 @@ class TrackerController:
             # initialize these variables list for each coin
 
             volumes_24h_list = []
+            volumes_6h_list = []
+            volumes_3h_list = []
             volumes_60m_list = []
             volumes_30m_list = []
             volumes_15m_list = []
             volumes_5m_list = []
 
             buy_volume_perc_24h_list = []
+            buy_volume_perc_6h_list = []
+            buy_volume_perc_3h_list = []
             buy_volume_perc_60m_list = []
             buy_volume_perc_30m_list = []
             buy_volume_perc_15m_list = []
             buy_volume_perc_5m_list = []
 
             buy_trades_perc_24h_list = []
+            buy_trades_perc_6h_list = []
+            buy_trades_perc_3h_list = []
             buy_trades_perc_60m_list = []
             buy_trades_perc_30m_list = []
             buy_trades_perc_15m_list = []
@@ -224,6 +230,14 @@ class TrackerController:
                     buy_trades_perc_30m_list.append(doc_buy_trd)
                     buy_trades_perc_60m_list.append(doc_buy_trd)
 
+                    volumes_6h_list.append(doc_vol)
+                    buy_volume_perc_6h_list.append(doc_buy_vol)
+                    buy_trades_perc_6h_list.append(doc_buy_trd)
+                    
+                    volumes_3h_list.append(doc_vol)
+                    buy_volume_perc_3h_list.append(doc_buy_vol)
+                    buy_trades_perc_3h_list.append(doc_buy_trd)
+
                     continue
 
                 elif timestamp_trade > reference_15m_datetime:
@@ -239,6 +253,14 @@ class TrackerController:
                     buy_trades_perc_30m_list.append(doc_buy_trd)
                     buy_trades_perc_60m_list.append(doc_buy_trd)
 
+                    volumes_6h_list.append(doc_vol)
+                    buy_volume_perc_6h_list.append(doc_buy_vol)
+                    buy_trades_perc_6h_list.append(doc_buy_trd)
+                    
+                    volumes_3h_list.append(doc_vol)
+                    buy_volume_perc_3h_list.append(doc_buy_vol)
+                    buy_trades_perc_3h_list.append(doc_buy_trd)
+
                     continue
 
                 elif timestamp_trade > reference_30m_datetime:
@@ -251,6 +273,14 @@ class TrackerController:
                     buy_trades_perc_30m_list.append(doc_buy_trd)
                     buy_trades_perc_60m_list.append(doc_buy_trd)
 
+                    volumes_6h_list.append(doc_vol)
+                    buy_volume_perc_6h_list.append(doc_buy_vol)
+                    buy_trades_perc_6h_list.append(doc_buy_trd)
+                    
+                    volumes_3h_list.append(doc_vol)
+                    buy_volume_perc_3h_list.append(doc_buy_vol)
+                    buy_trades_perc_3h_list.append(doc_buy_trd)
+
                     continue
 
                 elif timestamp_trade > reference_1h_datetime:
@@ -258,6 +288,34 @@ class TrackerController:
                     volumes_60m_list.append(doc_vol)
                     buy_volume_perc_60m_list.append(doc_buy_vol)
                     buy_trades_perc_60m_list.append(doc_buy_trd)
+
+                    volumes_6h_list.append(doc_vol)
+                    buy_volume_perc_6h_list.append(doc_buy_vol)
+                    buy_trades_perc_6h_list.append(doc_buy_trd)
+                    
+                    volumes_3h_list.append(doc_vol)
+                    buy_volume_perc_3h_list.append(doc_buy_vol)
+                    buy_trades_perc_3h_list.append(doc_buy_trd)
+
+                    continue
+
+                elif timestamp_trade > reference_3h_datetime:
+                    
+                    volumes_6h_list.append(doc_vol)
+                    buy_volume_perc_6h_list.append(doc_buy_vol)
+                    buy_trades_perc_6h_list.append(doc_buy_trd)
+
+                    volumes_3h_list.append(doc_vol)
+                    buy_volume_perc_3h_list.append(doc_buy_vol)
+                    buy_trades_perc_3h_list.append(doc_buy_trd)
+
+                    continue
+                
+                elif timestamp_trade > reference_6h_datetime:
+                    
+                    volumes_6h_list.append(doc_vol)
+                    buy_volume_perc_6h_list.append(doc_buy_vol)
+                    buy_trades_perc_6h_list.append(doc_buy_trd)
 
                     continue
                 
@@ -285,8 +343,8 @@ class TrackerController:
                 price_variation_6h = round_((price_now - price_6h_ago) / price_6h_ago, 4)
             if price_1d_ago is not None:
                 price_variation_1d = round_((price_now - price_1d_ago) / price_1d_ago, 4)
-            
-            
+
+                
 
             if len(volumes_24h_list) != 0:
                 volumes_24h = round_(np.mean(volumes_24h_list) / avg_volume_1_month, 2) 
@@ -302,6 +360,36 @@ class TrackerController:
                 volumes_24h_std = None
                 buy_volume_perc_24h_std = None
                 buy_trades_perc_24h_std = None
+            
+            if len(volumes_6h_list) != 0:
+                volumes_6h = round_(np.mean(volumes_6h_list) / avg_volume_1_month, 2) 
+                buy_volume_perc_6h = round_(np.mean(buy_volume_perc_6h_list),2)
+                buy_trades_perc_6h = round_(np.mean(buy_trades_perc_6h_list),2)
+                volumes_6h_std = round_(np.std(volumes_6h_list) / std_volume_1_month, 2)
+                buy_volume_perc_6h_std = round_(np.std(buy_volume_perc_6h_list),2)
+                buy_trades_perc_6h_std = round_(np.std(buy_trades_perc_6h_list),2)
+            else:
+                volumes_6h = None
+                buy_volume_perc_6h = None
+                buy_trades_perc_6h = None
+                volumes_6h_std = None
+                buy_volume_perc_6h_std = None
+                buy_trades_perc_6h_std = None
+
+            if len(volumes_3h_list) != 0:
+                volumes_3h = round_(np.mean(volumes_3h_list) / avg_volume_1_month, 2) 
+                buy_volume_perc_3h = round_(np.mean(buy_volume_perc_3h_list),2)
+                buy_trades_perc_3h = round_(np.mean(buy_trades_perc_3h_list),2)
+                volumes_3h_std = round_(np.std(volumes_3h_list) / std_volume_1_month, 2)
+                buy_volume_perc_3h_std = round_(np.std(buy_volume_perc_3h_list),2)
+                buy_trades_perc_3h_std = round_(np.std(buy_trades_perc_3h_list),2)
+            else:
+                volumes_3h = None
+                buy_volume_perc_3h = None
+                buy_trades_perc_3h = None
+                volumes_3h_std = None
+                buy_volume_perc_3h_std = None
+                buy_trades_perc_3h_std = None
 
 
             if len(volumes_60m_list) != 0:
@@ -374,6 +462,8 @@ class TrackerController:
                       'vol_15m': volumes_15m, 'vol_15m_std': volumes_15m_std, 'buy_vol_15m': buy_volume_perc_15m, 'buy_vol_15m_std': buy_volume_perc_15m_std,'buy_trd_15m': buy_trades_perc_15m, 'buy_trd_15m_std': buy_trades_perc_15m_std,
                       'vol_30m': volumes_30m, 'vol_30m_std': volumes_30m_std, 'buy_vol_30m': buy_volume_perc_30m, 'buy_vol_30m_std': buy_volume_perc_30m_std,'buy_trd_30m': buy_trades_perc_30m, 'buy_trd_30m_std': buy_trades_perc_30m_std,
                       'vol_60m': volumes_60m, 'vol_60m_std': volumes_60m_std, 'buy_vol_60m': buy_volume_perc_60m, 'buy_vol_60m_std': buy_volume_perc_60m_std,'buy_trd_60m': buy_trades_perc_60m, 'buy_trd_60m_std': buy_trades_perc_60m_std,
+                      'vol_3h': volumes_3h, 'vol_3h_std': volumes_3h_std, 'buy_vol_3h': buy_volume_perc_3h, 'buy_vol_3h_std': buy_volume_perc_3h_std,'buy_trd_3h': buy_trades_perc_3h, 'buy_trd_3h_std': buy_trades_perc_3h_std,
+                      'vol_6h': volumes_6h, 'vol_6h_std': volumes_6h_std, 'buy_vol_6h': buy_volume_perc_6h, 'buy_vol_6h_std': buy_volume_perc_6h_std,'buy_trd_6h': buy_trades_perc_6h, 'buy_trd_6h_std': buy_trades_perc_6h_std,
                       'vol_24h': volumes_24h, 'vol_24h_std': volumes_24h_std, 'buy_vol_24h': buy_volume_perc_24h, 'buy_vol_24h_std': buy_volume_perc_24h_std,'buy_trd_24h': buy_trades_perc_24h, 'buy_trd_24h_std': buy_trades_perc_24h_std,
                       }
         

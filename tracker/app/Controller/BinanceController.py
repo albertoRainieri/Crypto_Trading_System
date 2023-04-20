@@ -104,7 +104,7 @@ class BinanceController:
         logger.info('The request to the API "ExchangeInfo" was succesfull')
         return res
 
-    def sort_pairs_by_volume(res, logger=LoggingController.start_logging(), tries=0):
+    def sort_pairs_by_volume(res, logger=LoggingController.start_logging(), tries=0, db_logger=None):
         '''
         This function takes the list of pair (from "ExchangeInfo" function) and gathers information for each one of them.
         Finally it creates a sorted list of pair by volume
@@ -143,7 +143,9 @@ class BinanceController:
                 print(f'{tries} tries')
                 result = BinanceController.sort_pairs_by_volume(res, logger, tries)
             else:
-                logger.error('Update of the list of instruments has failed')
+                msg = "VOLUMES UPDATE: async calls to Binance API failed"
+                logger.error(msg)
+                db_logger[DATABASE_API_ERROR].insert({'_id': datetime.now().isoformat(), 'msg': msg})
                 
                 
 
@@ -252,19 +254,23 @@ class BinanceController:
 
 
 
-    def main_sort_pairs_list(logger=LoggingController.start_logging()):
+    def main_sort_pairs_list(logger=LoggingController.start_logging(), db_logger=None):
         loop = BinanceController.get_or_create_eventloop()
         
         info = loop.run_until_complete(BinanceController.exchange_info(logger))
 
         if not info:
-            logger.error('Something went wrong with BinanceController.exchange_info')
+            msg = 'VOLUMES UPDATE: Something went wrong with BinanceController.exchange_info'
+            logger.error(msg)
+            db_logger[DATABASE_API_ERROR].insert({'_id': datetime.now().isoformat(), 'msg': msg})
             info = loop.run_until_complete(BinanceController.exchange_info())
         try:
-            BinanceController.sort_pairs_by_volume(info, logger)
+            BinanceController.sort_pairs_by_volume(info, logger, db_logger)
         except Exception as e:
             logger.error(e)
-            logger.error('Something wrong happened. Check the log above')
+            msg = 'VOLUMES UPDATE: Something went wrong with function "sort_pairs_by_volume'
+            logger.error(msg)
+            db_logger[DATABASE_API_ERROR].insert({'_id': datetime.now().isoformat(), 'msg': msg})
 
     def get_or_create_eventloop():
         try:
