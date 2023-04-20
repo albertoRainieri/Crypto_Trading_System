@@ -43,17 +43,17 @@ class BinanceController:
 
 
     #@timer_func
-    def launch(coin_list, logger, limit=1000):
-        trades = asyncio.run(BinanceController.getTrades(coin_list=coin_list, limit=limit, logger=logger))
+    def launch(coin_list, logger, limit, method):
+        trades = asyncio.run(BinanceController.getTrades(coin_list=coin_list, limit=limit, logger=logger, method=method))
         return trades
     
     @staticmethod
-    async def getTrades(coin_list, logger, limit):
+    async def getTrades(coin_list, logger, limit, method):
         urls= []
         trades = {}
             
         for coin in coin_list:
-            urls.append(BINANCE_ENDPOINT + 'trades?symbol=' + coin + '&limit=' + str(limit[coin]))
+            urls.append(BINANCE_ENDPOINT + method + '?symbol=' + coin + '&limit=' + str(limit[coin]))
         
         #logger.info(coin_list)
         try: 
@@ -84,10 +84,26 @@ class BinanceController:
     
 
     @staticmethod
-    def getStatistics_onTrades(coin_list, database=None, db_logger=None, logger=None, start_minute=datetime.now().minute, sleep_seconds=SLEEP_SECONDS):
+    def getStatistics_onTrades(coin_list, database=None, db_logger=None, logger=None, start_minute=datetime.now().minute, sleep_seconds=SLEEP_SECONDS, isAggrTrades=True):
         '''
-        This API returns the last 150 transactions for a particular instrument
+        This API returns the last [0-1000] transactions for a particular instrument
+        this function can handle both "trades" and "aggTrades". "isAggrTrades" is the variable that determines it.
         '''
+
+        if isAggrTrades:
+            TIME = "T"
+            PRICE = "p"
+            QUANTITY = "q"
+            ORDER = "m"
+            METHOD = 'aggTrades'
+        else:
+            TIME = "t"
+            PRICE = "p"
+            QUANTITY = "q"
+            ORDER = "isBuyerMaker"
+            METHOD = 'trades'
+
+
         resp = {}
         doc_db = {}
         prices = {}
@@ -142,7 +158,7 @@ class BinanceController:
             #logger.info(coin_list)
             try:
                 attempts += 1
-                trades = BinanceController.launch(coin_list=coin_list, logger=logger, limit=limit)
+                trades = BinanceController.launch(coin_list=coin_list, logger=logger, limit=limit, method=METHOD)
 
                 # if something goes wrong
                 if not trades:
@@ -176,9 +192,9 @@ class BinanceController:
                 # if db is None
                 if database == None:
                     for trade in trades[instrument_name]:
-                        datetime_trade = datetime.fromtimestamp(trade["t"]/1000)
+                        datetime_trade = datetime.fromtimestamp(trade[TIME]/1000)
                         if datetime_trade > datetime.fromisoformat(LAST_TRADE_TIMESTAMP):
-                            doc = {"order":trade["s"], "price": trade["p"], "quantity": trade["q"], "timestamp": datetime_trade, "trade_id": trade["d"]}
+                            doc = {"order":trade[ORDER], "price": trade[PRICE], "quantity": trade[QUANTITY], "timestamp": datetime_trade}
                             resp[instrument_name].append(doc)
 
                 # if db in not None. save the data
@@ -187,20 +203,19 @@ class BinanceController:
                     current_n_trades = 0
                     for trade in trades[instrument_name]:
                         try:
-                            datetime_trade = datetime.fromtimestamp(trade["time"]/1000)
+                            datetime_trade = datetime.fromtimestamp(trade[TIME]/1000)
                         except:
-                            #print('ERROR DATETIme: ', trade)
                             break
                         if datetime_trade > datetime.fromisoformat(LAST_TRADE_TIMESTAMP):
                             timestamps.append(datetime_trade)
                             n_trades[instrument_name] += 1
                             current_n_trades += 1
-                            if trade['isBuyerMaker']:
+                            if trade[ORDER]:
                                 order = 'SELL'
                             else:
                                 order = 'BUY'
                             
-                            doc = {"order":order, "price": trade["price"], "quantity": trade["qty"], "volume": trade["quoteQty"], "timestamp": datetime_trade, "trade_id": trade["id"]}
+                            doc = {"order":order, "price": trade[PRICE], "quantity": trade[QUANTITY], "timestamp": datetime_trade}
                             resp[instrument_name].append(doc)
 
                             # ANALYZE STATISTICS TO SAVE TO DB
@@ -211,10 +226,10 @@ class BinanceController:
                             
                             if doc["order"] == "BUY":
                                 doc_db[instrument_name]["buy_n"] += 1
-                                doc_db[instrument_name]["buy_volume"] += float(doc["volume"])
+                                doc_db[instrument_name]["buy_volume"] += float(doc["quantity"]) * float(doc['price'])
                             else:
                                 doc_db[instrument_name]["sell_n"] += 1
-                                doc_db[instrument_name]["sell_volume"] += float(doc["volume"])
+                                doc_db[instrument_name]["sell_volume"] += float(doc["quantity"]) * float(doc['price'])
 
 
                     if current_n_trades != 0:
@@ -274,7 +289,7 @@ class BinanceController:
         else:
             for instrument_name in prices:
                 trades_sorted[instrument_name]= sorted(resp[instrument_name], key=itemgetter('timestamp'), reverse=False)
-        return slice_i
+                
 
     #@timer_func
     def saveTrades_toDB(n_trades, prices, doc_db, database, trades_sorted, resp):
@@ -301,7 +316,7 @@ class BinanceController:
         current_minute = now.minute
         db = self.get_db(DATABASE_MARKET)
         db_logger = self.get_db(DATABASE_LOGGING)
-        BinanceController.getStatistics_onTrades(coin_list=coin_list, database=db, db_logger=db_logger, logger=logger, start_minute=current_minute, sleep_seconds=sleep_seconds)
+        BinanceController.getStatistics_onTrades(coin_list=coin_list, database=db, db_logger=db_logger, logger=logger, start_minute=current_minute, sleep_seconds=sleep_seconds, isAggrTrades=True)
 
     def save_logs_to_db(instrument_name, position, range_limits, db_logger):
         
@@ -316,14 +331,14 @@ class BinanceController:
 
         # update current record
         if last_id :
-            #last_id = list(last_id)
-            #print('last_id[0]: ', last_id[0])
-            # update keys of the current record
+
             last_id[0]['total_errors'] += 1
             if instrument_name in last_id[0]['errors_per_coin']:
                 last_id[0]['errors_per_coin'][instrument_name] += 1
+                last_id[0]['more_info'][instrument_name].append(datetime.now(tz=timezone.utc).isoformat())
             else:
                 last_id[0]['errors_per_coin'][instrument_name] = 1
+                last_id[0]['more_info'][instrument_name] = [(datetime.now(tz=timezone.utc).isoformat())]
 
             # update info on errors by position
             errors_by_position = last_id[0]['errors_by_position']
@@ -369,7 +384,9 @@ class BinanceController:
                         range_dict[range_error] += 1
                         break
 
-            doc_ = {"_id": id, "total_errors": 1, "errors_per_coin": {instrument_name: 1}, "errors_by_position": range_dict}
+            more_info = {instrument_name: [datetime.now(tz=timezone.utc).isoformat()]}
+
+            doc_ = {"_id": id, "total_errors": 1, "errors_by_position": range_dict, "errors_per_coin": {instrument_name: 1}, "more_info": more_info}
             
             db_logger[DATABASE_MARKET].insert_one(doc_)
             
