@@ -8,6 +8,8 @@
 
 /bin/bash /backend/scripts/python_process_btc_eth.sh &
 
+/bin/bash /backend/scripts/wss_python_process.sh &
+
 # Wait for any process to exit
 wait -n
   

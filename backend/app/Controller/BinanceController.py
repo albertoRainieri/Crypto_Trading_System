@@ -285,14 +285,14 @@ class BinanceController:
                 db_logger[DATABASE_API_ERROR].insert({'_id': datetime.now().isoformat(), 'msg': msg})
         
         if database != None:
-            trades_sorted = BinanceController.saveTrades_toDB(n_trades, prices, doc_db, database, trades_sorted, resp)
-        else:
-            for instrument_name in prices:
-                trades_sorted[instrument_name]= sorted(resp[instrument_name], key=itemgetter('timestamp'), reverse=False)
+            trades_sorted = BinanceController.saveTrades_toDB(n_trades, prices, doc_db, database, trades_sorted)
+        # else:
+        #     for instrument_name in prices:
+        #         trades_sorted[instrument_name]= sorted(resp[instrument_name], key=itemgetter('timestamp'), reverse=False)
                 
 
     #@timer_func
-    def saveTrades_toDB(n_trades, prices, doc_db, database, trades_sorted, resp):
+    def saveTrades_toDB(n_trades, prices, doc_db, database, trades_sorted):
         for instrument_name in n_trades:
             if n_trades[instrument_name] != 0:
                 #doc_db[instrument_name]["n_trades_p_s"]= round_(np.mean(n_trades_p_s_dict[instrument_name]),2)
@@ -303,9 +303,7 @@ class BinanceController:
                 doc_db[instrument_name]["buy_volume"] = round(doc_db[instrument_name]["buy_volume"],2)
                 doc_db[instrument_name]['_id']= datetime.now().isoformat()
                 database[instrument_name].insert(doc_db[instrument_name])
-                trades_sorted[instrument_name]= sorted(resp[instrument_name], key=itemgetter('timestamp'), reverse=False)
 
-        return trades_sorted
     
 
     def start_live_trades(self, coin_list, logger=LoggingController.start_logging(), sleep_seconds=0.8):

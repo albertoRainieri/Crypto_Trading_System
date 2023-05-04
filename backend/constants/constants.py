@@ -4,8 +4,10 @@ REST_UAT_SANDBOX_ENDPOINT="https://uat-api.3ona.co/v2/"
 WSS_UAT_SANDBOX_ENDPOINT_USER="wss://uat-stream.3ona.co/v2/user"
 WSS_UAT_SANDBOX_ENDPOINT_MARKET="wss://uat-stream.3ona.co/v2/market"
 WSS_PRODUCTION_USER="wss://stream.crypto.com/v2/user"
-WSS_PRODUCTION_MARKET="wss://stream.crypto.com/v2/market"
+#WSS_PRODUCTION_MARKET="wss://stream.crypto.com/v2/market"
+WSS_PRODUCTION_MARKET="wss://stream.binance.com:443"
 BINANCE_ENDPOINT = "https://api.binance.com/api/v3/"
+
 
 #DATABASE
 COLLECTION_TRADES_OVER_Q="Trades_over_q"
@@ -16,6 +18,7 @@ DATABASE_TRACKER="Tracker"
 DATABASE_BENCHMARK="Benchmark"
 DATABASE_LOGGING="Logging"
 DATABASE_API_ERROR="API_Error"
+DATABASE_MARKET_TEST="Market_Trades_Test"
 
 # TIMEFRAME
 MINUTE_1="1m"
