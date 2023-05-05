@@ -24,9 +24,12 @@ METHOD = 'aggTrades'
 
 def on_error(ws, error):
     logger.error(error)
+    #db_logger[DATABASE_API_ERROR].insert({'_id': datetime.now().isoformat(), 'msg': list(error)})
 
 def on_close(*args):
+    del os.environ['NOW']
     sleep(1)
+
     threading.Thread(target=close_connection).start()
     ws.run_forever()
 
@@ -40,11 +43,12 @@ def close_connection():
     current_hour = now.hour
     current_minute = now.minute
     # if it is currently midnight --> current_hour is 0
-    if current_hour < 12:
-        HOURS = 12 - current_hour
-    # if it is currently midday --> current_hour is 12
-    else:
-        HOURS = 24 - current_hour
+    # if current_hour < 12:
+    #     HOURS = 12 - current_hour
+    # # if it is currently midday --> current_hour is 12
+    # else:
+    #     HOURS = 24 - current_hour
+    HOURS = 24 - current_hour
 
     remaining_seconds = 60 - now.second + 1
     minutes_remaining = 59 - current_minute
@@ -57,17 +61,25 @@ def close_connection():
     logger.info(f'Next wss restart {wss_restart_timestamp}')
         
     sleep(total_remaining_seconds)
+    msg = "RESTARTING WSS CONNECTION"
+    db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
     logger.info('RESTARTING WSS CONNECTION')
     ws.close()
     
 
 def on_open(ws):
     # Combined streams arec acessed at /stream?streams=<streamName1>/<streamName2>/<streamName3>
+    if 'NOW' in os.environ:
+        del os.environ['NOW']
+
     global prices
     global doc_db
     global coin_list
 
-    logger.info('WSS CONNECTION STARTED')
+    msg = 'WSS CONNECTION STARTED'
+    logger.info(msg)
+    db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+
 
     f = open ('/backend/json/most_traded_coins.json', "r")
     data = json.loads(f.read())
@@ -95,6 +107,7 @@ def on_message(ws, message):
     data = json.loads(message)
 
     #get data and symbol
+    
     data = data['data']
     instrument_name = data['s']
 
@@ -183,6 +196,7 @@ def get_db(db_name):
     return db
 
 if __name__ == "__main__":
+    db_logger = get_db(DATABASE_LOGGING)
     database = get_db(DATABASE_MARKET_TEST)
     logger = LoggingController.start_logging()
     ws = websocket.WebSocketApp("wss://stream.binance.com:9443/stream?streams=",
