@@ -223,6 +223,7 @@ class TrackerController:
                 volumes_24h_list.append(doc_vol)
                 buy_volume_24h_list.append(doc_buy_vol)
                 buy_trades_24h_list.append(doc_buy_trd)
+                trades_24h_list.append(doc_trades)
 
                 timestamp_trade = datetime.fromisoformat(doc['_id'])
                 #logger.info(timestamp_trade)
