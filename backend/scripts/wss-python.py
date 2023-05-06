@@ -197,7 +197,7 @@ def get_db(db_name):
 
 if __name__ == "__main__":
     db_logger = get_db(DATABASE_LOGGING)
-    database = get_db(DATABASE_MARKET_TEST)
+    database = get_db(DATABASE_MARKET)
     logger = LoggingController.start_logging()
     ws = websocket.WebSocketApp("wss://stream.binance.com:9443/stream?streams=",
                               on_open = on_open,
