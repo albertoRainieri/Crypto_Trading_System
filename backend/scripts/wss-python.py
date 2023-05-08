@@ -23,8 +23,19 @@ METHOD = 'aggTrades'
 
 
 def on_error(ws, error):
-    logger.error(error)
-    #db_logger[DATABASE_API_ERROR].insert({'_id': datetime.now().isoformat(), 'msg': list(error)})
+    error = str(error)
+    logger.error(f'error is: {error}')
+    #db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': error})
+    
+
+    if error == "\'data\'":
+        second = datetime.now().second
+        remaining_second = 60 - second + 1
+        start_wss = datetime.now() + timedelta(seconds= remaining_second)
+        logger.info(f'Starting collecting data at: {start_wss}')
+        sleep(remaining_second)
+    
+    db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': error})
 
 def on_close(*args):
     del os.environ['NOW']
