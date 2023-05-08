@@ -23,19 +23,19 @@ METHOD = 'aggTrades'
 
 
 def on_error(ws, error):
-    error = str(error)
-    logger.error(f'error is: {error}')
-    #db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': error})
-    
+    error = str(error)    
 
     if error == "\'data\'":
+        logger.error(f'error is: {error}')
         second = datetime.now().second
         remaining_second = 60 - second + 1
         start_wss = datetime.now() + timedelta(seconds= remaining_second)
         logger.info(f'Starting collecting data at: {start_wss}')
         sleep(remaining_second)
-    
-    db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': error})
+        db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': 'WSS Started'})
+    else:
+        logger.error(f'error is: {error}')
+        db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': error})
 
 def on_close(*args):
     del os.environ['NOW']
@@ -87,9 +87,9 @@ def on_open(ws):
     global doc_db
     global coin_list
 
-    msg = 'WSS CONNECTION STARTED'
-    logger.info(msg)
-    db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+    # msg = 'WSS CONNECTION STARTED'
+    # logger.info(msg)
+    # db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
 
 
     f = open ('/backend/json/most_traded_coins.json', "r")
