@@ -228,6 +228,8 @@ class TrackerController:
                 timestamp_trade = datetime.fromisoformat(doc['_id'])
                 #logger.info(timestamp_trade)
                 # average volume 5m
+
+                # if timestamp trade is not older than 5 minutes
                 if timestamp_trade > reference_5m_datetime:
                     #logger.info(f'{timestamp_trade} --- {reference_5m_datetime}')
                     volumes_5m_list.append(doc_vol)
@@ -261,7 +263,8 @@ class TrackerController:
                     buy_trades_3h_list.append(doc_buy_trd)
 
                     continue
-
+                
+                # if timestamp trade is not older than 15 minutes
                 elif timestamp_trade > reference_15m_datetime:
                     volumes_15m_list.append(doc_vol)
                     volumes_30m_list.append(doc_vol)
@@ -290,7 +293,8 @@ class TrackerController:
                     buy_trades_3h_list.append(doc_buy_trd)
 
                     continue
-
+                
+                # if timestamp trade is not older than 30 minutes
                 elif timestamp_trade > reference_30m_datetime:
                     volumes_30m_list.append(doc_vol)
                     volumes_60m_list.append(doc_vol)
@@ -315,7 +319,8 @@ class TrackerController:
                     buy_trades_3h_list.append(doc_buy_trd)
 
                     continue
-
+                
+                # if timestamp trade is not older than 60 minutes
                 elif timestamp_trade > reference_1h_datetime:
                     
                     volumes_60m_list.append(doc_vol)
@@ -335,7 +340,8 @@ class TrackerController:
                     buy_trades_3h_list.append(doc_buy_trd)
 
                     continue
-
+                
+                # if timestamp trade is not older than 3 hours
                 elif timestamp_trade > reference_3h_datetime:
                     
                     volumes_6h_list.append(doc_vol)
@@ -351,6 +357,7 @@ class TrackerController:
 
                     continue
                 
+                # if timestamp trade is not older than 6 hours
                 elif timestamp_trade > reference_6h_datetime:
                     
                     volumes_6h_list.append(doc_vol)

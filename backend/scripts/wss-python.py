@@ -26,13 +26,8 @@ def on_error(ws, error):
     error = str(error)    
 
     if error == "\'data\'":
-        logger.error(f'error is: {error}')
-        second = datetime.now().second
-        remaining_second = 60 - second + 1
-        start_wss = datetime.now() + timedelta(seconds= remaining_second)
-        logger.info(f'Starting collecting data at: {start_wss}')
-        sleep(remaining_second)
-        db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': 'WSS Started'})
+        pass
+        
     else:
         logger.error(f'error is: {error}')
         db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': error})
@@ -40,27 +35,25 @@ def on_error(ws, error):
 def on_close(*args):
     del os.environ['NOW']
     sleep(1)
+    msg = "on_close: Closing Wss Connection"
+    db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+    logger.info(msg)
 
-    threading.Thread(target=close_connection).start()
+    threading.Thread(target=restart_connection).start()
     ws.run_forever()
 
-def close_connection():
+def restart_connection():
     '''
     compute total seconds until next wss restart.
-    This function restarts the wss connection every 12 hours
+    This function restarts the wss connection every 24 hours
     '''
 
     now = datetime.now()
     current_hour = now.hour
     current_minute = now.minute
-    # if it is currently midnight --> current_hour is 0
-    # if current_hour < 12:
-    #     HOURS = 12 - current_hour
-    # # if it is currently midday --> current_hour is 12
-    # else:
-    #     HOURS = 24 - current_hour
-    HOURS = 24 - current_hour
 
+    # compute how many seconds until next restart
+    HOURS = 24 - current_hour
     remaining_seconds = 60 - now.second + 1
     minutes_remaining = 59 - current_minute
     hours_remaining = HOURS - 1
@@ -68,13 +61,13 @@ def close_connection():
     # total seconds until next wss restart
     total_remaining_seconds = remaining_seconds + minutes_remaining*60 + hours_remaining*60*60
     
+    # define timestamp for next wss restart
     wss_restart_timestamp = (now + timedelta(seconds=total_remaining_seconds)).isoformat()
-    logger.info(f'Next wss restart {wss_restart_timestamp}')
-        
+    logger.info(f'on_restart_connection: Next wss restart {wss_restart_timestamp}')
+    
+    
     sleep(total_remaining_seconds)
-    msg = "RESTARTING WSS CONNECTION"
-    db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
-    logger.info('RESTARTING WSS CONNECTION')
+    #sleep(70)
     ws.close()
     
 
@@ -91,6 +84,13 @@ def on_open(ws):
     # logger.info(msg)
     # db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
 
+
+    second = datetime.now().second
+    remaining_second = 60 - second
+    start_wss = datetime.now() + timedelta(seconds= remaining_second)
+    msg = f'on_open: Wss Started. Starting collecting data at: {start_wss}'
+    logger.info(msg)
+    sleep(remaining_second)
 
     f = open ('/backend/json/most_traded_coins.json', "r")
     data = json.loads(f.read())
@@ -216,7 +216,7 @@ if __name__ == "__main__":
                               on_error = on_error,
                               on_close = on_close
                               )
-    threading.Thread(target=close_connection).start()
+    threading.Thread(target=restart_connection).start()
     ws.run_forever()
 
 
