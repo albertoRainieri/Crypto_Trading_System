@@ -95,7 +95,7 @@ def on_open(ws):
 
     f = open ('/backend/json/most_traded_coins.json', "r")
     data = json.loads(f.read())
-    coin_list = data["most_traded_coins"][:300]
+    coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
     doc_db, prices = initializeVariables(coin_list)
     
 

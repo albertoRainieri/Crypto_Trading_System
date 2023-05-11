@@ -6,8 +6,9 @@ from database.DatabaseConnection import DatabaseConnection
 from app.Controller.LoggingController import LoggingController
 from app.Controller.TrackerController import TrackerController
 from datetime import datetime
+from constants.constants import *
 
-def main(db, logger):
+def main(db, db_logger, logger):
     '''
     This function tracks the statistics of the most traded pairs each minute
     '''
@@ -18,8 +19,8 @@ def main(db, logger):
         now=datetime.now()
         second = now.second
 
-        if second == 5:
-            TrackerController.getData(db_trades=db, logger=logger)
+        if second == 1:
+            TrackerController.getData(db_trades=db, logger=logger, db_logger=db_logger)
         sleep(0.9)
 
     
@@ -27,6 +28,7 @@ def main(db, logger):
 if __name__ == '__main__':
     db = DatabaseConnection()
     logger = LoggingController.start_logging()
-    db = db.get_db('Market_Trades')
+    db_market = db.get_db('Market_Trades')
+    db_logger = db.get_db(DATABASE_LOGGING)
     sleep(2)
-    main(db=db, logger=logger)
+    main(db=db_market, db_logger=db_logger, logger=logger)

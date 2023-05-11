@@ -15,7 +15,7 @@ class TrackerController:
         pass
       
     # Retrieve data from db and compute statistics
-    def getData(db_trades, logger):
+    def getData(db_trades, logger, db_logger):
         # f = open ('/tracker/json/most_traded_coin_list.json', "r")
         # data = json.loads(f.read())
         # coin_list = data["most_traded_coin_list"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
@@ -25,7 +25,7 @@ class TrackerController:
         #TrackerController.db_operations(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, logger=logger)
 
         try:
-            TrackerController.db_operations(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, logger=logger)
+            TrackerController.db_operations(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, logger=logger, db_logger=db_logger)
         except Exception as e:
             logger.error(e)
             logger.error('Something Wrong Happened. Check the logs above')
@@ -52,7 +52,7 @@ class TrackerController:
 
       
     #@timer_func
-    def db_operations(db_trades, db_tracker, db_benchmark, logger):
+    def db_operations(db_trades, db_tracker, db_benchmark, logger, db_logger):
         now = datetime.now()
         reference_1day_datetime = now - timedelta(days=1)
         reference_6h_datetime = now - timedelta(hours=6)
@@ -61,7 +61,7 @@ class TrackerController:
         reference_30m_datetime = now - timedelta(minutes=30)
         reference_15m_datetime = now - timedelta(minutes=15)
         reference_5m_datetime =  now - timedelta(minutes=5)
-        reference_1m_datetime = now - timedelta(seconds=50)
+        reference_10s_datetime = now - timedelta(seconds=10)
 
         
         reference_1day = reference_1day_datetime.isoformat()
@@ -87,7 +87,7 @@ class TrackerController:
         coins_list = db_trades.list_collection_names()
         f = open ('/tracker/json/most_traded_coins.json', "r")
         data = json.loads(f.read())
-        coin_list_subset = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
+        coin_list_subset = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
         # logger.info(coin_list_subset)
         # logger.info(len(coin_list_subset))
         
@@ -164,7 +164,7 @@ class TrackerController:
             last_timestamp = docs[-1]['_id']
             last_datetime = datetime.fromisoformat(last_timestamp)
 
-            if last_datetime > reference_1m_datetime:
+            if last_datetime > reference_10s_datetime:
                 
                 i = 1
                 for doc in docs:
@@ -501,5 +501,11 @@ class TrackerController:
                 #logger.info(doc_db)
 
                 db_tracker[coin].insert(doc_db)
+
+            # if Bitcoin was not retrieved 
+            elif coin == 'BTCUSDT':
+                msg = 'No trade was saved in Market_Trades in the last minute'
+                logger.info(msg)
+                db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
 
         
