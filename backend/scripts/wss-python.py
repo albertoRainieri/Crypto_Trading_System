@@ -33,7 +33,8 @@ def on_error(ws, error):
         db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': error})
 
 def on_close(*args):
-    del os.environ['NOW']
+    if 'NOW' in os.environ:
+        del os.environ['NOW']
     sleep(1)
     msg = "on_close: Closing Wss Connection"
     db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
