@@ -141,14 +141,15 @@ def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_
                         events += 1
                         limit_window  = datetime_obs + timedelta(minutes=minutes_price_windows)
                         # get all the price changes in the "minutes_price_windows"
-                        for obs_price in data[coin][index:index+minutes_price_windows]:
-                            change = (obs_price['price'] - initial_price)/initial_price
-                            if not np.isnan(change):
-                                price_changes[coin].append(change)
+                        for obs, obs_i in zip(data[coin][index:index+minutes_price_windows], range(minutes_price_windows)):
+                            # if actual observation has occurred in the last minute and 10 seconds from last observation:
+                            if datetime.fromisoformat(data[coin][index+obs_i]['_id']) - datetime.fromisoformat(data[coin][index+obs_i-1]['_id']) <= timedelta(minutes=1,seconds=10):
+                                change = (obs['price'] - initial_price)/initial_price
+                                if not np.isnan(change):
+                                    price_changes[coin].append(change)
 
 
     total_changes = []
-    summary = {}
     coins = []
     for coin in price_changes:
         if len(price_changes[coin]) > 0:
@@ -179,16 +180,21 @@ def show_output(shared_data):
     shared_data = json.loads(shared_data.value)
     output = {}
     for key in list(shared_data.keys()):
-        if key is not 'coins' or key is not 'events' and len(shared_data[key]['coins']) > 0:
-            shared_data[key]['mean'] = np.array(shared_data[key]['mean'])
-            shared_data[key]['std'] = np.array(shared_data[key]['std'])
+        if key is not 'coins' or key is not 'events':
+            if sum(shared_data[key]['events']) > 0:
+                shared_data[key]['mean'] = np.array(shared_data[key]['mean'])
+                shared_data[key]['std'] = np.array(shared_data[key]['std'])
 
-            shared_data[key]['mean'] = shared_data[key]['mean'][np.isfinite(shared_data[key]['mean'])]
-            shared_data[key]['std'] = shared_data[key]['std'][np.isfinite(shared_data[key]['std'])]
+                isfinite = np.isfinite(shared_data[key]['mean'])
+                shared_data[key]['mean'] = shared_data[key]['mean'][isfinite]
+                shared_data[key]['std'] = shared_data[key]['std'][isfinite]
+                shared_data[key]['events'] = np.array(shared_data[key]['events'])[isfinite]
 
-            mean_weighted = sum(shared_data[key]['mean']*shared_data[key]['events']) / sum(shared_data[key]['events'])
-            std_weighted = sum(shared_data[key]['std']*shared_data[key]['events']) / sum(shared_data[key]['events'])
-            output[key] = {'mean': mean_weighted, 'std': std_weighted, 'n_coins': len(shared_data[key]['coins']), 'n_events': sum(shared_data[key]['events'])}
+                mean_weighted = sum(shared_data[key]['mean']*shared_data[key]['events']) / sum(shared_data[key]['events'])
+                std_weighted = sum(shared_data[key]['std']*shared_data[key]['events']) / sum(shared_data[key]['events'])
+                output[key] = {'mean': mean_weighted, 'std': std_weighted, 'n_coins': len(shared_data[key]['coins']), 'n_events': sum(shared_data[key]['events'])}
+            else:
+                output[key] = {'mean': None, 'std': None, 'n_coins': 0, 'n_events': 0}
 
     return output
 
@@ -286,7 +292,7 @@ def wrap_analyze_events(data, list_buy_vol, list_vol, list_minutes, list_event_b
     list_event_buy_volume --> LIST: [0.55, 0.6, 0.7, 0.8, 0.9]
     list_event_volume --> LIST: [2, 3, 4, 5, 6]
     '''
-    total_combinations = len(list_buy_vol) * len(list_vol) * len(list_minutes) * len(list_event_volume)
+    total_combinations = len(list_buy_vol) * len(list_vol) * len(list_minutes) * len(list_event_volume) * len(list_event_buy_volume)
     print(f'{total_combinations} total combinations')
     resp = {}
     t1 = time()
@@ -328,7 +334,10 @@ def wrap_analyze_events(data, list_buy_vol, list_vol, list_minutes, list_event_b
 
 
 def data_preparation(data, n_slices = 10):
-
+    '''
+    This function prepares the input for the function "wrap_analyze_events_multiprocessing", input "data".
+    In particular, this function outputs a list of sliced_data that will be fed for multiprocessing analysis
+    '''
     # CONSTANTS
     data_arguments = []
     coins_list = list(data.keys())
@@ -353,6 +362,15 @@ def data_preparation(data, n_slices = 10):
         for coin in coins_list[step * n_slices:]:
             data_i[coin] = data[coin]
         data_arguments.append(data_i)
+
+    total_coins = 0
+    start_interval = data['BTCUSDT'][0]['_id']
+    end_interval = data['BTCUSDT'][-1]['_id']
+    for slice_coins in data_arguments:
+        total_coins += len(slice_coins)
+
+
+    print(f'{total_coins} coins will be analyzed from {start_interval} to {end_interval}')
 
     del data
     return data_arguments
