@@ -10,6 +10,8 @@ from scipy.stats import pearsonr
 import pandas as pd
 from time import time
 from random import randint
+from multiprocessing import Process
+from multiprocessing import Lock, Pool, Manager
 
 
 def round_(number, decimal):
@@ -101,7 +103,7 @@ def check_correlation(data, field_volume, field_price, coin = None, limit_volume
         return correlations, pvalues
 
 
-def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_buy_volume, event_volume):
+def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_buy_volume, event_volume, multiprocessing=True):
     '''
     This function analyzes what happens in terms of price changes after certain events
 
@@ -157,11 +159,14 @@ def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_
         price_changes[coin] = np.mean(price_changes[coin])
         if not np.isnan(price_changes[coin]):
             total_changes.append(price_changes[coin])
+    
+    if multiprocessing:
+        return total_changes, events, coins
 
-    mean_total_changes = np.mean(total_changes)*100
-    std_total_changes = np.std(total_changes)*100
-
-    return mean_total_changes, std_total_changes, events, coins
+    else:
+        mean_total_changes = np.mean(total_changes)*100
+        std_total_changes = np.std(total_changes)*100
+        return mean_total_changes, std_total_changes, events, coins
 
 
 #['_id',
@@ -181,18 +186,16 @@ def show_output(shared_data):
     output = {}
     for key in list(shared_data.keys()):
         if key is not 'coins' or key is not 'events':
-            if sum(shared_data[key]['events']) > 0:
-                shared_data[key]['mean'] = np.array(shared_data[key]['mean'])
-                shared_data[key]['std'] = np.array(shared_data[key]['std'])
+            if shared_data[key]['events'] > 0:
+                shared_data[key]['price_changes'] = np.array(shared_data[key]['price_changes'])
 
-                isfinite = np.isfinite(shared_data[key]['mean'])
-                shared_data[key]['mean'] = shared_data[key]['mean'][isfinite]
-                shared_data[key]['std'] = shared_data[key]['std'][isfinite]
-                shared_data[key]['events'] = np.array(shared_data[key]['events'])[isfinite]
+                isfinite = np.isfinite(shared_data[key]['price_changes'])
+                shared_data[key]['price_changes'] = shared_data[key]['price_changes'][isfinite]
 
-                mean_weighted = sum(shared_data[key]['mean']*shared_data[key]['events']) / sum(shared_data[key]['events'])
-                std_weighted = sum(shared_data[key]['std']*shared_data[key]['events']) / sum(shared_data[key]['events'])
-                output[key] = {'mean': mean_weighted, 'std': std_weighted, 'n_coins': len(shared_data[key]['coins']), 'n_events': sum(shared_data[key]['events'])}
+                mean_weighted = np.mean(shared_data[key]['price_changes'])*100
+                std_weighted = np.std(shared_data[key]['price_changes'])*100
+
+                output[key] = {'mean': mean_weighted, 'std': std_weighted, 'n_coins': len(shared_data[key]['coins']), 'n_events': shared_data[key]['events']}
             else:
                 output[key] = {'mean': None, 'std': None, 'n_coins': 0, 'n_events': 0}
 
@@ -207,6 +210,7 @@ def wrap_analyze_events_multiprocessing(data, data_i, list_buy_vol, list_vol, li
     list_minutes --> LIST: [5,10, ..., 60, ..., 60*24]
     list_event_buy_volume --> LIST: [0.55, 0.6, 0.7, 0.8, 0.9]
     list_event_volume --> LIST: [2, 3, 4, 5, 6]
+    it's been tested and it provides the same result of wrap_analyze_events but much faster
     '''
 
     
@@ -222,14 +226,14 @@ def wrap_analyze_events_multiprocessing(data, data_i, list_buy_vol, list_vol, li
                 for event_buy_volume in  list_event_buy_volume:
                     for event_volume in list_event_volume:
                         
-                        mean_total_changes, std_total_changes, events, coins = analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_buy_volume, event_volume)
+                        price_changes, events, coins = analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_buy_volume, event_volume)
                         
                         # there was at least an event. let's save it into the json
                         key = str(buy_vol_field) + ':' + str(event_buy_volume) + '/' + str(vol_field) + ':' + str(event_volume) + '/' + 'timeframe:' + str(minutes_price_windows)
                         temp[key] = {}
 
-                        temp[key]['mean'] = [mean_total_changes]
-                        temp[key]['std'] = [std_total_changes]
+                        temp[key]['price_changes'] = price_changes
+                        #temp[key]['std'] = [std_total_changes]
                         temp[key]['coins'] = coins
                         temp[key]['events'] = events
 
@@ -244,22 +248,59 @@ def wrap_analyze_events_multiprocessing(data, data_i, list_buy_vol, list_vol, li
             if key not in resp:
                 resp[key] = {}
 
-            if 'mean' in resp[key]:
-                for mean in temp[key]['mean']:        
-                    resp[key]['mean'].append(mean)
-                for std in temp[key]['std']:
-                    resp[key]['std'].append(std)
-                resp[key]['events'].append(temp[key]['events'])
+            if 'price_changes' in resp[key]:
+                for price_change in temp[key]['price_changes']:        
+                    resp[key]['price_changes'].append(price_change)
+                resp[key]['events'] += temp[key]['events']
                 for coin in temp[key]['coins']:
                     if coin not in resp[key]['coins']:
                         resp[key]['coins'].append(coin)
             else:
-                resp[key]['mean'] = temp[key]['mean']
-                resp[key]['std'] = temp[key]['std'] 
+                resp[key]['price_changes'] = temp[key]['price_changes']
                 resp[key]['coins'] = temp[key]['coins']
-                resp[key]['events'] = [temp[key]['events']]
+                resp[key]['events'] = temp[key]['events']
 
         shared_data.value = json.dumps(resp)
+
+def start_wrap_analyze_events_multiprocessing(data, list_buy_vol, list_vol, list_minutes, list_event_buy_volume, list_event_volume, start_interval, end_interval, n_processes):
+    '''
+    this function starts "wrap_analyze_events_multiprocessing" function
+    '''
+    t1 = time()
+    data_arguments = data_preparation(data, n_processes = n_processes)
+    total_combinations = len(list_buy_vol) * len(list_vol) * len(list_minutes) * len(list_event_volume) * len(list_event_buy_volume)
+    print('total_combinantions', ': ', total_combinations)
+    path = "/home/alberto/Docker/Trading/analysis/analysis_json/"
+
+    now = datetime.now()
+    now_year = str(now.year)
+    now_month = str(now.month)
+    now_day = str(now.day)
+    now_hour = str(now.hour)
+    now_minute = str(now.minute)
+    file_path = path + now_month+now_day+ '_' + now_hour+now_minute + '.json'
+
+    manager = Manager()
+    # Create shared memory for JSON data
+    shared_data = manager.Value(str, json.dumps({}))
+    lock = Manager().Lock()
+
+
+    # Create a multiprocessing Pool
+    pool = Pool()
+
+    # Execute the function in parallel
+    pool.starmap(wrap_analyze_events_multiprocessing, [(arg, arg_i, list_buy_vol, list_vol, list_minutes,
+                                        list_event_buy_volume, list_event_volume, start_interval,
+                                        end_interval, file_path, lock, shared_data) for arg, arg_i in zip(data_arguments, range(1,len(data_arguments)+1))])
+
+    # Close the pool
+    pool.close()
+    pool.join()
+    t2 = time()
+    print(t2-t1, ' seconds')
+
+    return shared_data
 
 
 def log_wrap_analize(total_combinations, i, task_25, task_50, task_75):
@@ -283,7 +324,7 @@ def log_wrap_analize(total_combinations, i, task_25, task_50, task_75):
     
 
 
-def wrap_analyze_events(data, list_buy_vol, list_vol, list_minutes, list_event_buy_volume, list_event_volume, start_interval, end_interval):
+def wrap_analyze_events(data, list_buy_vol, list_vol, list_minutes, list_event_buy_volume, list_event_volume, start_interval, end_interval, multiprocessing=False):
     '''
     this function summarizes the events for every field of vol_x, buy_vol_x and a list of timeframes.
     list_buy_vol --> LIST: ['buy_vol_5m, ..., 'buy_vol_1d']
@@ -291,6 +332,7 @@ def wrap_analyze_events(data, list_buy_vol, list_vol, list_minutes, list_event_b
     list_minutes --> LIST: [5,10, ..., 60, ..., 60*24]
     list_event_buy_volume --> LIST: [0.55, 0.6, 0.7, 0.8, 0.9]
     list_event_volume --> LIST: [2, 3, 4, 5, 6]
+    this functions does not use multiprocessing
     '''
     total_combinations = len(list_buy_vol) * len(list_vol) * len(list_minutes) * len(list_event_volume) * len(list_event_buy_volume)
     print(f'{total_combinations} total combinations')
@@ -312,7 +354,7 @@ def wrap_analyze_events(data, list_buy_vol, list_vol, list_minutes, list_event_b
                     for event_volume in list_event_volume:
                         i += 1
                         task_25, task_50, task_75 = log_wrap_analize(total_combinations, i, task_25, task_50, task_75)
-                        mean_total_changes, std_total_changes, events, coins = analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_buy_volume, event_volume)
+                        mean_total_changes, std_total_changes, events, coins = analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_buy_volume, event_volume, multiprocessing)
                         if mean_total_changes == None:
                             continue
 
@@ -333,7 +375,7 @@ def wrap_analyze_events(data, list_buy_vol, list_vol, list_minutes, list_event_b
     return resp
 
 
-def data_preparation(data, n_slices = 10):
+def data_preparation(data, n_processes = 5):
     '''
     This function prepares the input for the function "wrap_analyze_events_multiprocessing", input "data".
     In particular, this function outputs a list of sliced_data that will be fed for multiprocessing analysis
@@ -343,11 +385,11 @@ def data_preparation(data, n_slices = 10):
     coins_list = list(data.keys())
     coins_slices = []
     n_coins = len(data)
-    step = int(n_coins / n_slices)
+    step = int(n_coins / n_processes)
     slice_start = 0
     slice_end = slice_start + step
 
-    for i in range(n_slices):
+    for i in range(n_processes):
         data_i = {}
         for coin in coins_list[slice_start:slice_end]:
             data_i[coin] = data[coin]
@@ -357,9 +399,9 @@ def data_preparation(data, n_slices = 10):
         slice_start = slice_end
         slice_end += step
     
-    if step * n_slices != len(list(data.keys())):
+    if step * n_processes != len(list(data.keys())):
         data_i = {}
-        for coin in coins_list[step * n_slices:]:
+        for coin in coins_list[step * n_processes:]:
             data_i[coin] = data[coin]
         data_arguments.append(data_i)
 
