@@ -195,9 +195,9 @@ def show_output(shared_data):
                 mean_weighted = np.mean(shared_data[key]['price_changes'])*100
                 std_weighted = np.std(shared_data[key]['price_changes'])*100
 
-                output[key] = {'mean': mean_weighted, 'std': std_weighted, 'n_coins': len(shared_data[key]['coins']), 'n_events': shared_data[key]['events']}
+                output[key] = {'mean': mean_weighted, 'std': std_weighted, 'lower_bound': mean_weighted - std_weighted, 'n_coins': len(shared_data[key]['coins']), 'n_events': shared_data[key]['events']}
             else:
-                output[key] = {'mean': None, 'std': None, 'n_coins': 0, 'n_events': 0}
+                output[key] = {'mean': None, 'std': None, 'lower_bound': None, 'n_coins': 0, 'n_events': 0}
 
     return output
 
@@ -282,6 +282,7 @@ def start_wrap_analyze_events_multiprocessing(data, list_buy_vol, list_vol, list
 
     manager = Manager()
     # Create shared memory for JSON data
+    # TODO: load files form json_analysis
     shared_data = manager.Value(str, json.dumps({}))
     lock = Manager().Lock()
 
@@ -299,6 +300,8 @@ def start_wrap_analyze_events_multiprocessing(data, list_buy_vol, list_vol, list
     pool.join()
     t2 = time()
     print(t2-t1, ' seconds')
+
+    # TODO: save file to json_analysis
 
     return shared_data
 
@@ -483,3 +486,15 @@ def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=d
     df = df.transpose()
 
     return data, df
+
+def get_volume_info():
+    ENDPOINT = 'https://algocrypto.eu'
+    ENDPOINT = 'http://localhost'
+
+    method_most_traded_coins = '/analysis/get-volumeinfo'
+
+    url_mosttradedcoins = ENDPOINT + method_most_traded_coins
+    response = requests.get(url_mosttradedcoins)
+    print(f'StatusCode for getting get-volumeinfo: {response.status_code}')
+    most_traded_coins = response.json()
+    return most_traded_coins
