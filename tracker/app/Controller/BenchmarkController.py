@@ -48,7 +48,9 @@ class Benchmark:
         coins_list = db_market.list_collection_names()
         f = open ('/tracker/json/most_traded_coins.json', "r")
         data = json.loads(f.read())
-        coin_list_subset = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
+        coin_list_subset = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
+        len_coin_list_subset = len(coin_list_subset)
+        logger.info(f'len of coin_list_subset in benchmark: {len_coin_list_subset}')
         #coin_list_subset = ['BTC_USD']
 
         now_datetime = datetime.now()
