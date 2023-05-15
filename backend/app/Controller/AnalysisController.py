@@ -34,17 +34,19 @@ class AnalysisController:
     
 
     def getMostTradedCoins():
+        #TODO: UPDATE TO NUMBER_COINS_TO_TRADE_WSS AT 01/06
         f = open ('/backend/json/most_traded_coins.json', "r")
         data = json.loads(f.read())
-        coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
+        coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
         coin_list = {"most_traded_coins": coin_list}
 
         return JSONResponse(json.dumps(coin_list))
     
     def getVolumeInfo():
+        #TODO: UPDATE TO NUMBER_COINS_TO_TRADE_WSS AT 01/06
         f = open ('/backend/json/sorted_instruments.json', "r")
         data = json.loads(f.read())
-        coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
+        coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
         volume_info = {"most_traded_coins": coin_list}
 
         return JSONResponse(json.dumps(volume_info))
