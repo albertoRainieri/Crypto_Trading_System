@@ -194,7 +194,7 @@ class BinanceController:
             id_benchmark = cursor_benchmark[0]['_id']
 
             # if the coin from db is present in the list updated "most_traded_coins_list", then it will be marked as a live coin
-            if coin in most_traded_coins_list[:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]:
+            if coin in most_traded_coins_list[:NUMBER_COINS_TO_TRADE_WSS]:
                 
                 # In case it is not the first time to compute this statistics on db benchmark
                 if 'Best_Trades' in cursor_benchmark[0]:
