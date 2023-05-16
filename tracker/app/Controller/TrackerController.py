@@ -18,7 +18,6 @@ class TrackerController:
     def getData(db_trades, logger, db_logger):
         # f = open ('/tracker/json/most_traded_coin_list.json', "r")
         # data = json.loads(f.read())
-        # coin_list = data["most_traded_coin_list"][:NUMBER_COINS_TO_TRADE*SLICES+COINS_PRIORITY]
         db = DatabaseConnection()
         db_tracker = db.get_db(database=DATABASE_TRACKER)
         db_benchmark = db.get_db(database=DATABASE_BENCHMARK)

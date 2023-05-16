@@ -27,6 +27,8 @@ class Benchmark:
         This function tries to be as much efficient as possible
         I don't compute everytime the average of a timeframe, but I compute and store the average volume of a day
         and I store it in a json
+        This functions gets as input the data from market_db 
+        and then computes the average for each day (available in db_market) not only the last day
         '''
         
         # compute reference time
