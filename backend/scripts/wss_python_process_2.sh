@@ -1,0 +1,1 @@
+python3 /backend/scripts/wss-python_2.py

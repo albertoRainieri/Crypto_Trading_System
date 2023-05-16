@@ -86,7 +86,8 @@ class TrackerController:
         coins_list = db_trades.list_collection_names()
         f = open ('/tracker/json/most_traded_coins.json', "r")
         data = json.loads(f.read())
-        coin_list_subset = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
+        #coin_list_subset = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
+        coin_list_subset = data["most_traded_coins"]
         # logger.info(coin_list_subset)
         # logger.info(len(coin_list_subset))
         
@@ -111,9 +112,9 @@ class TrackerController:
                 benchmark_days = 10 # how many days the coin must have been in the "most_traded_coins"
 
                 try:
-                    list_last_5_trades = volume_coin[0]['Last_30_Trades']['list_last_30_trades'][-benchmark_days:]
+                    list_last_10_trades = volume_coin[0]['Last_30_Trades']['list_last_30_trades'][-benchmark_days:]
                     
-                    if 0 in list_last_5_trades:
+                    if 0 in list_last_10_trades:
                         if now.hour == 0 and now.minute == 5: 
                             msg = f'{coin} has not always been in most_traded_coins in the last {benchmark_days} days. Position: {data["most_traded_coins"].index(coin)}'
                             logger.info(msg)

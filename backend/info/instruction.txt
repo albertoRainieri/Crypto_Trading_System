@@ -1,0 +1,1 @@
+in this folder, all latest prices will be saved for each coin

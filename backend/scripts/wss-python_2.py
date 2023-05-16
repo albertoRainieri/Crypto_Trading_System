@@ -42,6 +42,10 @@ def on_close(*args):
     db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
     logger.info(msg)
 
+    # add another 60 only for wss_python2
+    extra_seconds_list_2 = 60
+    sleep(extra_seconds_list_2)
+
     threading.Thread(target=restart_connection).start()
     ws.run_forever()
 
@@ -61,6 +65,7 @@ def restart_connection():
     minutes_remaining = 59 - current_minute
     hours_remaining = HOURS - 1
 
+    
     # total seconds until next wss restart
     total_remaining_seconds = remaining_seconds + minutes_remaining*60 + hours_remaining*60*60
     
@@ -99,7 +104,7 @@ def on_open(ws):
     f = open ('/backend/json/most_traded_coins.json', "r")
     data = json.loads(f.read())
     #coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
-    coin_list = data["most_traded_coins"][:200]
+    coin_list = data["most_traded_coins"][200:]
     doc_db, prices, n_list_coins = initializeVariables(coin_list)
     
 
@@ -143,7 +148,7 @@ def on_message(ws, message):
         else:
             n_coins = len(n_list_coins)
             tot_coins = len(prices)
-            logger.info(f'{n_coins}/{tot_coins} coins have been traded in the last minute. List 1')
+            logger.info(f'{n_coins}/{tot_coins} coins have been traded in the last minute. List 2')
             os.environ['NOW'] = formatted_date
             saveTrades_toDB(prices, doc_db, database)
             doc_db, prices, n_list_coins = initializeVariables(coin_list)
@@ -199,11 +204,12 @@ def getStatisticsOnTrades(trade, instrument_name, doc_db, prices):
 def saveTrades_toDB(prices, doc_db, database):
 
     # read last prices if path exists already
-    path = '/backend/info/prices1.json'
+    path = '/backend/info/prices2.json'
     if os.path.exists(path):
-        f = open (path, "r")
-        last_prices = json.loads(f.read())
+        with open(path, 'r') as f:
+            last_prices = json.loads(f.read())
     else:
+        logger.info(f'{path} does not exist')
         last_prices = {}
         for instrument_name in prices:
             last_prices[instrument_name] = None
@@ -234,8 +240,6 @@ def saveTrades_toDB(prices, doc_db, database):
 
     with open(path, "w") as outfile_volume:
         outfile_volume.write(json.dumps(last_prices))
-    
-            #print(doc_db)
 
 def get_db(db_name):
     '''

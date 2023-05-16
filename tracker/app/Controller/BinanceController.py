@@ -115,7 +115,7 @@ class BinanceController:
         #print('res', res)
         all_usdt_coins = []
         for coin in res['symbols']:
-            if coin['symbol'][-4:] == 'USDT' and coin['symbol'] != 'USDCUSDT' and coin['symbol'] != 'TUSDUSDT' and coin['symbol'] != 'USDPUSDT' and coin['symbol'] != 'BUSDUSDT':
+            if coin['symbol'][-4:] == 'USDT' and coin['symbol'] != 'USDCUSDT' and coin['symbol'] != 'TUSDUSDT' and coin['symbol'] != 'USDPUSDT' and coin['symbol'] != 'BUSDUSDT' and coin['symbol'] != 'USTUSDT':
                 all_usdt_coins.append(coin['symbol'])
         
         #all_usdt_coins = all_usdt_coins[:10]
@@ -194,8 +194,8 @@ class BinanceController:
             id_benchmark = cursor_benchmark[0]['_id']
 
             # if the coin from db is present in the list updated "most_traded_coins_list", then it will be marked as a live coin
-            if coin in most_traded_coins_list[:NUMBER_COINS_TO_TRADE_WSS]:
-                
+            #if coin in most_traded_coins_list[:NUMBER_COINS_TO_TRADE_WSS]:
+            if coin in most_traded_coins_list:
                 # In case it is not the first time to compute this statistics on db benchmark
                 if 'Best_Trades' in cursor_benchmark[0]:
                     trade_score = cursor_benchmark[0]['Best_Trades']
