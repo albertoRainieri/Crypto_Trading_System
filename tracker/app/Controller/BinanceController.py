@@ -71,7 +71,7 @@ class BinanceController:
             if not resps:
                 return False
             sleep(1)
-            #print(f'Succesfull request fo coin slice {coins_list} ')
+            print(f'Succesfull request fo coin slice {coins_list} ')
         except:
             sleep(1)
             return False
@@ -118,7 +118,7 @@ class BinanceController:
             if coin['symbol'][-4:] == 'USDT' and coin['symbol'] != 'USDCUSDT' and coin['symbol'] != 'TUSDUSDT' and coin['symbol'] != 'USDPUSDT' and coin['symbol'] != 'BUSDUSDT':
                 all_usdt_coins.append(coin['symbol'])
         
-        all_usdt_coins = all_usdt_coins[:10]
+        #all_usdt_coins = all_usdt_coins[:10]
         number_coins = len(all_usdt_coins)
         print(f'Number of coins: {number_coins}')
 
@@ -153,26 +153,20 @@ class BinanceController:
             return
         
         list_volumes = []
-        obj_volumes = {}
         most_traded_coins_list = []
-
 
         for coin,trade in zip(all_usdt_coins, total_pairs):
             try:
                 dict_volume = {'coin': coin, 'volume': float(trade[0][7])}
-                obj_volumes[coin] = float(trade[0][7])
             except:
                 logger.error(trade)
                 logger.error(type(trade))
                 logger.error(coin)
                 dict_volume = {'coin': coin, 'volume': 0}
-                obj_volumes[coin] = float(trade[0][7])
 
             list_volumes.append(dict_volume)
-        # sort by volume
+
         list_volumes.sort(key=lambda x: x['volume'], reverse=True)
-
-
 
         for obj in list_volumes:
             most_traded_coins_list.append(obj['coin'])
@@ -190,26 +184,17 @@ class BinanceController:
         # UPDATE DB BENCHMARK. THE INFO UPDATED IS ABOUT THE FREQUENCY OF THE COIN TRADED.
         # IF A COIN FALLS OUT OF THE BEST POSITIONS, IT WILL GET A NEGATIVE SCORE.
 
-
-
         db_benchmark = BinanceController.get_db(DATABASE_BENCHMARK)
         list_coins_benchmark = db_benchmark.list_collection_names()
 
         # iterate through each pair in the db
         for coin in list_coins_benchmark:
-            #print(coin)
             # update benchmark db --> (field: best trades)
             cursor_benchmark = list(db_benchmark[coin].find())
             id_benchmark = cursor_benchmark[0]['_id']
-            try:          
-                volume_binance = BinanceController.compute_volume_1m(obj_volumes[coin])
-                print(f'{coin}: {obj_volumes[coin]} - {volume_binance}')
-            except:
-                continue
+
             # if the coin from db is present in the list updated "most_traded_coins_list", then it will be marked as a live coin
             if coin in most_traded_coins_list[:NUMBER_COINS_TO_TRADE_WSS]:
-                #print(obj_volumes[coin])
-
                 
                 # In case it is not the first time to compute this statistics on db benchmark
                 if 'Best_Trades' in cursor_benchmark[0]:
@@ -229,7 +214,7 @@ class BinanceController:
                         last_30_trades['list_last_30_trades'].append(1)
                     last_30_trades['score_last_30_trades'] = sum(last_30_trades['list_last_30_trades']) / len(last_30_trades['list_last_30_trades'])
 
-                    db_benchmark[coin].update_one({"_id": id_benchmark}, {"$set": {"Best_Trades": new_trade_score, 'Last_30_Trades': last_30_trades, 'Volume_Binance': volume_binance}})
+                    db_benchmark[coin].update_one({"_id": id_benchmark}, {"$set": {"Best_Trades": new_trade_score, 'Last_30_Trades': last_30_trades}})
                 # this is the first time that this statistics is computed
                 else:
                     new_score = 1
@@ -237,7 +222,7 @@ class BinanceController:
                     new_trade_score = str(new_score) + '/' + str(new_total)
                     last_30_trades = {'list_last_30_trades': [1], 'score_last_30_trades': 1}
 
-                    db_benchmark[coin].update_one({"_id": id_benchmark}, {"$set": {"Best_Trades": new_trade_score, 'Last_30_Trades': last_30_trades, 'Volume_Binance': volume_binance}})
+                    db_benchmark[coin].update_one({"_id": id_benchmark}, {"$set": {"Best_Trades": new_trade_score, 'Last_30_Trades': last_30_trades}})
             # in this case the coin is not between the best coins. it will be marked as non-live coin
             else:
                 if 'Best_Trades' in cursor_benchmark[0]:
@@ -257,25 +242,16 @@ class BinanceController:
                         last_30_trades['list_last_30_trades'].append(0)
                     last_30_trades['score_last_30_trades'] = sum(last_30_trades['list_last_30_trades']) / len(last_30_trades['list_last_30_trades'])
 
-                    db_benchmark[coin].update_one({"_id": id_benchmark}, {"$set": {"Best_Trades": new_trade_score, 'Last_30_Trades': last_30_trades, 'Volume_Binance': volume_binance}})
+                    db_benchmark[coin].update_one({"_id": id_benchmark}, {"$set": {"Best_Trades": new_trade_score, 'Last_30_Trades': last_30_trades}})
                 
                 else:
                     new_score = 0
                     new_total = 1
                     new_trade_score = str(new_score) + '/' + str(new_total)
                     last_30_trades = {'list_last_30_trades': [0], 'score_last_30_trades': 0}
-                    db_benchmark[coin].update_one({"_id": id_benchmark}, {"$set": {"Best_Trades": new_trade_score, 'Last_30_Trades': last_30_trades, 'Volume_Binance': volume_binance}})
-        
-        # iterate through each coin in binance that are not saved in db benchmark yet
-        for coin in most_traded_coins_list:
-            if coin not in list_coins_benchmark:
-                doc = {'volume_30_avg': None, 'volume_30_std': None, 'volume_60_avg': None, 'volume_60_std': None, 'volume_90_avg': None, 'volume_90_avg': None,
-                       'volume_series': {}, 'Best_Trades': '0/1', 'Last_30_Trades': {'list_last_30_trades': [0], 'score_last_30_trades': 0}}
-                db_benchmark[coin].insert_one(doc)
 
-    def compute_volume_1m(vol):
-        # compute volume average 1 min considering vol is the total volume in the last 7 days, since "exchange_info" function parameter is "1w"
-        return vol / (7*24*60)
+                    db_benchmark[coin].update_one({"_id": id_benchmark}, {"$set": {"Best_Trades": new_trade_score, 'Last_30_Trades': last_30_trades}})
+
 
 
     def main_sort_pairs_list(logger=LoggingController.start_logging(), db_logger=None):
