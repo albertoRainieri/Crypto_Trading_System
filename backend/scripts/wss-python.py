@@ -26,10 +26,10 @@ def on_error(ws, error):
     error = str(error)    
 
     if error == "\'data\'":
+        msg = 'List 1 Started'
+        logger.info(msg)
+        db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
         if datetime.now().second > 5:
-            msg = 'List 1 Started'
-            logger.info(msg)
-            db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
             sleep(60 - datetime.now().second)
         
     else:

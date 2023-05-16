@@ -97,6 +97,8 @@ class TrackerController:
             if coin not in coin_list_subset:
                 continue
             
+
+            
             volume_coin = list(db_benchmark[coin].find({}, {'_id': 1, 'volume_30_avg': 1, 'volume_30_std': 1, 'Last_30_Trades': 1}))
             #print(volume_coin)
 
@@ -205,7 +207,11 @@ class TrackerController:
             if len(docs) == 0:
                 continue
             last_timestamp = docs[-1]['_id']
+            last_price = docs[-1]['price']
             last_datetime = datetime.fromisoformat(last_timestamp)
+
+            if last_price == None:
+                continue
 
             if last_datetime > reference_10s_datetime:
                 
