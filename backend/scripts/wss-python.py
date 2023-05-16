@@ -40,7 +40,7 @@ def on_close(*args):
     if 'NOW' in os.environ:
         del os.environ['NOW']
     sleep(60)
-    msg = "on_close: Closing Wss Connection"
+    msg = "on_close: Closing Wss Connection List 1"
     db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
     logger.info(msg)
 
