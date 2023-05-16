@@ -49,7 +49,7 @@ class TrackerController:
         else:
             return False
 
-      
+
     #@timer_func
     def db_operations(db_trades, db_tracker, db_benchmark, logger, db_logger):
         now = datetime.now()
@@ -96,17 +96,60 @@ class TrackerController:
             if coin not in coin_list_subset:
                 continue
             
-            volume_coin = list(db_benchmark[coin].find({}, {'_id': 1, 'volume_30_avg': 1, 'volume_30_std': 1}))
+            volume_coin = list(db_benchmark[coin].find({}, {'_id': 1, 'volume_30_avg': 1, 'volume_30_std': 1, 'Last_30_Trades': 1}))
             #print(volume_coin)
 
             # if benchmark exists, fetch it and use it to compute the relative volume wrt to average,
-            #  otherwise I am going to compute only the absolute value of the volume
+            #  otherwise I am going to skip the computation
             if len(volume_coin) != 0:
                 avg_volume_1_month = volume_coin[0]['volume_30_avg']
                 std_volume_1_month = volume_coin[0]['volume_30_std']
+
+                # here, the coin must pass some checks.
+                # In particular, it is required that the coin has been in the "most_traded_coins" in the last consecutive "benchmark_days".
+                # if this condition is not met, then the coin will not be analyzed and nothing will be saved to tracker.
+                benchmark_days = 10 # how many days the coin must have been in the "most_traded_coins"
+
+                try:
+                    list_last_5_trades = volume_coin[0]['Last_30_Trades']['list_last_30_trades'][-benchmark_days:]
+                    
+                    if 0 in list_last_5_trades:
+                        if now.hour == 0 and now.minute == 5: 
+                            msg = f'{coin} has not always been in most_traded_coins in the last {benchmark_days} days. Position: {data["most_traded_coins"].index(coin)}'
+                            logger.info(msg)
+                            db_logger[DATABASE_TRACKER_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+                        continue
+                    else:
+                        if now.hour == 0 and now.minute == 5: 
+                            logger.info(f'{coin}, : Success. Position: {data["most_traded_coins"].index(coin)}')
+                except:
+                    if now.hour == 0 and now.minute == 5: 
+                        msg = f'{coin}: There are not enough observations in db_benchmark. Position: {data["most_traded_coins"].index(coin)}'
+                        logger.info(msg)
+                        db_logger[DATABASE_TRACKER_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+                    continue
+
+
+                # in case there is something wrong with "volume_30_avg" then skip
+                if avg_volume_1_month == None:
+                    if now.hour == 0 and now.minute == 5: 
+                        msg = f'{coin} has a volume average == None. Computation in tracker will be skipped. Position: {data["most_traded_coins"].index(coin)}'
+                        logger.info(msg)
+                        db_logger[DATABASE_TRACKER_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+                    continue
+            # skip the computation. volume_average does not exist
             else:
-                avg_volume_1_month = 1
-                std_volume_1_month = 1
+                if now.hour == 0 and now.minute == 5:
+                    msg = f'{coin} does not have a volume average. Computation in tracker will be skipped. Position: {data["most_traded_coins"].index(coin)}'
+                    logger.info(msg)
+                    db_logger[DATABASE_TRACKER_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+                continue
+            
+
+
+            
+                # avg_volume_1_month = 1
+                # std_volume_1_month = 1
 
             # logger.info(f'{coin}: {avg_volume_1_month}')
             # initialize these variables list for each coin

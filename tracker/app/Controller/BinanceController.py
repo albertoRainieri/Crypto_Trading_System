@@ -71,7 +71,7 @@ class BinanceController:
             if not resps:
                 return False
             sleep(1)
-            print(f'Succesfull request fo coin slice {coins_list} ')
+            #print(f'Succesfull request fo coin slice {coins_list} ')
         except:
             sleep(1)
             return False

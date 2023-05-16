@@ -45,6 +45,7 @@ class Benchmark:
         # get db Market and Benchmark
         db_market = db.get_db(DATABASE_MARKET)
         db_benchmark = db.get_db(DATABASE_BENCHMARK)
+        db_logger = db.get_db(DATABASE_LOGGING)
 
         # Get the updated coin list
         coins_list = db_market.list_collection_names()
@@ -68,6 +69,8 @@ class Benchmark:
             avg_volumes = []
             
             if coin not in coin_list_subset:
+                msg = f'{coin} is no longer in the most_traded_coins'
+                db_logger[DATABASE_BENCHMARK_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
                 continue
             
             cursor_benchmark = list(db_benchmark[coin].find())
