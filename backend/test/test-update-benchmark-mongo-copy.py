@@ -42,7 +42,7 @@ for coin in collection_names:
 
     cursor_benchmark = list(db_benchmark[coin].find())
     id_benchmark = cursor_benchmark[0]['_id']
-    last_30_trades = {'list_last_30_trades' : [], 'score_last_30_trades': 0}
+    last_30_trades = {'list_last_30_trades' : [0], 'score_last_30_trades': 0}
     db_benchmark[coin].update_one({"_id": id_benchmark}, {"$set": {"Best_Trades": '0/0', 'Last_30_Trades': last_30_trades}})
 
     # Define the deletion query
