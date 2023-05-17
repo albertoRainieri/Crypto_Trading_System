@@ -71,7 +71,7 @@ def restart_connection():
 
     # total seconds until next wss restart
     total_remaining_seconds = remaining_seconds + minutes_remaining*60 + hours_remaining*60*60
-    
+
     #ONLY FOR TESTING
     #total_remaining_seconds = 240 + remaining_seconds
     
@@ -233,6 +233,9 @@ def saveTrades_toDB(prices, doc_db, database):
             if instrument_name in last_prices:
                 doc_db[instrument_name]["price"]=last_prices[instrument_name]
             else:
+                continue
+
+            if doc_db[instrument_name]["price"] == None:
                 continue
 
             doc_db[instrument_name]["quantity"] = 0
