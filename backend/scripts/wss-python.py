@@ -210,7 +210,11 @@ def getStatisticsOnTrades(trade, instrument_name, doc_db, prices):
 def saveTrades_toDB(prices, doc_db, database):
 
     # read last prices if path exists already
-    path = '/backend/info/prices1.json'
+    if LIST == 'list1':
+        path = '/backend/info/prices1.json'
+    else:
+        path = '/backend/info/prices2.json'
+        
     if os.path.exists(path):
         f = open (path, "r")
         last_prices = json.loads(f.read())

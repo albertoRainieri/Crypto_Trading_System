@@ -70,7 +70,7 @@ class Benchmark:
             avg_volumes = []
             
             if coin not in coin_list_subset:
-                msg = f'{coin} is no longer in the most_traded_coins'
+                msg = f'{coin} is no longer in the most_traded_coins. This happens if the coin is in db_market, but binance removes it from the listed coins'
                 db_logger[DATABASE_BENCHMARK_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
                 continue
             
