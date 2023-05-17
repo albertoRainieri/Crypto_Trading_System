@@ -9,7 +9,7 @@
 #/bin/bash /backend/scripts/python_process_btc_eth.sh &
 
 /bin/bash /backend/scripts/wss_python_process.sh &
-sleep 60
+sleep 10
 /bin/bash /backend/scripts/wss_python_process_2.sh &
 # Wait for any process to exit
 wait -n

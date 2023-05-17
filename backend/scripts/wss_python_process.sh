@@ -1,1 +1,1 @@
-python3 /backend/scripts/wss-python.py
+python3 /backend/scripts/wss-python.py 'list1'

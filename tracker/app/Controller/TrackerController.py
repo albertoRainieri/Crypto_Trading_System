@@ -553,8 +553,10 @@ class TrackerController:
 
             # if Bitcoin was not retrieved 
             elif coin == 'BTCUSDT':
-                msg = 'No trade was saved in Market_Trades in the last minute'
+                msg = 'No trade was saved in Market_Trades in the last minute for list1'
                 logger.info(msg)
                 db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+            
+            
 
         

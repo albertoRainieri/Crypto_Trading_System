@@ -8,7 +8,7 @@ analysis/database.py
 analysis/json/
 analysis/json_test
 analysis/json_old
-backend/test
+#backend/test
 tracker/logs
 tracker/test
 # tracker/json

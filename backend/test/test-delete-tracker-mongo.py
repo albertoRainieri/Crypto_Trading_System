@@ -6,17 +6,25 @@ from datetime import datetime, timedelta
 from database.DatabaseConnection import DatabaseConnection
 from constants.constants import *
 
+'''
+This script deletes records in the Tracker Database.
+Inputs are "start_time" and "end_time"
+'''
+
+# Define the time range for deletion (midnight UTC until 05:28 UTC)
+start_time = datetime.utcnow().replace(year=2023, month=3, day=29, hour=0, minute=1, second=0, microsecond=0)
+#end_time = start_time + timedelta(hours=5, minutes=30)
+end_time = datetime.utcnow().replace(year=2023, month=5, day=6, hour=23, minute=59, second=59, microsecond=0)
+
+
 # Connect to MongoDB
-client = pymongo.MongoClient('mongodb://localhost:27017/')
 db = DatabaseConnection()
 db = db.get_db(DATABASE_TRACKER)
 
 # Get the collection names
 collection_names = db.list_collection_names()
 
-# Define the time range for deletion (midnight UTC until 05:28 UTC)
-start_time = datetime.utcnow().replace(year=2023, month=5, day=11, hour=0, minute=1, second=0, microsecond=0)
-end_time = start_time + timedelta(hours=5, minutes=30)
+
 # start_time = datetime.utcnow().replace(hour=5, minute=32, second=0, microsecond=0)
 # end_time = start_time + timedelta(hours=0, minutes=3)
 # print(start_time)
@@ -36,6 +44,3 @@ for collection_name in collection_names:
     # Delete the records within the time range
     result = collection.delete_many(query)
     print(f"Deleted {result.deleted_count} records from '{collection_name}' collection.")
-
-# Close the MongoDB connection
-client.close()

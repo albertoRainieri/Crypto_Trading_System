@@ -12,8 +12,10 @@ from database.DatabaseConnection import DatabaseConnection
 from app.Controller.LoggingController import LoggingController
 import logging
 import threading
+import sys
 
 
+LIST = sys.argv[1]
 TIME = "T"
 PRICE = "p"
 QUANTITY = "q"
@@ -26,7 +28,7 @@ def on_error(ws, error):
     error = str(error)    
 
     if error == "\'data\'":
-        msg = 'List 1 Started'
+        msg = f'{LIST} Started'
         logger.info(msg)
         db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
         if datetime.now().second > 5:
@@ -39,10 +41,14 @@ def on_error(ws, error):
 def on_close(*args):
     if 'NOW' in os.environ:
         del os.environ['NOW']
-    sleep(60)
-    msg = "on_close: Closing Wss Connection List 1"
+    sleep(10)
+    msg = f"on_close: Closing Wss Connection {LIST}"
     db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
     logger.info(msg)
+
+    if LIST == 'list2':
+        extra_seconds_list_2 = 60
+        sleep(extra_seconds_list_2)
 
     threading.Thread(target=restart_connection).start()
     ws.run_forever()
@@ -66,9 +72,12 @@ def restart_connection():
     # total seconds until next wss restart
     total_remaining_seconds = remaining_seconds + minutes_remaining*60 + hours_remaining*60*60
     
+    #ONLY FOR TESTING
+    #total_remaining_seconds = 240 + remaining_seconds
+    
     # define timestamp for next wss restart
     wss_restart_timestamp = (now + timedelta(seconds=total_remaining_seconds)).isoformat()
-    logger.info(f'on_restart_connection: Next wss restart {wss_restart_timestamp}')
+    logger.info(f'on_restart_connection: Next wss restart {wss_restart_timestamp} for {LIST}')
     
     
     sleep(total_remaining_seconds)
@@ -91,17 +100,17 @@ def on_open(ws):
     # db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
 
 
-    second = datetime.now().second
-    remaining_second = 60 - second
-    start_wss = datetime.now() + timedelta(seconds= remaining_second)
-    msg = f'on_open: Wss Started. Starting collecting data at: {start_wss}'
+    msg = f'on_open: Wss Started for {LIST}'
     logger.info(msg)
-    sleep(remaining_second)
 
     f = open ('/backend/json/most_traded_coins.json', "r")
     data = json.loads(f.read())
     #coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
-    coin_list = data["most_traded_coins"][:200]
+    if LIST == 'list1':
+        coin_list = data["most_traded_coins"][:200]
+    else:
+        coin_list = data["most_traded_coins"][200:]
+
     doc_db, prices, n_list_coins = initializeVariables(coin_list)
     
 
@@ -145,7 +154,7 @@ def on_message(ws, message):
         else:
             n_coins = len(n_list_coins)
             tot_coins = len(prices)
-            logger.info(f'{n_coins}/{tot_coins} coins have been traded in the last minute. List 1')
+            logger.info(f'{n_coins}/{tot_coins} coins have been traded in the last minute. {LIST}')
             os.environ['NOW'] = formatted_date
             saveTrades_toDB(prices, doc_db, database)
             doc_db, prices, n_list_coins = initializeVariables(coin_list)
@@ -224,7 +233,7 @@ def saveTrades_toDB(prices, doc_db, database):
             if instrument_name in last_prices:
                 doc_db[instrument_name]["price"]=last_prices[instrument_name]
             else:
-                doc_db[instrument_name]["price"]=None
+                continue
 
             doc_db[instrument_name]["quantity"] = 0
             doc_db[instrument_name]["volume"] = 0

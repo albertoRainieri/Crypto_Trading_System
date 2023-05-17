@@ -19,7 +19,7 @@ def main(db, db_logger, logger):
         now=datetime.now()
         second = now.second
 
-        if second == 1:
+        if second == 2:
             TrackerController.getData(db_trades=db, logger=logger, db_logger=db_logger)
         sleep(0.9)
 
