@@ -283,6 +283,7 @@ def start_wrap_analyze_events_multiprocessing(data, list_buy_vol, list_vol, list
     manager = Manager()
     # Create shared memory for JSON data
     # TODO: load files form json_analysis
+    
     shared_data = manager.Value(str, json.dumps({}))
     lock = Manager().Lock()
 
@@ -426,7 +427,6 @@ def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=d
     # get MOST_TRADED_COINS.json froms server
     ENDPOINT = 'https://algocrypto.eu'
     method_most_traded_coins = '/analysis/get-mosttradedcoins'
-
     url_mosttradedcoins = ENDPOINT + method_most_traded_coins
     response = requests.get(url_mosttradedcoins)
     print(f'StatusCode for getting most_traded_coins: {response.status_code}')
@@ -442,8 +442,14 @@ def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=d
     most_traded_coin = json.loads(f.read())
     start_coin_list = filter_position[0]
     end_coin_list = filter_position[1]
-
     most_traded_coin_list = most_traded_coin['most_traded_coins'][start_coin_list:end_coin_list]
+
+    # get Volume Info
+    volume_info = get_volume_info()
+    volume_info = volume_info['most_traded_coins']
+    volume_info_obj = {}
+    for obj in volume_info:
+        volume_info_obj[obj['coin']] = obj['volume']
 
 
     path_dir = "/home/alberto/Docker/Trading/analysis/json"
@@ -481,20 +487,36 @@ def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=d
     print(f'{n_coins} coins have been loaded')
     summary = {}
     for coin in data:
-        summary[coin] = {'n_observations': len(data[coin])}
+        summary[coin] = {'n_observations': len(data[coin]), 'position': most_traded_coin_list.index(coin), 'vol_Mill_1w': volume_info_obj[coin]/(10**6)}
     df = pd.DataFrame(summary)
     df = df.transpose()
-
-    return data, df
+    df = df.sort_values(by=['vol_Mill_1w'], ascending=False)
+    return data, df, summary
 
 def get_volume_info():
     ENDPOINT = 'https://algocrypto.eu'
-    ENDPOINT = 'http://localhost'
+    #ENDPOINT = 'http://localhost'
 
     method_most_traded_coins = '/analysis/get-volumeinfo'
 
     url_mosttradedcoins = ENDPOINT + method_most_traded_coins
     response = requests.get(url_mosttradedcoins)
     print(f'StatusCode for getting get-volumeinfo: {response.status_code}')
-    most_traded_coins = response.json()
-    return most_traded_coins
+    volume_info = response.json()
+    volume_info = json.loads(volume_info)
+    return volume_info
+
+
+def get_benchmark_info():
+    ENDPOINT = 'https://algocrypto.eu'
+    ENDPOINT = 'http://localhost'
+
+    METHOD = '/analysis/get-benchmarkinfo'
+
+    url_mosttradedcoins = ENDPOINT + METHOD
+    response = requests.get(url_mosttradedcoins)
+    print(f'StatusCode for getting get-benchmarkinfo: {response.status_code}')
+    benchmark_info = response.json()
+    #benchmark_info = json.loads(benchmark_info)
+    df = pd.DataFrame(benchmark_info).transpose()
+    return benchmark_info, df

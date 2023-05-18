@@ -7,6 +7,8 @@ from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from constants.constants import *
 import json
+from datetime import datetime, timedelta
+import numpy as np
 
 
 class AnalysisController:
@@ -34,7 +36,6 @@ class AnalysisController:
     
 
     def getMostTradedCoins():
-        #TODO: UPDATE TO NUMBER_COINS_TO_TRADE_WSS AT 01/06
         f = open ('/backend/json/most_traded_coins.json', "r")
         data = json.loads(f.read())
         coin_list = data["most_traded_coins"]
@@ -43,13 +44,61 @@ class AnalysisController:
         return JSONResponse(json.dumps(coin_list))
     
     def getVolumeInfo():
-        #TODO: UPDATE TO NUMBER_COINS_TO_TRADE_WSS AT 01/06
         f = open ('/backend/json/sorted_instruments.json', "r")
         data = json.loads(f.read())
         coin_list = data["most_traded_coins"]
         volume_info = {"most_traded_coins": coin_list}
 
         return JSONResponse(json.dumps(volume_info))
+    
+
+    def getBenchmarkInfo():
+        
+        db = DatabaseConnection()
+        db_benchmark = db.get_db(DATABASE_BENCHMARK)
+        coins_list = db_benchmark.list_collection_names()
+
+        dict_ = {}
+        for coin in coins_list:
+            dict_[coin] = {}
+            cursor_benchmark = list(db_benchmark[coin].find())
+            
+            fields = ['volume_30_avg', 'volume_30_std', 'Last_30_Trades', 'volume_series', 'volume_60_avg', 'volume_60_std', 'volume_90_avg', 'volume_90_std']
+
+            for field in fields:
+                if field == 'volume_series':
+                    volume_series = cursor_benchmark[0][field]
+                    for date in volume_series:
+                        date_split = date.split('-')
+                        year = int(date_split[0])
+                        month = int(date_split[1])
+                        day = int(date_split[2])
+                        volume_last_7days_mean_list = []
+                        volume_last_7days_std_list = []
+
+                        if datetime(year=year, month=month, day=day) > datetime.now() - timedelta(days=7):
+                            volume_last_7days_mean_list.append(volume_series[date][0])
+                            volume_last_7days_std_list.append(volume_series[date][1])
+
+                    if len(volume_last_7days_mean_list) > 0:
+                        vol_mean_7days = np.mean(volume_last_7days_mean_list)
+                        vol_std_7days = np.mean(volume_last_7days_std_list)
+
+                        dict_[coin]['vol_mean_7days'] = vol_mean_7days
+                        dict_[coin]['vol_std_7days'] = vol_std_7days
+                        dict_[coin]['momentum_7days_vol'] = vol_mean_7days / cursor_benchmark[0]['volume_30_avg']
+
+                elif field == 'Last_30_Trades':
+                    dict_[coin]['score_last_30_days'] = cursor_benchmark[0][field]['score_last_30_trades']
+                    dict_[coin]['n_obs'] = len(cursor_benchmark[0][field]['list_last_30_trades'])
+
+                else:
+                    dict_[coin][field] = cursor_benchmark[0][field]
+        
+        json_string = jsonable_encoder(dict_)
+        return JSONResponse(content=json_string)
+        
+
         
         
 

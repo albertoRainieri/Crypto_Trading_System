@@ -21,3 +21,8 @@ async def getMostTradedCoins():#, request: Request = Depends(Authorization.get_c
 @router.get("/get-volumeinfo")
 async def getVolumeInfo():#, request: Request = Depends(Authorization.get_current_active_user)):
     return AnalysisController.getVolumeInfo()
+
+@router.get("/get-benchmarkinfo")
+async def getBenchmarkInfo():#, request: Request = Depends(Authorization.get_current_active_user)):
+    return AnalysisController.getBenchmarkInfo()
+
