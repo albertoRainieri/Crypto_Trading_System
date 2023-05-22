@@ -508,15 +508,31 @@ def get_volume_info():
 
 
 def get_benchmark_info():
-    ENDPOINT = 'https://algocrypto.eu'
-    ENDPOINT = 'http://localhost'
 
-    METHOD = '/analysis/get-benchmarkinfo'
+    now = datetime.now(tz=pytz.UTC) - timedelta(days=1)
+    
+    year = now.year
+    month = now.month
+    day = now.day
+    file = 'benchmark-' + str(day) + '-' + str(month) + '-' + str(year)
+    full_path = '/home/alberto/Docker/Trading/analysis/benchmark_json/' + file
 
-    url_mosttradedcoins = ENDPOINT + METHOD
-    response = requests.get(url_mosttradedcoins)
-    print(f'StatusCode for getting get-benchmarkinfo: {response.status_code}')
-    benchmark_info = response.json()
+    if os.path.exists(full_path):
+        print(f'{full_path} exists. Loading the file...')
+        f = open(full_path)
+        benchmark_info = json.load(f)
+    else:
+        print(f'{full_path} does not exist. Making the request to the server..')
+        ENDPOINT = 'https://algocrypto.eu'
+        METHOD = '/analysis/get-benchmarkinfo'
+
+        url_mosttradedcoins = ENDPOINT + METHOD
+        response = requests.get(url_mosttradedcoins)
+        print(f'StatusCode for getting get-benchmarkinfo: {response.status_code}')
+        benchmark_info = response.json()        
+        with open(full_path, 'w') as outfile:
+            json.dump(benchmark_info, outfile)
+
     #benchmark_info = json.loads(benchmark_info)
     df = pd.DataFrame(benchmark_info).transpose()
     return benchmark_info, df

@@ -111,12 +111,12 @@ class TrackerController:
                 # here, the coin must pass some checks.
                 # In particular, it is required that the coin has been in the "most_traded_coins" in the last consecutive "benchmark_days".
                 # if this condition is not met, then the coin will not be analyzed and nothing will be saved to tracker.
-                benchmark_days = 10 # how many days the coin must have been in the "most_traded_coins"
+                benchmark_days = 14 # how many days the coin must have been in the "most_traded_coins"
 
                 try:
-                    list_last_10_trades = volume_coin[0]['Last_30_Trades']['list_last_30_trades'][-benchmark_days:]
+                    list_last_2w_trades = volume_coin[0]['Last_30_Trades']['list_last_30_trades'][-benchmark_days:]
                     
-                    if 0 in list_last_10_trades:
+                    if 0 in list_last_2w_trades:
                         if now.hour == 0 and now.minute == 5: 
                             msg = f'{coin} has not always been in most_traded_coins in the last {benchmark_days} days. Position: {data["most_traded_coins"].index(coin)}'
                             logger.info(msg)
