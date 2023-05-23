@@ -64,19 +64,20 @@ class AnalysisController:
             cursor_benchmark = list(db_benchmark[coin].find())
             
             fields = ['volume_30_avg', 'volume_30_std', 'Last_30_Trades', 'volume_series', 'volume_60_avg', 'volume_60_std', 'volume_90_avg', 'volume_90_std']
+            volume_last_7days_mean_list = []
+            volume_last_7days_std_list = []
 
             for field in fields:
                 if field == 'volume_series':
                     volume_series = cursor_benchmark[0][field]
+
                     for date in list(volume_series.keys()):
                         date_split = date.split('-')
                         year = int(date_split[0])
                         month = int(date_split[1])
                         day = int(date_split[2])
-                        volume_last_7days_mean_list = []
-                        volume_last_7days_std_list = []
-                        if coin == 'LOOMUSDT':
-                            print(date)
+                        # if coin == 'LOOMUSDT':
+                        #     print(date)
 
                         if datetime(year=year, month=month, day=day) > datetime.now() - timedelta(days=7):
                             volume_last_7days_mean_list.append(volume_series[date][0])
