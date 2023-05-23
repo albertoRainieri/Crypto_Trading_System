@@ -68,13 +68,15 @@ class AnalysisController:
             for field in fields:
                 if field == 'volume_series':
                     volume_series = cursor_benchmark[0][field]
-                    for date in volume_series:
+                    for date in list(volume_series.keys()):
                         date_split = date.split('-')
                         year = int(date_split[0])
                         month = int(date_split[1])
                         day = int(date_split[2])
                         volume_last_7days_mean_list = []
                         volume_last_7days_std_list = []
+                        if coin == 'LOOMUSDT':
+                            print(date)
 
                         if datetime(year=year, month=month, day=day) > datetime.now() - timedelta(days=7):
                             volume_last_7days_mean_list.append(volume_series[date][0])
@@ -83,7 +85,7 @@ class AnalysisController:
                     if len(volume_last_7days_mean_list) > 0:
                         if coin == 'LOOMUSDT':
                             print(volume_last_7days_mean_list)
-                            
+
                         vol_mean_7days = np.mean(volume_last_7days_mean_list)
                         vol_std_7days = np.mean(volume_last_7days_std_list)
 
