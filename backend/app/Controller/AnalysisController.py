@@ -81,6 +81,9 @@ class AnalysisController:
                             volume_last_7days_std_list.append(volume_series[date][1])
 
                     if len(volume_last_7days_mean_list) > 0:
+                        if coin == 'LOOMUSDT':
+                            print(volume_last_7days_mean_list)
+                            
                         vol_mean_7days = np.mean(volume_last_7days_mean_list)
                         vol_std_7days = np.mean(volume_last_7days_std_list)
 
