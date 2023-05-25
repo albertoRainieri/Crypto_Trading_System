@@ -90,8 +90,8 @@ class AnalysisController:
                         vol_mean_7days = np.mean(volume_last_7days_mean_list)
                         vol_std_7days = np.mean(volume_last_7days_std_list)
 
-                        dict_[coin]['vol_mean_7days'] = vol_mean_7days
-                        dict_[coin]['vol_std_7days'] = vol_std_7days
+                        dict_[coin]['vol_mean_7days'] = round_(vol_mean_7days,2)
+                        dict_[coin]['vol_std_7days'] = round_(vol_std_7days,2)
                         dict_[coin]['momentum_7days_vol'] = round_(vol_mean_7days / cursor_benchmark[0]['volume_30_avg'],2)
 
                 elif field == 'Last_30_Trades':

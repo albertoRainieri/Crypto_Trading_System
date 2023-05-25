@@ -424,34 +424,19 @@ def data_preparation(data, n_processes = 5):
 
 
 def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=datetime.now(tz=pytz.UTC), filter_position=(0,50)):
-    # get MOST_TRADED_COINS.json froms server
-    ENDPOINT = 'https://algocrypto.eu'
-    method_most_traded_coins = '/analysis/get-mosttradedcoins'
-    url_mosttradedcoins = ENDPOINT + method_most_traded_coins
-    response = requests.get(url_mosttradedcoins)
-    print(f'StatusCode for getting most_traded_coins: {response.status_code}')
-    most_traded_coins = response.json()
-    path_most_traded_json = "/home/alberto/Docker/Trading/tracker/json/most_traded_coins.json"
-    # save MOST_TRADED_COINS.json
-    with open(path_most_traded_json, 'w') as outfile:
-        outfile.write(most_traded_coins)
-        print(f'new Json saved in {path_most_traded_json}')
+    
+    # get the most traded coins from function "get_benchmark_info"
+    start_coin = filter_position[0]
+    end_coin = filter_position[1]
+    benchmark_info, df_benchmark = get_benchmark_info()
+    volume_info = []
+    for coin in benchmark_info:
+        volume_info.append({'coin': coin, 'volume_30': benchmark_info[coin]['volume_30_avg']})
+    
+    volume_info.sort(key=lambda x: x['volume_30'], reverse=True)
+    most_traded_coin_list = [info['coin'] for info in volume_info[start_coin:end_coin]]
 
-    path_most_traded_json = "/home/alberto/Docker/Trading/tracker/json/most_traded_coins.json"
-    f = open(path_most_traded_json, "r")
-    most_traded_coin = json.loads(f.read())
-    start_coin_list = filter_position[0]
-    end_coin_list = filter_position[1]
-    most_traded_coin_list = most_traded_coin['most_traded_coins'][start_coin_list:end_coin_list]
-
-    # get Volume Info
-    volume_info = get_volume_info()
-    volume_info = volume_info['most_traded_coins']
-    volume_info_obj = {}
-    for obj in volume_info:
-        volume_info_obj[obj['coin']] = obj['volume']
-
-
+    
     path_dir = "/home/alberto/Docker/Trading/analysis/json"
     list_json = os.listdir(path_dir)
     full_paths = [path_dir + "/{0}".format(x) for x in list_json]
@@ -463,7 +448,6 @@ def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=d
         list_json_info.append(json_)
 
     list_json_info.sort(key=lambda x: x['time'], reverse=False)
-    list_json_info
 
     data= {}
     for json_info in list_json_info:
@@ -486,11 +470,21 @@ def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=d
     n_coins = len(data)
     print(f'{n_coins} coins have been loaded')
     summary = {}
-    for coin in data:
-        summary[coin] = {'n_observations': len(data[coin]), 'position': most_traded_coin_list.index(coin), 'vol_Mill_1w': volume_info_obj[coin]/(10**6)}
+    keys_data = list(data.keys())
+    for coin in keys_data:
+        if len(data[coin]) > 0:
+            # get first obs from data[coin]
+            start_coin = data[coin][0]['_id']
+            # get standard dev on mean (std.dev / mean)
+            std_on_mean = benchmark_info[coin]['volume_30_std']  / benchmark_info[coin]['volume_30_avg'] 
+            # update summary
+            summary[coin] = {'n_observations': len(data[coin]), 'position': most_traded_coin_list.index(coin), 'vol_30_avg': benchmark_info[coin]['volume_30_avg'], 'std_on_mean': std_on_mean, 'first_obs': start_coin}
+        else:
+            del data[coin]
+
     df = pd.DataFrame(summary)
     df = df.transpose()
-    df = df.sort_values(by=['vol_Mill_1w'], ascending=False)
+    df = df.sort_values(by=['vol_30_avg'], ascending=False)
     return data, df, summary
 
 def get_volume_info():
@@ -535,4 +529,9 @@ def get_benchmark_info():
 
     #benchmark_info = json.loads(benchmark_info)
     df = pd.DataFrame(benchmark_info).transpose()
+
+    # Modify DF
+    st_dev_ON_mean_30 = df['volume_30_std'] / df['volume_30_avg']
+    df.insert (2, "st_dev_ON_mean_30", st_dev_ON_mean_30)
+    df = df.sort_values(by=['volume_30_avg'], ascending=False)
     return benchmark_info, df
