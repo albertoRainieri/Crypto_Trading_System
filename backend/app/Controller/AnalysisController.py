@@ -76,16 +76,12 @@ class AnalysisController:
                         year = int(date_split[0])
                         month = int(date_split[1])
                         day = int(date_split[2])
-                        # if coin == 'LOOMUSDT':
-                        #     print(date)
 
                         if datetime(year=year, month=month, day=day) > datetime.now() - timedelta(days=7):
                             volume_last_7days_mean_list.append(volume_series[date][0])
                             volume_last_7days_std_list.append(volume_series[date][1])
 
                     if len(volume_last_7days_mean_list) > 0:
-                        # if coin == 'LOOMUSDT':
-                        #     print(volume_last_7days_mean_list)
 
                         vol_mean_7days = np.mean(volume_last_7days_mean_list)
                         vol_std_7days = np.mean(volume_last_7days_std_list)
@@ -93,6 +89,8 @@ class AnalysisController:
                         dict_[coin]['vol_mean_7days'] = round_(vol_mean_7days,2)
                         dict_[coin]['vol_std_7days'] = round_(vol_std_7days,2)
                         dict_[coin]['momentum_7days_vol'] = round_(vol_mean_7days / cursor_benchmark[0]['volume_30_avg'],2)
+                    
+                    dict[coin][field] = cursor_benchmark[0][field]
 
                 elif field == 'Last_30_Trades':
                     dict_[coin]['score_last_30_days'] = round_(cursor_benchmark[0][field]['score_last_30_trades'],2)
