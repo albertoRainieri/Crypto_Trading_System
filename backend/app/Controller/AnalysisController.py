@@ -90,7 +90,7 @@ class AnalysisController:
                         dict_[coin]['vol_std_7days'] = round_(vol_std_7days,2)
                         dict_[coin]['momentum_7days_vol'] = round_(vol_mean_7days / cursor_benchmark[0]['volume_30_avg'],2)
                     
-                    dict[coin][field] = cursor_benchmark[0][field]
+                    dict_[coin][field] = cursor_benchmark[0][field]
 
                 elif field == 'Last_30_Trades':
                     dict_[coin]['score_last_30_days'] = round_(cursor_benchmark[0][field]['score_last_30_trades'],2)
