@@ -111,7 +111,7 @@ class TrackerController:
                 # here, the coin must pass some checks.
                 # In particular, it is required that the coin has been in the "most_traded_coins" in the last consecutive "benchmark_days".
                 # if this condition is not met, then the coin will not be analyzed and nothing will be saved to tracker.
-                benchmark_days = 14 # how many days the coin must have been in the "most_traded_coins"
+                benchmark_days = 21 # how many days the coin must have been in the "most_traded_coins"
 
                 try:
                     list_last_2w_trades = volume_coin[0]['Last_30_Trades']['list_last_30_trades'][-benchmark_days:]

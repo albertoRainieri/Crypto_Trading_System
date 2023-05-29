@@ -33,9 +33,9 @@ class Benchmark:
         
         # compute reference time
         
-        reference_90days_datetime = datetime.now() - timedelta(days=90)
-        reference_60days_datetime = datetime.now() - timedelta(days=60)
-        reference_30days_datetime = datetime.now() - timedelta(days=30)
+        reference_90days_datetime = datetime.now() - timedelta(days=28*3)
+        reference_60days_datetime = datetime.now() - timedelta(days=28*2)
+        reference_30days_datetime = datetime.now() - timedelta(days=28)
         reference_90days = reference_90days_datetime.isoformat()
 
         volumes_30days_list = []
