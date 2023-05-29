@@ -116,7 +116,7 @@ class TrackerController:
                 try:
                     list_last_2w_trades = volume_coin[0]['Last_30_Trades']['list_last_30_trades'][-benchmark_days:]
                     
-                    if 0 in list_last_2w_trades:
+                    if sum(list_last_2w_trades) < benchmark_days:
                         if now.hour == 0 and now.minute == 5: 
                             msg = f'{coin} has not always been in most_traded_coins in the last {benchmark_days} days. Position: {data["most_traded_coins"].index(coin)}'
                             logger.info(msg)
