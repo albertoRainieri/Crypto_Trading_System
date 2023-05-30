@@ -5,6 +5,7 @@ from app.Helpers.Helpers import round_, timer_func
 import requests
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
+from fastapi import Request
 from constants.constants import *
 import json
 from datetime import datetime, timedelta
@@ -101,7 +102,38 @@ class AnalysisController:
         
         json_string = jsonable_encoder(dict_)
         return JSONResponse(content=json_string)
-        
+    
+
+    def getTimeseries(request):
+        '''
+        this function delivers the timeseries for a set of coins.
+        Coin, timestamp, timeframe must be given for each event
+        '''
+
+        print(request)
+        #request = json.loads(request)
+        timeframe = request['timeframe']
+
+        db = DatabaseConnection()
+        db_tracker = db.get_db(DATABASE_TRACKER)
+
+        coins = list(request['info'].keys())
+
+        response = {}
+
+        for coin in coins:
+            events = request['info'][coin]
+            for event in events:
+                datetime_start = datetime.fromisoformat(event['event'])
+                datetime_end = datetime_start + timedelta(minutes=timeframe)
+                docs = list(db_tracker[coin].find({"_id": {"$gte": datetime_start, "$lt": datetime_end}}))
+                if coin not in response:
+                    response[coin] = []
+                
+                response[coin].append(docs)
+
+        return response
+    
 
         
         

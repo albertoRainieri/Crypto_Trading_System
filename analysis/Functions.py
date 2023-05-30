@@ -10,6 +10,7 @@ from scipy.stats import pearsonr
 import pandas as pd
 from time import time
 from random import randint
+from Functions_getData import getData
 from multiprocessing import Process
 from multiprocessing import Lock, Pool, Manager
 
@@ -104,7 +105,7 @@ def check_correlation(data, field_volume, field_price, coin = None, limit_volume
         return correlations, pvalues
 
 
-def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_buy_volume, event_volume, dynamic_benchmark_volume, multiprocessing=True):
+def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_buy_volume, event_volume, dynamic_benchmark_volume):
     '''
     This function analyzes what happens in terms of price changes after ONE specific event.
     This function is used by "wrap_analyze_events_multiprocessing" and "wrap_analyze_events"
@@ -117,18 +118,17 @@ def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_
     event_volume: it is the value of "buy_vol_field". --> FLOAT (e.g. 2.0)
     '''
     price_changes = {}
+    complete_info = {}
+    nan = {}
     events = {}
     #print(data)
     tot_n_coins = len(list(data.keys()))
     # analyze for each coin
     for coin in list(data.keys()):
+        
         # initialize limit_window
         limit_window = datetime(2000,1,1)
-
-        # get initial price of the coin
-        initial_price = data[coin][0]['price']
         
-
         # check through each observation of the coin
         for obs, index in zip(data[coin], range(len(data[coin]))):
 
@@ -141,18 +141,32 @@ def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_
                     # if vol is greater than limit and
                     # if datetime_obs does not fall in a previous analysis window. (i.e. datetime_obs is greater than the limit_window set)
                     if obs[buy_vol_field] >= event_buy_volume and obs[vol_field] > event_volume and datetime_obs > limit_window:
+                        #EVENT TRIGGERED
+                        # initialize list for complete_info[coin]
+                        if coin not in complete_info:
+                            complete_info[coin] = []
+                            
+
+                        # get initial price of the coin at the triggered event
+                        initial_price = obs['price']
+
+                        # get initial timestamp of the coin at the triggered event
+                        timestamp_event_triggered = obs['_id']
+
+                        # initialize current price_changes
+                        event_price_changes = []
+
                         # get dynamic volatility
                         volatility = str(get_volatility(dynamic_benchmark_volume[coin], obs['_id']))
 
                         # get key as coin + volatility
                         key = coin + '-' + volatility
-                        # initialize if first time
+                        # initialize "price_changes" and "events" if first time
                         if key not in price_changes:
                             price_changes[key] = []
-        
-                        #EVENT TRIGGERED
                         if volatility not in events:
                             events[volatility] = 0
+
                         events[volatility] += 1
 
                         limit_window  = datetime_obs + timedelta(minutes=minutes_price_windows)
@@ -164,6 +178,15 @@ def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_
                                 change = (obs['price'] - initial_price)/initial_price
                                 if not np.isnan(change):
                                     price_changes[key].append(change)
+                                    event_price_changes.append(change)
+                                else:
+                                    if coin not in nan:
+                                        nan[coin] = []
+                                    nan[coin].append(timestamp_event_triggered)
+
+
+                        
+                        complete_info[coin].append({'event': timestamp_event_triggered, 'mean': round_(np.mean(event_price_changes),2), 'std': round(np.std(event_price_changes),2)})
 
 
     total_changes = {}
@@ -183,21 +206,14 @@ def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_
                 coins[volatility] = []
 
             coins[volatility].append(coin)
-            # Let's keep all the changes. This will  be conserverd through all the iterations in wrap_analize_events_multiprocessing.
+            # Let's keep all the changes. This will  be conserverd through all the iterations in "wrap_analize_events_multiprocessing" and "wrap_analize_event" functions.
             # the np.mean will be executed only during the function "show_output"
             total_changes[volatility] += price_changes[key]
 
-    # for volatility in list(total_changes.keys()):
-    #     total_changes[volatility] = np.mean(total_changes[volatility])
 
-    if multiprocessing:
-        return total_changes, events, coins
+    return total_changes, events, coins, complete_info, nan
 
-    else:
-        # mean_total_changes = np.mean(total_changes)*100
-        # std_total_changes = np.std(total_changes)*100
-        return total_changes, events, coins
-    
+
 def get_volatility(dynamic_benchmark_info_coin, full_timestamp):
     '''
     This function outputs the volatility of the coin (timeframe: last 30 days) in a specific point in time
@@ -214,7 +230,8 @@ def show_output(shared_data):
     This function takes as input the shared_data from "wrap_analyze_events_multiprocessing" ans return the output available for pandas DATAFRAME
     '''
     shared_data = json.loads(shared_data.value)
-    output = {}
+    df_output = {}
+    coins = {}
     for key in list(shared_data.keys()):
         if key is not 'coins' or key is not 'events':
             if shared_data[key]['events'] > 0:
@@ -226,11 +243,12 @@ def show_output(shared_data):
                 mean_weighted = np.mean(shared_data[key]['price_changes'])*100
                 std_weighted = np.std(shared_data[key]['price_changes'])*100
 
-                output[key] = {'mean': mean_weighted, 'std': std_weighted, 'lower_bound': mean_weighted - std_weighted, 'n_coins': len(shared_data[key]['coins']), 'n_events': shared_data[key]['events']}
+                df_output[key] = {'mean': mean_weighted, 'std': std_weighted, 'lower_bound': mean_weighted - std_weighted, 'n_coins': len(shared_data[key]['coins']), 'n_events': shared_data[key]['events']}
+                coins[key] = {'coins': shared_data[key]['coins'], 'events': shared_data[key]['events']}
             else:
-                output[key] = {'mean': None, 'std': None, 'lower_bound': None, 'n_coins': 0, 'n_events': 0}
+                df_output[key] = {'mean': None, 'std': None, 'lower_bound': None, 'n_coins': 0, 'n_events': 0}
 
-    return output
+    return df_output, coins
 
 
 def wrap_analyze_events_multiprocessing(data, data_i, list_buy_vol, list_vol, list_minutes, list_event_buy_volume, list_event_volume, dynamic_benchmark_volume, lock, shared_data):
@@ -254,7 +272,7 @@ def wrap_analyze_events_multiprocessing(data, data_i, list_buy_vol, list_vol, li
                 for event_buy_volume in  list_event_buy_volume:
                     for event_volume in list_event_volume:
                         
-                        price_changes, events, coins = analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_buy_volume, event_volume, dynamic_benchmark_volume)
+                        price_changes, events, coins, complete_info, nan = analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_buy_volume, event_volume, dynamic_benchmark_volume)
                         
                         # price changes is a dict with keys regarding the volatility: {'1': [...], '2': [...], ..., '5': [...], ...}
                         # the value of the dict[volatility] is a list of all price_changes of a particular event
@@ -266,6 +284,8 @@ def wrap_analyze_events_multiprocessing(data, data_i, list_buy_vol, list_vol, li
                             temp[key]['price_changes'] = price_changes[volatility]
                             temp[key]['coins'] = coins[volatility]
                             temp[key]['events'] = events[volatility]
+                            temp[key]['info'] = complete_info
+                            temp[key]['nan'] = nan
 
 
     del price_changes, events, coins
@@ -285,11 +305,27 @@ def wrap_analyze_events_multiprocessing(data, data_i, list_buy_vol, list_vol, li
                 resp[key]['events'] += temp[key]['events'] # sum numbers
                 resp[key]['coins'] = list(set(resp[key]['coins']) | set(temp[key]['coins'])) # union of lists
 
+                # update complete "info"
+                for coin in temp[key]['info']:
+                    if coin not in resp[key]['info']:
+                        resp[key]['info'][coin] = []
+                    for event in temp[key]['info'][coin]:
+                        resp[key]['info'][coin].append(event)
+                
+                # update complete "nan"
+                for coin in temp[key]['nan']:
+                    if coin not in resp[key]['nan']:
+                        resp[key]['nan'][coin] = []
+                    for event in temp[key]['nan'][coin]:
+                        resp[key]['nan'][coin].append(event)
+
             else:
                 # initialize the keys of resp[key]
                 resp[key]['price_changes'] = temp[key]['price_changes']
                 resp[key]['coins'] = temp[key]['coins']
                 resp[key]['events'] = temp[key]['events']
+                resp[key]['info'] = temp[key]['info']
+                resp[key]['nan'] = temp[key]['nan']
 
         shared_data.value = json.dumps(resp)
 
@@ -297,7 +333,7 @@ def start_wrap_analyze_events_multiprocessing(data, list_buy_vol, list_vol, list
     '''
     this function starts "wrap_analyze_events_multiprocessing" function
     '''
-    # get dynamic benchmark volume. This will be used for each observation for each coin, to see what was the current volatility (std_dev / mean).
+    # get dynamic benchmark volume. This will be used for each observation for each coin, to see what was the current volatility (std_dev / mean) of the last 30 days.
     benchmark_info = get_benchmark_info()
     dynamic_benchmark_volume = get_dynamic_volume_avg(benchmark_info)
 
@@ -307,18 +343,10 @@ def start_wrap_analyze_events_multiprocessing(data, list_buy_vol, list_vol, list
     total_combinations = len(list_buy_vol) * len(list_vol) * len(list_minutes) * len(list_event_volume) * len(list_event_buy_volume)
     print('total_combinantions', ': ', total_combinations)
     path = "/home/alberto/Docker/Trading/analysis/analysis_json/"
-
-    now = datetime.now()
-    now_year = str(now.year)
-    now_month = str(now.month)
-    now_day = str(now.day)
-    now_hour = str(now.hour)
-    now_minute = str(now.minute)
-    file_path = path + now_month+now_day+ '_' + now_hour+now_minute + '.json'
+    file_path = path + 'analysis' + '.json'
 
     manager = Manager()
     # Create shared memory for JSON data
-    # TODO: load files form json_analysis
     
     shared_data = manager.Value(str, json.dumps({}))
     lock = Manager().Lock()
@@ -336,8 +364,6 @@ def start_wrap_analyze_events_multiprocessing(data, list_buy_vol, list_vol, list
     pool.join()
     t2 = time()
     print(t2-t1, ' seconds')
-
-    # TODO: save file to json_analysis
 
     return shared_data
 
@@ -379,7 +405,7 @@ def show_output_nomultiprocessing(resp):
 
     return df
 
-def wrap_analyze_events(data, list_buy_vol, list_vol, list_minutes, list_event_buy_volume, list_event_volume, start_interval, end_interval, multiprocessing=False):
+def wrap_analyze_events(data, list_buy_vol, list_vol, list_minutes, list_event_buy_volume, list_event_volume, start_interval, end_interval):
     '''
     this function summarizes the events for every field of vol_x, buy_vol_x and a list of timeframes.
     list_buy_vol --> LIST: ['buy_vol_5m, ..., 'buy_vol_1d']
@@ -413,7 +439,7 @@ def wrap_analyze_events(data, list_buy_vol, list_vol, list_minutes, list_event_b
                     for event_volume in list_event_volume:
                         i += 1
                         task_25, task_50, task_75 = log_wrap_analize(total_combinations, i, task_25, task_50, task_75)
-                        total_changes, events, coins = analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_buy_volume, event_volume, dynamic_benchmark_volume, multiprocessing)
+                        total_changes, events, coins = analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_buy_volume, event_volume, dynamic_benchmark_volume)
 
                         for volatility in total_changes:
                             key = str(buy_vol_field) + ':' + str(event_buy_volume) + '/' + str(vol_field) + ':' + str(event_volume) + '/' + 'timeframe:' + str(minutes_price_windows) + '/' + 'vlty:' + volatility
@@ -670,7 +696,149 @@ def get_dynamic_volume_avg(benchmark_info):
 
             
 
+def total_function_multiprocessing(list_buy_vol, list_vol, list_minutes, list_event_buy_volume, list_event_volume, n_processes, LOAD_DATA):
+    '''
+    this function loads only the data not analyzed and starts "wrap_analyze_events_multiprocessing" function. Finally it saves the output a path dedicated
+    '''
+    t1 = time()
+    
+    # getData from server
+    if LOAD_DATA:
+        getData()
+
+    # get dynamic benchmark volume. This will be used for each observation for each coin, to see what was the current volatility (std_dev / mean) of the last 30 days.
+    benchmark_info = get_benchmark_info()
+    dynamic_benchmark_volume = get_dynamic_volume_avg(benchmark_info)
+
+    # get json_analysis path
+    total_combinations = len(list_buy_vol) * len(list_vol) * len(list_minutes) * len(list_event_volume) * len(list_event_buy_volume)
+    print('total_combinantions', ': ', total_combinations)
+    path = "/home/alberto/Docker/Trading/analysis/analysis_json/"
+    file_path = path + 'analysis' + '.json'
+
+    # initialize Manager for "shared_data"
+    manager = Manager()
+
+    # Load files form json_analysis and define "start_interval" and "end_interval" for loading the data to be analyzed
+    analysis_timeframe = 14 #days. How many days "total_function_multiprocessing" will analyze data from last saved?
+
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as file:
+            # Retrieve shared memory for JSON data and "start_interval"
+            analysis_json = json.load(file)
+            shared_data = manager.Value(str, json.dumps(analysis_json['data']))
+            start_interval = analysis_json['start_interval']
+    else:
+        # Create shared memory for JSON data and initialize "start_interval"
+        shared_data = manager.Value(str, json.dumps({}))
+        start_interval = datetime(2023,5,11).isoformat()
+    
+    # define "end_interval" and "filter_position"
+    now = datetime.now()
+    end_interval = min(datetime.now() - timedelta(hours=now.hour, minutes=now.minute, seconds=now.second + 2), datetime.fromisoformat(start_interval) + timedelta(days=analysis_timeframe))
+    filter_position = (0,500) # this is enough to load all the coins available
+
+    # load data and stored in "data" variable
+    data, df, df_obj = load_data(start_interval=datetime.fromisoformat(start_interval), end_interval=end_interval, filter_position=filter_position)
+    # define new "start_interval" this will be used for the next "total_function_multiprocessing" execution
+    start_interval = min((datetime.fromisoformat(data['BTCUSDT'][-1]['_id'])), datetime.now()).isoformat()
+    
+
+    # get data slices for multiprocessing
+    data_arguments = data_preparation(data, n_processes = n_processes)
+
+    # initialize lock for processing shared variable between multiple processes
+    lock = Manager().Lock()
+
+    # Create a multiprocessing Pool
+    pool = Pool()
+
+    # Execute the function "wrap_analyze_events_multiprocessing" in parallel
+    pool.starmap(wrap_analyze_events_multiprocessing, [(arg, arg_i, list_buy_vol, list_vol, list_minutes,
+                                        list_event_buy_volume, list_event_volume, dynamic_benchmark_volume, lock, shared_data) for arg, arg_i in zip(data_arguments, range(1,len(data_arguments)+1))])
+
+    # Close the pool
+    pool.close()
+    pool.join()
+
+    data = json.loads(shared_data.value)
+    # save file to json_analysis
+    json_to_save = {'start_interval': start_interval, 'data': data}
+    with open(file_path, 'w') as file:
+        json.dump(json_to_save, file)
+
+    t2 = time()
+    print(t2-t1, ' seconds')
+
+    return shared_data
+
 
 
             
-            
+def download_show_output(minimum_event_number, mean_threshold):
+    '''
+    This function takes as input data stored in analysis_json/ ans return the output available for pandas DATAFRAME
+    '''
+
+    path = "/home/alberto/Docker/Trading/analysis/analysis_json/"
+    file_path = path + 'analysis' + '.json'
+
+    with open(file_path, 'r') as file:
+        # Retrieve shared memory for JSON data and "start_interval"
+        shared_data = json.load(file)
+
+    #return shared_data
+    shared_data = shared_data['data']
+    output = {}
+    complete_info = {}
+    for key in list(shared_data.keys()):
+        if key is not 'coins' or key is not 'events':
+            if shared_data[key]['events'] >= minimum_event_number:
+                shared_data[key]['price_changes'] = np.array(shared_data[key]['price_changes'])
+
+                isfinite = np.isfinite(shared_data[key]['price_changes'])
+                shared_data[key]['price_changes'] = shared_data[key]['price_changes'][isfinite]
+
+                mean = round_(np.mean(shared_data[key]['price_changes'])*100,2)
+                std = round_(np.std(shared_data[key]['price_changes'])*100,2)
+
+                if mean > mean_threshold:
+                
+                    if 'nan' in shared_data[key]:
+                        complete_info[key] = {'info': shared_data[key]['info'], 'nan': shared_data[key]['nan'], 'coins': shared_data[key]['coins'], 'events': shared_data[key]['events']}
+                    else:
+                        complete_info[key] = {'info': shared_data[key]['info'], 'coins': shared_data[key]['coins'], 'events': shared_data[key]['events']}
+
+                    output[key] = {'mean': mean, 'std': std, 'lower_bound': mean - std, 'n_coins': len(shared_data[key]['coins']), 'n_events': shared_data[key]['events']}
+            # else:
+            #     output[key] = {'mean': None, 'std': None, 'lower_bound': None, 'n_coins': 0, 'n_events': 0}
+
+    return output, complete_info
+
+def getTimeseries(info, key):
+    # initializing substrings
+    sub1 = "timeframe"
+    sub2 = "/vlty"
+    
+    # getting index of substrings
+    idx1 = key.index(sub1)
+    idx2 = key.index(sub2)
+    
+    timeframe = ''
+    # getting elements in between
+    for idx in range(idx1 + len(sub1) + 1, idx2):
+        timeframe = timeframe + key[idx]
+
+    request = info[key]
+    request['timeframe'] = int(timeframe)
+
+    #print(request)
+    #url = 'http://localhost/analysis/get-timeseries'
+    url = 'https://algocrypto.eu/analysis/get-timeseries'
+
+    response = requests.post(url, json = info['buy_vol_15m:0.65/vol_60m:8/timeframe:1440/vlty:1'])
+    print('Status Code is : ', response.status_code)
+    response = json.loads(response.text)
+    return response
+
+    

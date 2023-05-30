@@ -3,7 +3,7 @@ import sys, os
 from fastapi import APIRouter
 from app.Controller.AnalysisController import AnalysisController
 from app.Controller.AuthController import Authorization
-from fastapi import Depends, Request
+from fastapi import Depends, Request, Body
 
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 
@@ -26,3 +26,6 @@ async def getVolumeInfo():#, request: Request = Depends(Authorization.get_curren
 async def getBenchmarkInfo():#, request: Request = Depends(Authorization.get_current_active_user)):
     return AnalysisController.getBenchmarkInfo()
 
+@router.post("/get-timeseries")
+async def getTimeseries(obj: dict = Body(...)):#, request: Request = Depends(Authorization.get_current_active_user)):
+    return AnalysisController.getTimeseries(obj)
