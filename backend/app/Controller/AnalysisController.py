@@ -126,11 +126,12 @@ class AnalysisController:
             for event in events:
                 datetime_start = datetime.fromisoformat(event['event']).replace(minute=0, second=0, microsecond=0)
                 datetime_end = datetime_start + timedelta(minutes=timeframe)
-                print(datetime_start)
-                print(datetime_end)
-                print(coin)
-                docs = list(db_tracker[coin].find({"_id": {"$gte": datetime_start, "$lt": datetime_end}}))
-                print(len(docs))
+                
+                timestamp_start = datetime_start.isoformat()
+                timestamp_end = datetime_end.isoformat()
+                # print(coin)
+                docs = list(db_tracker[coin].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}}))
+                # print(len(docs))
                 if coin not in response:
                     response[coin] = {}
                 
