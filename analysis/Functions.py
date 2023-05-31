@@ -1,5 +1,6 @@
 import json
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import numpy as np
 from datetime import datetime, timedelta, timezone
 import requests
@@ -809,62 +810,188 @@ def download_show_output(minimum_event_number, mean_threshold):
                     else:
                         complete_info[key] = {'info': shared_data[key]['info'], 'coins': shared_data[key]['coins'], 'events': shared_data[key]['events']}
 
-                    output[key] = {'mean': mean, 'std': std, 'lower_bound': mean - std, 'n_coins': len(shared_data[key]['coins']), 'n_events': shared_data[key]['events']}
+                    output[key] = {'mean': mean, 'std': std, 'upper_bound': mean + std, 'lower_bound': mean - std, 'n_coins': len(shared_data[key]['coins']), 'n_events': shared_data[key]['events']}
             # else:
             #     output[key] = {'mean': None, 'std': None, 'lower_bound': None, 'n_coins': 0, 'n_events': 0}
 
     return output, complete_info
 
-def getTimeseries(info, key, check_past=False):
+def getsubstring_fromkey(key):
+    '''
+    This simple function returns the substrings for volume, buy_volume and timeframe from "key". 
+    "key" is the label that defines an event. "key" is created in the function "wrap_analyze_events_multiprocessing"
+
+    For example:
+    from buy_vol_5m:0.65/vol_24h:8/timeframe:1440/vlty:1
+    it returns:
+    timeframe -> 1440
+    buy_vol --> buy_vol_5m
+    vol --> vol_24h
+    '''
+    # split the key
+    key_split = key.split(':')
+
+    # get buy_vol
+    buy_vol = key_split[0]
+
+    #get vol
+    vol = key_split[1][key_split[1].index('/')+1:]
+
+    # get buy_vol_value
+    buy_vol_value = key.split(buy_vol + ':')[-1].split('/vol')[0]
+
+    # get vol_value
+    vol_value = key.split(vol + ':')[-1].split('/timeframe')[0]
+
+
+
+
+    # get timeframe value
     # initializing substrings
     sub1 = "timeframe"
     sub2 = "/vlty"
-    
     # getting index of substrings
     idx1 = key.index(sub1)
     idx2 = key.index(sub2)
-    
     timeframe = ''
     # getting elements in between
     for idx in range(idx1 + len(sub1) + 1, idx2):
         timeframe = timeframe + key[idx]
 
-    request = info[key]
-    request['timeframe'] = int(timeframe)
-    if not check_past:
-        pass
+    return vol, buy_vol, timeframe, buy_vol_value, vol_value
+
+
+
+def getTimeseries(info, key, check_past=False):
+    '''
+    This function retrieves the timeseries based on "info" and "key"
+    "info" is the output of function "download_show_output" and key is the name of event list (e.g. "buy_vol_5m:0.65/vol_24h:8/timeframe:1440/vlty:1")
+    It downloads the data from server if not exists. otherwise the data is downloaded from "/timeseries_json"
+    '''
+
+    # load from local or from server
+    key_json = key.replace(':', '_')
+    key_json = key_json.replace('/', '_')
+
+    path = "/home/alberto/Docker/Trading/analysis/timeseries_json/"
+    file_path = path + key_json + '.json'
+
+    # get substrings (vol, buy_vol, timeframe) from key
+    vol_field, buy_vol_field, timeframe, buy_vol_value, vol_value = getsubstring_fromkey(key)
+
+    fields = [vol_field, buy_vol_field, timeframe, buy_vol_value, vol_value]
+
+    if os.path.exists(file_path):
+        print('File exists, Download from local...')
+        with open(file_path, 'r') as file:
+            # Retrieve shared memory for JSON data and "start_interval"
+            timeseries = json.load(file)
     else:
-        request['check_past'] = check_past
+        print('File does not exist, Donwload from server...')
 
-    #print(request)
-    #url = 'http://localhost/analysis/get-timeseries'
-    url = 'https://algocrypto.eu/analysis/get-timeseries'
+        # build the request body
+        request = info[key]
+        request['timeframe'] = int(timeframe)
 
-    response = requests.post(url, json = request)
-    print('Status Code is : ', response.status_code)
-    response = json.loads(response.text)
-    return response
+        if not check_past:
+            pass
+        else:
+            request['check_past'] = check_past
 
-def plotTimeseries(timeseries):
+        #url = 'http://localhost/analysis/get-timeseries'
+        url = 'https://algocrypto.eu/analysis/get-timeseries'
+
+        response = requests.post(url, json = request)
+        print('Status Code is : ', response.status_code)
+        timeseries = json.loads(response.text)
+
+        with open(file_path, 'w') as file:
+            json.dump(timeseries, file)
+
+    plotTimeseries(timeseries, fields)
+
+    
+
+    #return response
+
+def plotTimeseries(timeseries, fields):
+
+    vol_field = fields[0]
+    buy_vol_field = fields[1]
+    timeframe = fields[2]
+    buy_vol_value = fields[3]
+    vol_value = fields[4]
 
     for coin in timeseries:
         for timestamp_start in list(timeseries[coin].keys()):
-            timestamp_list = []
+            datetime_list = []
             price_list = []
+            vol_list = []
+            buy_vol_list = []
+            # number of observation per event
+            timeframe = len(timeseries[coin][timestamp_start])
+
+            # label x-axis every "interval" minutes
+            interval = int(timeframe / 6)
+
+            # get max price and min price
+            max_price = (datetime.fromisoformat(timeseries[coin][timestamp_start][0]['_id']), timeseries[coin][timestamp_start][0]['price'])
+            min_price = (datetime.fromisoformat(timeseries[coin][timestamp_start][0]['_id']), timeseries[coin][timestamp_start][0]['price'])
+            start_price = timeseries[coin][timestamp_start][0]['price']
+            max_change = 0
+            min_change = 0
+
             for obs in timeseries[coin][timestamp_start]:
-                timestamp_list.append(obs['_id'])
+                datetime_list.append(datetime.fromisoformat(obs['_id']))
                 price_list.append(obs['price'])
+                vol_list.append(obs[vol_field])
+                buy_vol_list.append(obs[buy_vol_field])
+                if obs['price'] > max_price[1]:
+                    max_price = (datetime.fromisoformat(obs['_id']), obs['price'])
+                    max_change = round_(((max_price[1] - start_price) / start_price)*100,2)
+                if obs['price'] < min_price[1]:
+                    min_price = (datetime.fromisoformat(obs['_id']), obs['price'])
+                    min_change = round_(((min_price[1] - start_price) / start_price)*100,2)
+
+
             
             # Plotting the graph
-            plt.plot(timestamp_list, price_list)
+            # plt.figure(figsize=(20,10))
+            # plt.plot(datetime_list, price_list)
+            # Create a figure with two subplots
+            fig, ax = plt.subplots(3, 1, sharex=True, figsize=(20, 10))
 
-            # Formatting the x-axis labels
-            #plt.xticks(rotation=45)
-            plt.xlabel("Timestamps")
+            # Plotting the first time series
+            ax[0].plot(datetime_list, price_list)
+            ax[0].set_ylabel('Price')
+            ax[0].set_title(f'{coin}: {timestamp_start}')
+            ax[0].annotate(f'Max Change: {max_change}%', xy=(max_price[0], max_price[1]),
+                            xytext=(max_price[0], max_price[1]*(1-((max_change/100)/2))),
+                              textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
+            ax[0].annotate(f'Min Change: {min_change}%', xy=(min_price[0], min_price[1]),
+                            xytext=(min_price[0], min_price[1]*(1+((min_change/100)/2))),
+                              textcoords='data', ha='center', va='bottom',arrowprops=dict(arrowstyle='->'))
 
-            # Adding labels for y-axis and title for the graph
-            plt.ylabel("Price")
-            plt.title(f'{coin}: {timestamp_start}')
+
+            # Plotting the second time series
+            ax[1].plot(datetime_list, vol_list)
+            ax[1].set_ylabel(f'Volume: {vol_field}')
+
+            # Plotting the third time series
+            ax[2].plot(datetime_list, buy_vol_list)
+            ax[2].set_ylabel(f'Buy Volume: {buy_vol_value}')
+            ax[2].axhline(y=0.5, color='red', linestyle='--')
+
+            for i in range(3):
+                ax[i].axvline(x=datetime.fromisoformat(timestamp_start), color='blue', linestyle='--')
+                ax[i].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval))
+                ax[i].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+                #ax[i].xlabel("Timestamps")
+            
+            #plt.title(f'{coin}: {timestamp_start}')
+
+            #plt.axvline(x=datetime.fromisoformat(timestamp_start), color='red', linestyle='--')
+
 
             # Display the graph
             plt.show()
