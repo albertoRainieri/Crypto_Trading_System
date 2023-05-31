@@ -110,7 +110,7 @@ class AnalysisController:
         Coin, timestamp, timeframe must be given for each event
         '''
 
-        print(request)
+        #print(request)
         #request = json.loads(request)
         timeframe = request['timeframe']
 
@@ -118,26 +118,42 @@ class AnalysisController:
         db_tracker = db.get_db(DATABASE_TRACKER)
 
         coins = list(request['info'].keys())
+        # in case check_past exists, I want to retrieve x minutes of observations before che event.
+        # if check_past is not None, then check_past must be an integer
+        if 'check_past' in request:
+            check_past = request['check_past']
+        else:
+            check_past = False
 
         response = {}
 
         for coin in coins:
             events = request['info'][coin]
             for event in events:
-                datetime_start = datetime.fromisoformat(event['event']).replace(minute=0, second=0, microsecond=0)
-                datetime_end = datetime_start + timedelta(minutes=timeframe)
+                if not check_past:
+                    # datetime_start is the timestamp of the triggered event
+                    datetime_start = datetime.fromisoformat(event['event']).replace(second=0, microsecond=0)
+                    datetime_end = datetime_start + timedelta(minutes=timeframe)
+                else:
+                    # timeseries_start is the timestamp of the triggered event
+                    timeseries_start = datetime.fromisoformat(event['event']).replace(second=0, microsecond=0)
+                    # datetime_start is the beginning start from which retrieving the observation
+                    datetime_start = timeseries_start - timedelta(minutes=check_past)
+                    datetime_end = timeseries_start + timedelta(minutes=timeframe)
                 
+                # let's get the iso format timestamps for querying mongodb
                 timestamp_start = datetime_start.isoformat()
                 timestamp_end = datetime_end.isoformat()
-                # print(coin)
+                
                 docs = list(db_tracker[coin].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}}))
-                # print(len(docs))
+                
                 if coin not in response:
                     response[coin] = {}
                 
-                response[coin][datetime_start.isoformat()] = docs
-                # for doc in docs:
-                #     response[coin][datetime_start.isoformat()].append(doc)
+                if not check_past:
+                    response[coin][datetime_start.isoformat()] = docs
+                else:
+                    response[coin][timeseries_start.isoformat()] = docs
 
         return response
     

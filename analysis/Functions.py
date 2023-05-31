@@ -815,7 +815,7 @@ def download_show_output(minimum_event_number, mean_threshold):
 
     return output, complete_info
 
-def getTimeseries(info, key):
+def getTimeseries(info, key, check_past=False):
     # initializing substrings
     sub1 = "timeframe"
     sub2 = "/vlty"
@@ -831,14 +831,43 @@ def getTimeseries(info, key):
 
     request = info[key]
     request['timeframe'] = int(timeframe)
+    if not check_past:
+        pass
+    else:
+        request['check_past'] = check_past
 
     #print(request)
     #url = 'http://localhost/analysis/get-timeseries'
     url = 'https://algocrypto.eu/analysis/get-timeseries'
 
-    response = requests.post(url, json = info['buy_vol_15m:0.65/vol_60m:8/timeframe:1440/vlty:1'])
+    response = requests.post(url, json = request)
     print('Status Code is : ', response.status_code)
     response = json.loads(response.text)
     return response
+
+def plotTimeseries(timeseries):
+
+    for coin in timeseries:
+        for timestamp_start in list(timeseries[coin].keys()):
+            timestamp_list = []
+            price_list = []
+            for obs in timeseries[coin][timestamp_start]:
+                timestamp_list.append(obs['_id'])
+                price_list.append(obs['price'])
+            
+            # Plotting the graph
+            plt.plot(timestamp_list, price_list)
+
+            # Formatting the x-axis labels
+            #plt.xticks(rotation=45)
+            plt.xlabel("Timestamps")
+
+            # Adding labels for y-axis and title for the graph
+            plt.ylabel("Price")
+            plt.title(f'{coin}: {timestamp_start}')
+
+            # Display the graph
+            plt.show()
+
 
     
