@@ -151,7 +151,7 @@ class AnalysisController:
                     response[coin] = {}
                 
                 
-                response[coin][event['event']] = docs
+                response[coin][event['event']] = {'data': docs, 'statistics': {'mean': event['mean'], 'std': event['std']}}
 
         return response
     
