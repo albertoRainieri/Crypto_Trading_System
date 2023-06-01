@@ -971,21 +971,33 @@ def plotTimeseries(timeseries, fields):
             ax[0].annotate(f'Min Change: {min_change}%', xy=(min_price[0], min_price[1]),
                             xytext=(min_price[0], min_price[1]*(1+((min_change/100)/2))),
                               textcoords='data', ha='center', va='bottom',arrowprops=dict(arrowstyle='->'))
+            ax[0].axvline(x=datetime.fromisoformat(timestamp_start), color='blue', linestyle='--')
+            ax[0].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval))
+            ax[0].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+            ax[0].grid(True)
 
 
             # Plotting the second time series
             ax[1].plot(datetime_list, vol_list)
             ax[1].set_ylabel(f'Volume: {vol_field}')
+            ax[1].axvline(x=datetime.fromisoformat(timestamp_start), color='blue', linestyle='--')
+            ax[1].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval))
+            ax[1].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+            ax[1].grid(True)
 
             # Plotting the third time series
             ax[2].plot(datetime_list, buy_vol_list)
             ax[2].set_ylabel(f'Buy Volume: {buy_vol_value}')
             ax[2].axhline(y=0.5, color='red', linestyle='--')
+            ax[2].axvline(x=datetime.fromisoformat(timestamp_start), color='blue', linestyle='--')
+            ax[2].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval))
+            ax[2].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+            ax[2].grid(True)
 
-            for i in range(3):
-                ax[i].axvline(x=datetime.fromisoformat(timestamp_start), color='blue', linestyle='--')
-                ax[i].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval))
-                ax[i].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+            # for i in range(1):
+            #     ax[i].axvline(x=datetime.fromisoformat(timestamp_start), color='blue', linestyle='--')
+            #     ax[i].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval))
+            #     ax[i].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
                 #ax[i].xlabel("Timestamps")
             
             #plt.title(f'{coin}: {timestamp_start}')
