@@ -150,10 +150,8 @@ class AnalysisController:
                 if coin not in response:
                     response[coin] = {}
                 
-                if not check_past:
-                    response[coin][datetime_start.isoformat()] = docs
-                else:
-                    response[coin][timeseries_start.isoformat()] = docs
+                
+                response[coin][event['event']] = docs
 
         return response
     
