@@ -129,29 +129,39 @@ class AnalysisController:
 
         for coin in coins:
             events = request['info'][coin]
+
+            # let's retrieve the last event that has been already downloaded
+            if 'last_timestamp' in request:
+                most_recent_datetime = datetime.fromtimestamp(request['last_timestamp'][coin])
+            else:
+                most_recent_datetime = datetime(2000,1,1)
+
+            
             for event in events:
-                if not check_past:
-                    # datetime_start is the timestamp of the triggered event
-                    datetime_start = datetime.fromisoformat(event['event']).replace(second=0, microsecond=0)
-                    datetime_end = datetime_start + timedelta(minutes=timeframe)
-                else:
-                    # timeseries_start is the timestamp of the triggered event
-                    timeseries_start = datetime.fromisoformat(event['event']).replace(second=0, microsecond=0)
-                    # datetime_start is the beginning start from which retrieving the observation
-                    datetime_start = timeseries_start - timedelta(minutes=check_past)
-                    datetime_end = timeseries_start + timedelta(minutes=timeframe)
-                
-                # let's get the iso format timestamps for querying mongodb
-                timestamp_start = datetime_start.isoformat()
-                timestamp_end = datetime_end.isoformat()
-                
-                docs = list(db_tracker[coin].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}}))
-                
-                if coin not in response:
-                    response[coin] = {}
-                
-                
-                response[coin][event['event']] = {'data': docs, 'statistics': {'mean': event['mean'], 'std': event['std']}}
+
+                if datetime.fromisoformat(event['event']) > most_recent_datetime:
+                    if not check_past:
+                        # datetime_start is the timestamp of the triggered event
+                        datetime_start = datetime.fromisoformat(event['event']).replace(second=0, microsecond=0)
+                        datetime_end = datetime_start + timedelta(minutes=timeframe)
+                    else:
+                        # timeseries_start is the timestamp of the triggered event
+                        timeseries_start = datetime.fromisoformat(event['event']).replace(second=0, microsecond=0)
+                        # datetime_start is the beginning start from which retrieving the observation
+                        datetime_start = timeseries_start - timedelta(minutes=check_past)
+                        datetime_end = timeseries_start + timedelta(minutes=timeframe)
+                    
+                    # let's get the iso format timestamps for querying mongodb
+                    timestamp_start = datetime_start.isoformat()
+                    timestamp_end = datetime_end.isoformat()
+                    
+                    docs = list(db_tracker[coin].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}}))
+                    
+                    if coin not in response:
+                        response[coin] = {}
+                    
+                    
+                    response[coin][event['event']] = {'data': docs, 'statistics': {'mean': event['mean'], 'std': event['std']}}
 
         return response
     
