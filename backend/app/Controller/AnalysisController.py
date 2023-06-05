@@ -132,12 +132,13 @@ class AnalysisController:
 
             # let's retrieve the last event that has been already downloaded
             if 'last_timestamp' in request:
-                most_recent_datetime = datetime.fromtimestamp(request['last_timestamp'][coin])
+                most_recent_datetime = datetime.fromisoformat(request['last_timestamp'][coin])
             else:
                 most_recent_datetime = datetime(2000,1,1)
 
             
             for event in events:
+                
 
                 if datetime.fromisoformat(event['event']) > most_recent_datetime:
                     if not check_past:
