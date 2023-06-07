@@ -160,11 +160,12 @@ class AnalysisController:
                     
                     if coin not in response:
                         response[coin] = {}
-                    
-                    
+                
                     response[coin][event['event']] = {'data': docs, 'statistics': {'mean': event['mean'], 'std': event['std']}}
 
-        return response
+
+        json_string = jsonable_encoder(response)
+        return JSONResponse(content=json_string)
     
 
         
