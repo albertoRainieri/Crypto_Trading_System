@@ -112,7 +112,16 @@ class AnalysisController:
 
         #print(request)
         #request = json.loads(request)
+        #let's define a limit number of events for each coin. This is to avoid responses too heavy.
         timeframe = request['timeframe']
+        if timeframe > 4000:
+            n_event_limit = 3
+        elif timeframe > 1000:
+            n_event_limit = 6
+        elif timeframe > 300:
+            n_event_limit = 15
+        else:
+            n_event_limit = 100
 
         db = DatabaseConnection()
         db_tracker = db.get_db(DATABASE_TRACKER)
@@ -131,21 +140,16 @@ class AnalysisController:
             events = request['info'][coin]
 
             # let's retrieve the last event that has been already downloaded
-            if 'last_timestamp' in request and coin in request['last_timestamp']:
+            if 'last_timestamp' in request and coin in request['last_timestamp'][coin]:
                 most_recent_datetime = datetime.fromisoformat(request['last_timestamp'][coin])
             else:
                 most_recent_datetime = datetime(2023,5,11)
 
-            #let's define a limit number of events for coin. This is to avoid responses too heavy.
-            event_n = 0
-            event_number_limit = 5
+            n_events = 0
 
-            
             for event in events:
-                
-
-                if datetime.fromisoformat(event['event']) > most_recent_datetime and event_n <= event_number_limit:
-                    event_n += 1
+                if datetime.fromisoformat(event['event']) > most_recent_datetime and n_events <= n_event_limit:
+                    n_events += 1
                     if not check_past:
                         # datetime_start is the timestamp of the triggered event
                         datetime_start = datetime.fromisoformat(event['event']).replace(second=0, microsecond=0)
