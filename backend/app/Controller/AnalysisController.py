@@ -134,13 +134,16 @@ class AnalysisController:
             if 'last_timestamp' in request:
                 most_recent_datetime = datetime.fromisoformat(request['last_timestamp'][coin])
             else:
-                most_recent_datetime = datetime(2000,1,1)
+                most_recent_datetime = datetime(2023,5,11)
+
+            #let's define a limit time window from which looking for new events. This is to avoid responses too heavy
+            limit_datetime = most_recent_datetime + timedelta(weeks=2)
 
             
             for event in events:
                 
 
-                if datetime.fromisoformat(event['event']) > most_recent_datetime:
+                if datetime.fromisoformat(event['event']) > most_recent_datetime and datetime.fromisoformat(event['event']) < limit_datetime:
                     if not check_past:
                         # datetime_start is the timestamp of the triggered event
                         datetime_start = datetime.fromisoformat(event['event']).replace(second=0, microsecond=0)
