@@ -140,7 +140,7 @@ class AnalysisController:
             events = request['info'][coin]
 
             # let's retrieve the last event that has been already downloaded
-            if 'last_timestamp' in request and coin in request['last_timestamp'][coin]:
+            if 'last_timestamp' in request and coin in request['last_timestamp']:
                 most_recent_datetime = datetime.fromisoformat(request['last_timestamp'][coin])
             else:
                 most_recent_datetime = datetime(2023,5,11)
