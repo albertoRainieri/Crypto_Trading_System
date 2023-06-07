@@ -12,9 +12,9 @@ Inputs are "start_time" and "end_time"
 '''
 
 # Define the time range for deletion (midnight UTC until 05:28 UTC)
-start_time = datetime.replace(year=2023, month=5, day=17, hour=13, minute=20, second=59, microsecond=0)
+start_time = datetime.now().replace(year=2023, month=5, day=17, hour=13, minute=20, second=59, microsecond=0)
 #end_time = start_time + timedelta(hours=5, minutes=30)
-end_time = datetime.replace(year=2023, month=5, day=17, hour=13, minute=21, second=5, microsecond=0)
+end_time = datetime.now().replace(year=2023, month=5, day=17, hour=13, minute=21, second=5, microsecond=0)
 
 collection_names = ['SUIUSDT', 'EDUUSDT', 'BNBUSDT', 'SOLUSDT', 'CFXUSDT', 'LDOUSDT', 
                         'DOGEUSDT', 'MATICUSDT', 'APTUSDT', 'FTMUSDT', 'GALAUSDT',
