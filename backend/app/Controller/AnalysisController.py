@@ -131,19 +131,21 @@ class AnalysisController:
             events = request['info'][coin]
 
             # let's retrieve the last event that has been already downloaded
-            if 'last_timestamp' in request:
+            if 'last_timestamp' in request and coin in request['last_timestamp']:
                 most_recent_datetime = datetime.fromisoformat(request['last_timestamp'][coin])
             else:
                 most_recent_datetime = datetime(2023,5,11)
 
-            #let's define a limit time window from which looking for new events. This is to avoid responses too heavy
-            limit_datetime = most_recent_datetime + timedelta(weeks=2)
+            #let's define a limit number of events for coin. This is to avoid responses too heavy.
+            event_n = 0
+            event_number_limit = 5
 
             
             for event in events:
                 
 
-                if datetime.fromisoformat(event['event']) > most_recent_datetime and datetime.fromisoformat(event['event']) < limit_datetime:
+                if datetime.fromisoformat(event['event']) > most_recent_datetime and event_n <= event_number_limit:
+                    event_n += 1
                     if not check_past:
                         # datetime_start is the timestamp of the triggered event
                         datetime_start = datetime.fromisoformat(event['event']).replace(second=0, microsecond=0)
