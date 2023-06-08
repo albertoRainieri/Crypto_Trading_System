@@ -183,7 +183,7 @@ def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_
                         for obs, obs_i in zip(data[coin][index:index+minutes_price_windows], range(minutes_price_windows)):
                             # if actual observation has occurred in the last minute and 10 seconds from last observation, let's add the price "change" in "price_changes":
                             actual_datetime = datetime.fromisoformat(data[coin][index+obs_i]['_id'])
-                            if actual_datetime - datetime.fromisoformat(data[coin][index+obs_i-1]['_id']) <= timedelta(minutes=1,seconds=10):
+                            if actual_datetime - datetime.fromisoformat(data[coin][index+obs_i-1]['_id']) <= timedelta(minutes=10,seconds=10):
                                 change = (obs['price'] - initial_price)/initial_price
                                 if not np.isnan(change):
                                     price_changes.append(change)
@@ -578,12 +578,13 @@ def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=d
             # get first obs from data[coin]
             start_coin = data[coin][0]['_id']
             # get standard dev on mean (std.dev / mean)
-            std_on_mean = benchmark_info[coin]['volume_30_std']  / benchmark_info[coin]['volume_30_avg'] 
+            std_on_mean = benchmark_info[coin]['volume_30_std']  / benchmark_info[coin]['volume_30_avg']
             # update summary
             summary[coin] = {'n_observations': len(data[coin]), 'position': most_traded_coin_list.index(coin), 'vol_30_avg': benchmark_info[coin]['volume_30_avg'], 'std_on_mean': std_on_mean, 'first_obs': start_coin}
         else:
             del data[coin]
 
+    print('Data Loading is completed')
     df = pd.DataFrame(summary)
     df = df.transpose()
     df = df.sort_values(by=['vol_30_avg'], ascending=False)
@@ -771,7 +772,7 @@ def total_function_multiprocessing(list_buy_vol, list_vol, list_minutes, list_ev
 
     # define "end_interval_analysis". this is variable says "do not analyze events that are older than this date".
     # Since "minutes_price_windows" looks for N minutes observations after a specific event, I might get smaller time windows than expected (the most recent ones). This check should avoid this problem.
-    end_interval_analysis = data['BTCUSDT'][-1]['_id'] - timedelta(days=3) #last datetime from btcusdt - 3 days
+    end_interval_analysis = datetime.fromisoformat(data['BTCUSDT'][-1]['_id']) - timedelta(days=3) #last datetime from btcusdt - 3 days
     # This is going to be also the starting time for next analysis
     start_next_analysis = end_interval_analysis.isoformat()
     print(f'Events from {start_interval} to {start_next_analysis} will be analyzed')
@@ -894,11 +895,14 @@ def getsubstring_fromkey(key):
 
 
 
-def getTimeseries(info, key, check_past=False):
+def getTimeseries(info, key, check_past=False, look_for_newdata=False):
     '''
     This function retrieves the timeseries based on "info" and "key"
     "info" is the output of function "download_show_output" and key is the name of event list (e.g. "buy_vol_5m:0.65/vol_24h:8/timeframe:1440/vlty:1")
     It downloads the data from server if not exists. otherwise the data is downloaded from "/timeseries_json"
+
+    if "check_past" is not False, it is an Integer. It is used to retrieve all the observations occurred before the Event. It is expressed in minutes.
+    "look_for_newdata" is a boolean. if True, it looks for NEW timeseries (triggered by an event) in the db server.
     '''
 
     # load from local or from server
@@ -916,8 +920,53 @@ def getTimeseries(info, key, check_past=False):
     if os.path.exists(file_path):
         print('File exists, Download from local...')
         with open(file_path, 'r') as file:
-            # Retrieve shared memory for JSON data and "start_interval"
+            # Retrieve timeseries
             timeseries = json.load(file)
+
+        if look_for_newdata:
+            
+            # prepare usual request for https://algocrypto.eu/analysis/get-timeseries
+            request = info[key]
+            request['timeframe'] = int(timeframe)
+            if not check_past:
+                pass
+            else:
+                request['check_past'] = check_past
+            
+            request['last_timestamp'] = {}
+            # define for each from which timestamp new events should be discovered
+            for coin in timeseries:
+                #get most recent timestamp
+                most_recent_timestamp = list(timeseries[coin].keys())[-1]
+
+                request['last_timestamp'][coin] = most_recent_timestamp
+
+            url = 'https://algocrypto.eu/analysis/get-timeseries'
+
+            # send request
+            response = requests.post(url, json = request)
+            print('Status Code is : ', response.status_code)
+            new_timeseries = json.loads(response.text)
+
+            n_events = 0
+            # let's update "timeseries" with the new events occurred in "new_timeseries"
+            for coin in new_timeseries:
+                # iterate through NEW each event of the coin
+                for timestamp_start in list(new_timeseries[coin].keys()):
+                    # if coin does not exist in timeseries (an event has never occurred before). let's create this key in "timeseries"
+                    n_events += 1
+                    if coin not in timeseries:
+                        timeseries[coin] = {}
+                    timeseries[coin][timestamp_start] = new_timeseries[coin][timestamp_start]
+                    
+            print(f'{n_events} new events for {key}')
+            with open(file_path, 'w') as file:
+                json.dump(timeseries, file)
+
+            del new_timeseries
+            
+
+                
     else:
         print('File does not exist, Donwload from server...')
 
@@ -942,9 +991,6 @@ def getTimeseries(info, key, check_past=False):
     
     plotTimeseries(timeseries, fields, check_past)
 
-    
-
-    #return response
 
 def plotTimeseries(timeseries, fields, check_past):
 
@@ -956,7 +1002,7 @@ def plotTimeseries(timeseries, fields, check_past):
 
     # iterate through each coin
     for coin in timeseries:
-        print(coin)
+        #print(coin)
         # iterate through each event of the coin
         for timestamp_start in list(timeseries[coin].keys()):
             #print(timestamp_start)
@@ -1023,12 +1069,6 @@ def plotTimeseries(timeseries, fields, check_past):
                         min_price = (datetime.fromisoformat(obs['_id']), obs['price'])
                         min_change = round_(((min_price[1] - start_price) / start_price)*100,2)
 
-
-            
-            # Plotting the graph
-            # plt.figure(figsize=(20,10))
-            # plt.plot(datetime_list, price_list)
-            # Create a figure with two subplots
             #print('ok')
             fig, ax = plt.subplots(3, 1, sharex=True, figsize=(20, 10))
 
@@ -1052,7 +1092,7 @@ def plotTimeseries(timeseries, fields, check_past):
 
             # Plotting the second time series
             ax[1].plot(datetime_list, vol_list)
-            ax[1].set_ylabel(f'Volume-{vol_field}:{vol_value}')
+            ax[1].set_ylabel(f'{vol_field}:{vol_value}')
             ax[1].axvline(x=datetime.fromisoformat(timestamp_start), color='blue', linestyle='--')
             ax[1].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval))
             ax[1].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
@@ -1063,7 +1103,7 @@ def plotTimeseries(timeseries, fields, check_past):
 
             # Plotting the third time series
             ax[2].plot(datetime_list, buy_vol_list)
-            ax[2].set_ylabel(f'Buy Volume-{buy_vol_field}:{buy_vol_value}')
+            ax[2].set_ylabel(f'{buy_vol_field}:{buy_vol_value}')
             ax[2].axhline(y=0.5, color='red', linestyle='--')
             ax[2].axvline(x=datetime.fromisoformat(timestamp_start), color='blue', linestyle='--')
             ax[2].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval))
@@ -1072,24 +1112,9 @@ def plotTimeseries(timeseries, fields, check_past):
                             xytext=(buy_volume_event[0], buy_volume_event[1]),
                               textcoords='data', ha='center', va='bottom',arrowprops=dict(arrowstyle='->'))
             ax[2].grid(True)
-            #print(datetime_list)
-            #print('ok grid')
-            #print(price_list)
-
-            # for i in range(1):
-            #     ax[i].axvline(x=datetime.fromisoformat(timestamp_start), color='blue', linestyle='--')
-            #     ax[i].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval))
-            #     ax[i].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
-                #ax[i].xlabel("Timestamps")
-            
-            #plt.title(f'{coin}: {timestamp_start}')
-
-            #plt.axvline(x=datetime.fromisoformat(timestamp_start), color='red', linestyle='--')
-
 
             # Display the graph
             plt.show()
-            #print('ok show')
 
 
     
