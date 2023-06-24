@@ -63,7 +63,34 @@ services:
     networks:
       - local-net
 
+  trading:
+    container_name: trading-crypto
+    logging:
+      driver: "json-file"
+      options:
+          max-size: "10m"
+    build: 
+      context: ./trading
+      args:
+        - UID=${UID}
+        - GID=${GID}
+    restart: always
+    volumes:
+      - ./trading/:/trading
+      - ./backend/constants:/trading/constants:ro
+      - ./backend/database:/trading/database:ro
+      - ./backend/app/Helpers:/trading/app/Helpers
+      - ./tracker/json:/trading/json:ro
 
+    environment:
+      - BACKEND_URL= $BACKEND_URL
+      - MONGO_USERNAME=$MONGO_USERNAME
+      - MONGO_PASSWORD=$MONGO_PASSWORD
+      - MONGO_DB_URL=$MONGO_DB_URL
+      - MONGO_PORT=$MONGO_PORT
+      - TZ=$TIME_ZONE
+    networks:
+      - local-net
 
   mongo:
     container_name: mongo-crypto
@@ -146,6 +173,7 @@ services:
     image: certbot/certbot:latest
     volumes:
       - ./certbot/www/:/var/www/certbot/:rw
+      - ./certbot/logs:/var/log/
       - ./certbot/conf/:/etc/letsencrypt/:rw
 
   
