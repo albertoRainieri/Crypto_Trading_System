@@ -61,6 +61,9 @@ class AnalysisController:
 
         dict_ = {}
         for coin in coins_list:
+
+            print(coin)
+            
             dict_[coin] = {}
             cursor_benchmark = list(db_benchmark[coin].find())
             
