@@ -62,8 +62,6 @@ class AnalysisController:
         dict_ = {}
         for coin in coins_list:
 
-            print(coin)
-            
             dict_[coin] = {}
             cursor_benchmark = list(db_benchmark[coin].find())
             
@@ -93,6 +91,9 @@ class AnalysisController:
                         dict_[coin]['vol_mean_7days'] = round_(vol_mean_7days,2)
                         dict_[coin]['vol_std_7days'] = round_(vol_std_7days,2)
                         dict_[coin]['momentum_7days_vol'] = round_(vol_mean_7days / cursor_benchmark[0]['volume_30_avg'],2)
+
+                        print(dict_[coin]['momentum_7days_vol'])
+
                     
                     dict_[coin][field] = cursor_benchmark[0][field]
 
