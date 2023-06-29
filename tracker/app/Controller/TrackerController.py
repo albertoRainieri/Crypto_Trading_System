@@ -25,11 +25,11 @@ class TrackerController:
         db_trading = db.get_db(database=DATABASE_TRADING)
         #TrackerController.db_operations(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, logger=logger)
 
-        try:
-            TrackerController.db_operations(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, db_trading=db_trading, logger=logger, db_logger=db_logger)
-        except Exception as e:
-            logger.error(e)
-            logger.error('Something Wrong Happened. Check the logs above')
+        # try:
+        TrackerController.db_operations(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, db_trading=db_trading, logger=logger, db_logger=db_logger)
+        # except Exception as e:
+        #     logger.error(e)
+        #     logger.error('Something Wrong Happened. Check the logs above')
 
         pass
 
