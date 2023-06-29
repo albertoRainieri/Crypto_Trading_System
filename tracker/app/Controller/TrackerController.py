@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from tracker.app.Helpers.Helpers import round_, timer_func
 import numpy as np
 from tracker.database.DatabaseConnection import DatabaseConnection
+#from tracker.app.Controller.TradingController import TradingController
 from tracker.constants.constants import *
 
 
@@ -21,10 +22,11 @@ class TrackerController:
         db = DatabaseConnection()
         db_tracker = db.get_db(database=DATABASE_TRACKER)
         db_benchmark = db.get_db(database=DATABASE_BENCHMARK)
+        db_trading = db.get_db(database=DATABASE_TRADING)
         #TrackerController.db_operations(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, logger=logger)
 
         try:
-            TrackerController.db_operations(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, logger=logger, db_logger=db_logger)
+            TrackerController.db_operations(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, db_trading=db_trading, logger=logger, db_logger=db_logger)
         except Exception as e:
             logger.error(e)
             logger.error('Something Wrong Happened. Check the logs above')
@@ -51,8 +53,9 @@ class TrackerController:
 
 
     #@timer_func
-    def db_operations(db_trades, db_tracker, db_benchmark, logger, db_logger):
+    def db_operations(db_trades, db_tracker, db_benchmark, db_trading, logger, db_logger):
         now = datetime.now()
+        now_isoformat = now.isoformat()
         reference_1day_datetime = now - timedelta(days=1)
         reference_6h_datetime = now - timedelta(hours=6)
         reference_3h_datetime = now - timedelta(hours=3)
@@ -84,6 +87,7 @@ class TrackerController:
         minute_6h_ago =  reference_6h_datetime.minute
 
         coins_list = db_trades.list_collection_names()
+        trading_coins_list = db_trading.list_collection_names()
         f = open ('/tracker/json/most_traded_coins.json', "r")
         data = json.loads(f.read())
         #coin_list_subset = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
@@ -104,9 +108,11 @@ class TrackerController:
 
             # if benchmark exists, fetch it and use it to compute the relative volume wrt to average,
             #  otherwise I am going to skip the computation
+            
             if len(volume_coin) != 0:
                 avg_volume_1_month = volume_coin[0]['volume_30_avg']
                 std_volume_1_month = volume_coin[0]['volume_30_std']
+                volatility_coin = int(std_volume_1_month / avg_volume_1_month)
 
                 # here, the coin must pass some checks.
                 # In particular, it is required that the coin has been in the "most_traded_coins" in the last consecutive "benchmark_days".
@@ -134,7 +140,7 @@ class TrackerController:
 
 
                 # in case there is something wrong with "volume_30_avg" then skip
-                if avg_volume_1_month == None:
+                if avg_volume_1_month == None or avg_volume_1_month == 0:
                     if now.hour == 0 and now.minute == 5: 
                         msg = f'{coin} has a volume average == None. Computation in tracker will be skipped. Position: {data["most_traded_coins"].index(coin)}'
                         logger.info(msg)
@@ -536,7 +542,7 @@ class TrackerController:
 
 
 
-                doc_db = {'_id': now.isoformat(),"price": price_now, "price_%_1d" : price_variation_1d, "price_%_6h" : price_variation_6h, "price_%_3h" : price_variation_3h, "price_%_1h" : price_variation_1h,
+                doc_db = {'_id': now_isoformat,"price": price_now, "price_%_1d" : price_variation_1d, "price_%_6h" : price_variation_6h, "price_%_3h" : price_variation_3h, "price_%_1h" : price_variation_1h,
                         'vol_1m': volume_1m, 'buy_vol_1m': buy_volume_perc_1m, 'buy_trd_1m': buy_trades_perc_1m,
                         'vol_5m': volumes_5m, 'vol_5m_std': volumes_5m_std, 'buy_vol_5m': buy_volume_perc_5m, 'buy_trd_5m': buy_trades_perc_5m,
                         'vol_15m': volumes_15m, 'vol_15m_std': volumes_15m_std, 'buy_vol_15m': buy_volume_perc_15m, 'buy_trd_15m': buy_trades_perc_15m,
@@ -546,6 +552,9 @@ class TrackerController:
                         'vol_6h': volumes_6h, 'vol_6h_std': volumes_6h_std, 'buy_vol_6h': buy_volume_perc_6h, 'buy_trd_6h': buy_trades_perc_6h,
                         'vol_24h': volumes_24h, 'vol_24h_std': volumes_24h_std, 'buy_vol_24h': buy_volume_perc_24h,'buy_trd_24h': buy_trades_perc_24h,
                         }
+                
+                # CHECK IF THE EVENT CAN TRIGGER A BUY ORDER
+                #TradingController.check_event_triggering(coin, doc_db, volatility_coin, logger, db_trading, db_logger, trading_coins_list)
             
                 #logger.info(doc_db)
 
