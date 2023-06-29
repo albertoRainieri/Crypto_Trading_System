@@ -113,7 +113,7 @@ class TrackerController:
 
                 avg_volume_1_month = volume_coin[0]['volume_30_avg']
                 std_volume_1_month = volume_coin[0]['volume_30_std']
-                volatility_coin = int(std_volume_1_month / avg_volume_1_month)
+                
 
                 # in case there is something wrong with "volume_30_avg" then skip
                 if avg_volume_1_month == None or avg_volume_1_month == 0:
@@ -122,6 +122,8 @@ class TrackerController:
                         logger.info(msg)
                         db_logger[DATABASE_TRACKER_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
                     continue
+
+                volatility_coin = int(std_volume_1_month / avg_volume_1_month)
 
                 # here, the coin must pass some checks.
                 # In particular, it is required that the coin has been in the "most_traded_coins" in the last consecutive "benchmark_days".
