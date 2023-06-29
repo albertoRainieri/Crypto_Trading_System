@@ -8,6 +8,13 @@ analysis/database.py
 analysis/json/
 analysis/json_test
 analysis/json_old
+analysis/benchmark_json
+analysis/backup_analysis_json
+analysis/analysis_json
+analysis/timeseries_json
+analysis/.*
+analysis/__*
+analysis/old/
 #backend/test
 tracker/logs
 tracker/test
