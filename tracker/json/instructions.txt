@@ -1,0 +1,2 @@
+# ALL JSON FILES regarding mostradedcoins WILL BE SAVED IN /tracker/json
+# ALL JSON FILES regarding benchmark WILL BE SAVED in /tracker/json/benchmark

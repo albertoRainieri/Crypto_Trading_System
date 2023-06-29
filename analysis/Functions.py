@@ -2,18 +2,16 @@ import json
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import requests
-import os
+import os, sys
 from time import sleep
 import pytz
 from scipy.stats import pearsonr
 import pandas as pd
 from time import time
-from random import randint
 from Functions_getData import getData
-from multiprocessing import Process
-from multiprocessing import Lock, Pool, Manager
+from multiprocessing import Pool, Manager
 
 
 
@@ -136,11 +134,12 @@ def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_
 
             # this datetime_obs is needed to not trigger too many events. For example two closed events will overlap each other, this is not ideal
             datetime_obs = datetime.fromisoformat(obs['_id'])
+            # if index == 0:
+            #     print(f'{coin}: {datetime_obs}')
 
             # the observation must not be younger than "end_interval_analysis". The reason is explained in function "total_function_multiprocessing"
-            if obs[buy_vol_field] is not None and datetime.fromisoformat(obs['_id']) < end_interval_analysis:
-                if buy_vol_field in obs and buy_vol_field and obs and obs[buy_vol_field] is not None and obs[vol_field] is not None:
-
+            if datetime_obs < end_interval_analysis:
+                if buy_vol_field in obs and buy_vol_field in obs and obs[buy_vol_field] is not None and obs[vol_field] is not None:
                     # if buy_vol is greater than limit and
                     # if vol is greater than limit and
                     # if datetime_obs does not fall in a previous analysis window. (i.e. datetime_obs is greater than the limit_window set)
@@ -180,11 +179,11 @@ def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_
 
                         limit_window  = datetime_obs + timedelta(minutes=minutes_price_windows)
                         # get all the price changes in the "minutes_price_windows"
-                        for obs, obs_i in zip(data[coin][index:index+minutes_price_windows], range(minutes_price_windows)):
+                        for obs_event, obs_i in zip(data[coin][index:index+minutes_price_windows], range(minutes_price_windows)):
                             # if actual observation has occurred in the last minute and 10 seconds from last observation, let's add the price "change" in "price_changes":
                             actual_datetime = datetime.fromisoformat(data[coin][index+obs_i]['_id'])
                             if actual_datetime - datetime.fromisoformat(data[coin][index+obs_i-1]['_id']) <= timedelta(minutes=10,seconds=10):
-                                change = (obs['price'] - initial_price)/initial_price
+                                change = (obs_event['price'] - initial_price)/initial_price
                                 if not np.isnan(change):
                                     price_changes.append(change)
                                     event_price_changes.append(change)
@@ -198,6 +197,12 @@ def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_
                         std_all_events[key].append(np.std(price_changes, ddof=1))
 
                         complete_info[coin].append({'event': timestamp_event_triggered, 'mean': round_(np.mean(event_price_changes),2), 'std': round(np.std(event_price_changes),2)})
+            else:
+                # in case an observations of a coin goes beyond "end_interval_analysis", then I skip the whole analysis of the coin,
+                # since the obsevations are ordered chronologically
+                # print(f'Analysis for {coin} is completed: Last timestamp: {datetime_obs.isoformat()}; {index}')
+                break
+
 
 
     total_means = {}
@@ -280,6 +285,9 @@ def wrap_analyze_events_multiprocessing(data, data_i, list_buy_vol, list_vol, li
     '''
 
 
+
+
+    print(f'Slice {data_i} has started')
     temp = {}
     for buy_vol_field in list_buy_vol:
         for vol_field in list_vol:
@@ -304,7 +312,9 @@ def wrap_analyze_events_multiprocessing(data, data_i, list_buy_vol, list_vol, li
                             temp[key]['nan'] = nan
 
 
-    del total_means, total_stds, events, coins
+    del total_means, total_stds, events, coins, data, complete_info
+    print(f'Slice {data_i} has finished')
+
 
     # Lock Shared Variable
     # this lock is essential in multiprocessing which permits to work on shared resources
@@ -345,7 +355,20 @@ def wrap_analyze_events_multiprocessing(data, data_i, list_buy_vol, list_vol, li
                 resp[key]['info'] = temp[key]['info']
                 resp[key]['nan'] = temp[key]['nan']
 
+        del temp
+
+        size_shared_data_value = sys.getsizeof(shared_data.value)
         shared_data.value = json.dumps(resp)
+    
+    print(f'size of shared_data_value before completion of {data_i}: {size_shared_data_value}')
+    #print(f'Events recorded from slice {data_i}: ')
+    print(f'Data saved fot slice {data_i}')
+
+    for var in list(locals()):
+        if var.startswith('__') and var.endswith('__'):
+            continue  # Skip built-in variables
+        #print(f'deleting variable {var} in "wrap_analyze_events_multiprocessing"')
+        del locals()[var]
 
 def start_wrap_analyze_events_multiprocessing(data, list_buy_vol, list_vol, list_minutes, list_event_buy_volume, list_event_volume, start_interval, end_interval, n_processes):
     '''
@@ -374,7 +397,7 @@ def start_wrap_analyze_events_multiprocessing(data, list_buy_vol, list_vol, list
     pool = Pool()
 
     # Execute the function in parallel
-    pool.starmap(wrap_analyze_events_multiprocessing, [(arg, arg_i, list_buy_vol, list_vol, list_minutes,
+    pool.starmap(wrap_analyze_events_multiprocessing, [(data_arguments, arg, arg_i, list_buy_vol, list_vol, list_minutes,
                                         list_event_buy_volume, list_event_volume, dynamic_benchmark_volume, lock, shared_data) for arg, arg_i in zip(data_arguments, range(1,len(data_arguments)+1))])
 
     # Close the pool
@@ -487,7 +510,9 @@ def data_preparation(data, n_processes = 5):
     coins_list = list(data.keys())
     coins_slices = []
     n_coins = len(data)
-    step = int(n_coins / n_processes)
+    step = n_coins // n_processes
+    remainder = n_coins % n_processes
+    remainder_coins = coins_list[-remainder:]
     slice_start = 0
     slice_end = slice_start + step
 
@@ -501,25 +526,93 @@ def data_preparation(data, n_processes = 5):
         slice_start = slice_end
         slice_end += step
     
-    if step * n_processes != len(list(data.keys())):
-        data_i = {}
-        for coin in coins_list[step * n_processes:]:
-            data_i[coin] = data[coin]
-        data_arguments.append(data_i)
+    # add the remaining coins to the data_arguments
+    if remainder != 0:
+        for coin, index in zip(remainder_coins, range(len(remainder_coins))):
+            data_arguments[index][coin] = data[coin]
+                           
+    for data_argument, index in zip(data_arguments, range(len(data_arguments))):
+        len_data_argument = len(data_argument)
+        print(f'Length of data argument {index}: {len_data_argument}')
 
+    
     total_coins = 0
-    start_interval = data['BTCUSDT'][0]['_id']
-    end_interval = data['BTCUSDT'][-1]['_id']
+    if 'BTCUSDT' in data:
+        start_interval = data['BTCUSDT'][0]['_id']
+        end_interval = data['BTCUSDT'][-1]['_id']
+    else:
+        random_coin = list(data.keys())[0]
+        start_interval = data[random_coin][0]['_id']
+        end_interval = data[random_coin][-1]['_id']
+
+
     for slice_coins in data_arguments:
         total_coins += len(slice_coins)
 
 
     print(f'Data for {total_coins} coins are loaded from {start_interval} to {end_interval}')
 
-    del data
+    for var in list(locals()):
+        if var.startswith('__') and var.endswith('__'):
+            continue  # Skip built-in variables
+        if var == "data_arguments":
+            continue
+        del locals()[var]
     return data_arguments
 
+def retrieve_datetime_for_load_data(json_info, list_json_info, index):
+    '''
+    this function is used from "load_data" to retrieve the datetimes between two close json in analysis/json
+    these two datetimes represent the first timestamps in the list of observations
+    '''
+    # retrieve first datetime of list_json
+    path = json_info['path']
+    path_split = path.split('-')
+    day = int(path_split[1])
+    month = int(path_split[2])
+    year = int(path_split[3])
+    hour = int(path_split[4])
+    minute = int(path_split[5].split('.')[0])
+    datetime1 = datetime(year=year, month=month, day=day, hour=hour, minute=minute)
 
+    # retrieve first datetime of the next list_json
+    next_path = list_json_info[index + 1]['path']
+    next_path_split = next_path.split('-')
+    day = int(next_path_split[1])
+    month = int(next_path_split[2])
+    year = int(next_path_split[3])
+    hour = int(next_path_split[4])
+    minute = int(next_path_split[5][:2])
+    datetime2 = datetime(year=year, month=month, day=day, hour=hour, minute=minute)
+
+    return datetime1, datetime2
+
+def updateData_for_load_data(data, path, most_traded_coin_list, start_interval, end_interval):
+    print(f'Retrieving data from {path}')
+    f = open(path, "r")
+    
+    temp_data_dict = json.loads(f.read())
+    
+    for coin in temp_data_dict['data']:
+        if coin in most_traded_coin_list:
+            if coin not in data:
+                data[coin] = []
+            for obs in temp_data_dict['data'][coin]:
+                if datetime.fromisoformat(obs['_id']) >= start_interval and datetime.fromisoformat(obs['_id']) <= end_interval:
+                    new_obs = {}
+                    for field in list(obs.keys()):
+                        if 'std' not in field and 'trd' not in field and '%' not in field:
+                            new_obs[field] = obs[field]
+                    data[coin].append(new_obs)
+    
+    for var in list(locals()):
+        if var.startswith('__') and var.endswith('__'):
+            continue  # Skip built-in variables
+        if var == "data":
+            continue
+        del locals()[var]
+
+    return data
 
 def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=datetime.now(tz=pytz.UTC), filter_position=(0,50)):
     '''
@@ -534,11 +627,13 @@ def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=d
     volume_info = []
     for coin in benchmark_info:
         volume_info.append({'coin': coin, 'volume_30': benchmark_info[coin]['volume_30_avg']})
-    
+    # sort the list by the volume_average of the last 30 days
     volume_info.sort(key=lambda x: x['volume_30'], reverse=True)
     most_traded_coin_list = [info['coin'] for info in volume_info[start_coin:end_coin]]
 
-    
+    del volume_info, df_benchmark
+
+    # get all the json paths in "analysis/json"
     path_dir = "/home/alberto/Docker/Trading/analysis/json"
     list_json = os.listdir(path_dir)
     full_paths = [path_dir + "/{0}".format(x) for x in list_json]
@@ -549,46 +644,87 @@ def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=d
         json_ = {'path': full_path, 'time': os.path.getmtime(full_path)}
         list_json_info.append(json_)
 
+    # this is the list of all the paths in analysis/json/ sorted by time
     list_json_info.sort(key=lambda x: x['time'], reverse=False)
+    STOP_LOADING = False
 
     data= {}
-    for json_info in list_json_info:
-        sleep(1)
-        path = json_info['path']
-        print(f'Retrieving data from {path}')
-        f = open(path, "r")
-        
-        temp_data_dict = json.loads(f.read())
-        
-        for coin in temp_data_dict['data']:
-            if coin in most_traded_coin_list:
-                if coin not in data:
-                    data[coin] = []
-                for obs in temp_data_dict['data'][coin]:
-                    if datetime.fromisoformat(obs['_id']) >= start_interval and datetime.fromisoformat(obs['_id']) <= end_interval:
-                        data[coin].append(obs)
-        del temp_data_dict
+    for json_info, index in zip(list_json_info, range(len(list_json_info))):
+        if STOP_LOADING:
+            break
+        # check if this is not the last json saved
+        if list_json_info.index(json_info) + 1 != len(list_json_info):
+            # retrieve first datetime of json_info and first datetime of the next json_info
+            path = json_info['path']
+            datetime1, datetime2 = retrieve_datetime_for_load_data(json_info, list_json_info, index)
+            # if start_interval is between these 2 datetimes, retrieve json
+            if start_interval > datetime1 and start_interval < datetime2:
 
-    n_coins = len(data)
-    print(f'{n_coins} coins have been loaded')
-    summary = {}
-    keys_data = list(data.keys())
-    for coin in keys_data:
-        if len(data[coin]) > 0:
-            # get first obs from data[coin]
-            start_coin = data[coin][0]['_id']
-            # get standard dev on mean (std.dev / mean)
-            std_on_mean = benchmark_info[coin]['volume_30_std']  / benchmark_info[coin]['volume_30_avg']
-            # update summary
-            summary[coin] = {'n_observations': len(data[coin]), 'position': most_traded_coin_list.index(coin), 'vol_30_avg': benchmark_info[coin]['volume_30_avg'], 'std_on_mean': std_on_mean, 'first_obs': start_coin}
+
+                data = updateData_for_load_data(data, path, most_traded_coin_list, start_interval, end_interval)
+                # if end_interval terminates before datetime2, then loading is completed. break the loop
+                if end_interval < datetime2:
+                    break
+                else:
+                    # let's determine the new list_json_info
+                    list_json_info = list_json_info[index+1:]
+                    # iterate through the new "list_json_info" for loading the other json
+                    for json_info, index2 in zip(list_json_info, range(len(list_json_info))):
+                        path = json_info['path']
+                        data = updateData_for_load_data(data, path, most_traded_coin_list, start_interval, end_interval)
+
+                        # if this is the last json than break the loop, the loading is completed
+                        if list_json_info.index(json_info) + 1 == len(list_json_info):
+                            STOP_LOADING = True
+                            break
+                        else:
+
+                            datetime1, datetime2 = retrieve_datetime_for_load_data(json_info, list_json_info, index2)
+                            if end_interval > datetime1 and end_interval < datetime2:
+                                STOP_LOADING = True
+                                break
+                        
+            # go to the next path
+            else:
+                print(f'Nothing to retrieve from {path}')
+                continue
+
+        
         else:
-            del data[coin]
+            path = json_info['path']
+            data = updateData_for_load_data(data, path, most_traded_coin_list, start_interval, end_interval)
 
-    print('Data Loading is completed')
-    df = pd.DataFrame(summary)
-    df = df.transpose()
-    df = df.sort_values(by=['vol_30_avg'], ascending=False)
-    return data, df, summary
+
+    
+    # summary = {}
+    # keys_data = list(data.keys())
+    # for coin in keys_data:
+    #     if len(data[coin]) > 0:
+    #         # get first obs from data[coin]
+    #         start_coin = data[coin][0]['_id']
+    #         # get standard dev on mean (std.dev / mean)
+    #         std_on_mean = benchmark_info[coin]['volume_30_std']  / benchmark_info[coin]['volume_30_avg']
+    #         # update summary
+    #         summary[coin] = {'n_observations': len(data[coin]), 'position': most_traded_coin_list.index(coin), 'vol_30_avg': benchmark_info[coin]['volume_30_avg'], 'std_on_mean': std_on_mean, 'first_obs': start_coin}
+    #     else:
+    #         del data[coin]
+    
+    # n_coins = len(data)
+    # print(f'{n_coins} coins have been loaded')
+
+    # print('Data Loading is completed')
+    # df = pd.DataFrame(summary)
+    # df = df.transpose()
+    # df = df.sort_values(by=['vol_30_avg'], ascending=False)
+    #return data, df, summary
+    for var in list(locals()):
+        if var.startswith('__') and var.endswith('__'):
+            continue  # Skip built-in variables
+        if var == "data":
+            continue
+        del locals()[var]
+    
+    return data
 
 def get_volume_info():
     ENDPOINT = 'https://algocrypto.eu'
@@ -628,10 +764,16 @@ def get_benchmark_info():
         url_mosttradedcoins = ENDPOINT + METHOD
         response = requests.get(url_mosttradedcoins)
         print(f'StatusCode for getting get-benchmarkinfo: {response.status_code}')
-        benchmark_info = response.json()        
+        benchmark_info = response.json()
         with open(full_path, 'w') as outfile:
             json.dump(benchmark_info, outfile)
 
+    # check if there is any 0 in "volume_30_avg"
+    for coin in benchmark_info:
+        if benchmark_info[coin]['volume_30_avg'] == 0:
+            benchmark_info[coin]['volume_30_avg'] = 1
+            benchmark_info[coin]['volume_30_std'] = 1
+            
     #benchmark_info = json.loads(benchmark_info)
     df = pd.DataFrame(benchmark_info).transpose()
     df.drop('volume_series', inplace=True, axis=1)
@@ -640,6 +782,14 @@ def get_benchmark_info():
     st_dev_ON_mean_30 = df['volume_30_std'] / df['volume_30_avg']
     df.insert (2, "st_dev_ON_mean_30", st_dev_ON_mean_30)
     df = df.sort_values(by=['volume_30_avg'], ascending=False)
+
+    for var in list(locals()):
+        if var.startswith('__') and var.endswith('__'):
+            continue  # Skip built-in variables
+        if var == 'benchmark_info' and var == 'df':
+            continue
+        del locals()[var]
+
     return benchmark_info, df
 
 def get_dynamic_volume_avg(benchmark_info):
@@ -709,6 +859,14 @@ def get_dynamic_volume_avg(benchmark_info):
             # get percentage std over mean
             dynamic_benchmark_volume[coin][date] = std_one_date / mean_one_date
 
+    for var in list(locals()):
+        if var.startswith('__') and var.endswith('__'):
+            continue  # Skip built-in variables
+        if var == "dynamic_benchmark_volume":
+            continue
+        del locals()[var]
+
+
     return dynamic_benchmark_volume
         
 
@@ -718,6 +876,7 @@ def get_dynamic_volume_avg(benchmark_info):
 def total_function_multiprocessing(list_buy_vol, list_vol, list_minutes, list_event_buy_volume, list_event_volume, n_processes, LOAD_DATA):
     '''
     this function loads only the data not analyzed and starts "wrap_analyze_events_multiprocessing" function. Finally it saves the output a path dedicated
+
     '''
     t1 = time()
     
@@ -739,8 +898,9 @@ def total_function_multiprocessing(list_buy_vol, list_vol, list_minutes, list_ev
     manager = Manager()
 
     
-    analysis_timeframe = 14 #days. How many days "total_function_multiprocessing" will analyze data from last saved?
+    analysis_timeframe = 7 #days. How many days "total_function_multiprocessing" will analyze data from last saved?
     # Load files form json_analysis if exists otherwise initialize. Finally define "start_interval" and "end_interval" for loading the data to be analyzed
+    
     if os.path.exists(file_path):
         with open(file_path, 'r') as file:
             # Retrieve shared memory for JSON data and "start_interval"
@@ -753,16 +913,15 @@ def total_function_multiprocessing(list_buy_vol, list_vol, list_minutes, list_ev
         start_interval = datetime(2023,5,11).isoformat()
     
     # define "end_interval" and "filter_position"
-    now = datetime.now()
     end_interval = min(datetime.now(), datetime.fromisoformat(start_interval) + timedelta(days=analysis_timeframe))
-    filter_position = (0,500) # this is enough to load all the coins available
+    filter_position = (0,180) # this is enough to load all the coins available
 
     # load data from local (json/) and store in "data" variable
-    data, df, df_obj = load_data(start_interval=datetime.fromisoformat(start_interval), end_interval=end_interval, filter_position=filter_position)
-    
+    data = load_data(start_interval=datetime.fromisoformat(start_interval), end_interval=end_interval, filter_position=filter_position)
 
     # get data slices for multiprocessing. .e.g divide the data in batches for allowing multiprocessing
     data_arguments = data_preparation(data, n_processes = n_processes)
+    
 
     # initialize lock for processing shared variable between multiple processes
     lock = Manager().Lock()
@@ -773,6 +932,110 @@ def total_function_multiprocessing(list_buy_vol, list_vol, list_minutes, list_ev
     # define "end_interval_analysis". this is variable says "do not analyze events that are older than this date".
     # Since "minutes_price_windows" looks for N minutes observations after a specific event, I might get smaller time windows than expected (the most recent ones). This check should avoid this problem.
     end_interval_analysis = datetime.fromisoformat(data['BTCUSDT'][-1]['_id']) - timedelta(days=3) #last datetime from btcusdt - 3 days
+    del data
+    # This is going to be also the starting time for next analysis
+    start_next_analysis = end_interval_analysis.isoformat()
+    print(f'Events from {start_interval} to {start_next_analysis} will be analyzed')
+
+    # Execute the function "wrap_analyze_events_multiprocessing" in parallel
+    pool.starmap(wrap_analyze_events_multiprocessing, [(arg, arg_i, list_buy_vol, list_vol, list_minutes,
+                                        list_event_buy_volume, list_event_volume, dynamic_benchmark_volume, end_interval_analysis, lock, shared_data) for arg, arg_i in zip(data_arguments, range(1,len(data_arguments)+1))])
+
+    print('wrap_analyze_events_multiprocessing function is completed')
+    # Close the pool
+    pool.close()
+    pool.join()
+
+    data = json.loads(shared_data.value)
+    # save new updated analysis to json_analysis/
+
+
+    # json_to_save = {'start_next_analysis': start_next_analysis, 'data': data}
+    # with open(file_path, 'w') as file:
+    #     json.dump(json_to_save, file)
+
+    t2 = time()
+    print(t2-t1, ' seconds')
+
+    return shared_data
+
+
+def total_function_multiprocessing_lessRAM(list_buy_vol, list_vol, list_minutes, list_event_buy_volume, list_event_volume, n_processes, LOAD_DATA, slice_i):
+    '''
+    this function loads only the data not analyzed and starts "wrap_analyze_events_multiprocessing" function. Finally it saves the output a path dedicated
+
+    '''
+    t1 = time()
+    
+    # getData from server. This will be stored in json/
+    if LOAD_DATA:
+        getData()
+
+    # get dynamic benchmark volume. This will be used for each observation for each coin, to see what was the current volatility (std_dev / mean) of the last 30 days.
+    benchmark_info = get_benchmark_info()
+    dynamic_benchmark_volume = get_dynamic_volume_avg(benchmark_info)
+    del benchmark_info
+
+    # get json_analysis path. Check if there is already some data analyzed in json_analysis/ path. The new data will be appended
+    total_combinations = len(list_buy_vol) * len(list_vol) * len(list_minutes) * len(list_event_volume) * len(list_event_buy_volume)
+    print('total_combinantions', ': ', total_combinations)
+    path = "/home/alberto/Docker/Trading/analysis/analysis_json2/"
+    file_path = path + 'analysis' + '.json'
+
+    # initialize Manager for "shared_data". Used for multiprocessing
+    manager = Manager()
+
+    if slice_i == 1:
+        analysis_timeframe = 5.5
+    else:
+        analysis_timeframe = 5 #days. How many days "total_function_multiprocessing" will analyze data from last saved?
+    # Load files form json_analysis if exists otherwise initialize. Finally define "start_interval" and "end_interval" for loading the data to be analyzed
+    
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as file:
+            # Retrieve shared memory for JSON data and "start_interval"
+            analysis_json = json.load(file)
+            start_next_analysis_str = 'start_next_analysis_' + str(slice_i)
+            start_interval = analysis_json[start_next_analysis_str]
+            del analysis_json
+    else:
+        # Create shared memory for JSON data and initialize "start_interval"
+        start_interval = datetime(2023,5,11).isoformat()
+    
+    # define "end_interval" and "filter_position"
+    end_interval = min(datetime.now(), datetime.fromisoformat(start_interval) + timedelta(days=analysis_timeframe))
+    if slice_i == 1:
+        filter_position = (0,185) # this is enough to load all the coins available
+    else:
+        filter_position = (185,400)
+
+    shared_data = manager.Value(str, json.dumps({}))
+
+    
+    # load data from local (json/) and store in "data" variable
+    data = load_data(start_interval=datetime.fromisoformat(start_interval), end_interval=end_interval, filter_position=filter_position)
+    
+
+    # get data slices for multiprocessing. .e.g divide the data in batches for allowing multiprocessing
+    data_arguments = data_preparation(data, n_processes = n_processes)
+    
+
+    # initialize lock for processing shared variable between multiple processes
+    lock = Manager().Lock()
+
+    # Create a multiprocessing Pool
+    pool = Pool()
+
+    # define "end_interval_analysis". this is variable says "do not analyze events that are older than this date".
+    # Since "minutes_price_windows" looks for N minutes observations after a specific event, I might get smaller time windows than expected (the most recent ones). This check should avoid this problem.
+    if slice_i == 1:
+        end_interval_analysis = datetime.fromisoformat(data['BTCUSDT'][-1]['_id']) - timedelta(days=3) #last datetime from btcusdt - 3 days
+    else:
+        random_coin_slice2 = list(data_arguments[0].keys())[0]
+        end_interval_analysis = datetime.fromisoformat(data[random_coin_slice2][-1]['_id']) - timedelta(days=3) #last datetime from btcusdt - 3 days
+
+
+    del data
     # This is going to be also the starting time for next analysis
     start_next_analysis = end_interval_analysis.isoformat()
     print(f'Events from {start_interval} to {start_next_analysis} will be analyzed')
@@ -783,18 +1046,76 @@ def total_function_multiprocessing(list_buy_vol, list_vol, list_minutes, list_ev
 
     # Close the pool
     pool.close()
+    print('pool closed')
     pool.join()
+    print('pool joined')
+    del data_arguments
 
-    data = json.loads(shared_data.value)
-    # save new updated analysis to json_analysis/
-    json_to_save = {'start_next_analysis': start_next_analysis, 'data': data}
-    with open(file_path, 'w') as file:
-        json.dump(json_to_save, file)
+
+    updateAnalysisJson(shared_data.value, file_path, slice_i, start_next_analysis_str, start_next_analysis)
 
     t2 = time()
     print(t2-t1, ' seconds')
 
-    return shared_data
+def updateAnalysisJson(shared_data_value, file_path, slice_i, start_next_analysis_str, start_next_analysis):
+
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as file:
+            # Retrieve shared memory for JSON data and "start_interval"
+            analysis_json = json.load(file)
+    else:
+        analysis_json = {'data': {}}
+
+    new_data = json.loads(shared_data_value)
+    for key in list(new_data.keys()):
+
+        if key not in analysis_json['data']:
+            analysis_json['data'][key] = {}
+
+        if 'total_means' in analysis_json['data'][key]:
+            analysis_json['data'][key]['total_means'] += new_data[key]['total_means'] # concatenate lists
+            analysis_json['data'][key]['total_stds'] += new_data[key]['total_stds'] # concatenate lists
+            analysis_json['data'][key]['events'] += new_data[key]['events'] # sum numbers
+            analysis_json['data'][key]['coins'] = list(set(analysis_json['data'][key]['coins']) | set(new_data[key]['coins'])) # union of lists
+
+            # update complete "info"
+            for coin in new_data[key]['info']:
+                if coin not in analysis_json['data'][key]['info']:
+                    analysis_json['data'][key]['info'][coin] = []
+                for event in new_data[key]['info'][coin]:
+                    analysis_json['data'][key]['info'][coin].append(event)
+            
+            # update complete "nan"
+            for coin in new_data[key]['nan']:
+                if coin not in analysis_json['data'][key]['nan']:
+                    analysis_json['data'][key]['nan'][coin] = []
+                for event in new_data[key]['nan'][coin]:
+                    analysis_json['data'][key]['nan'][coin].append(event)
+
+        else:
+            # initialize the keys of analysis_json['data'][key]
+            analysis_json['data'][key]['total_means'] = new_data[key]['total_means']
+            analysis_json['data'][key]['total_stds'] = new_data[key]['total_stds']
+            analysis_json['data'][key]['coins'] = new_data[key]['coins']
+            analysis_json['data'][key]['events'] = new_data[key]['events']
+            analysis_json['data'][key]['info'] = new_data[key]['info']
+            analysis_json['data'][key]['nan'] = new_data[key]['nan']
+
+    del shared_data_value, new_data
+    
+    if slice_i == 1:
+        start_next_analysis_str_2 = 'start_next_analysis_2'
+        if start_next_analysis_str_2 in analysis_json:
+            json_to_save = {start_next_analysis_str_2: analysis_json[start_next_analysis_str_2], start_next_analysis_str : start_next_analysis, 'data': analysis_json['data']}
+        else:
+            json_to_save = {start_next_analysis_str_2: datetime(2023,6,7).isoformat(), start_next_analysis_str : start_next_analysis, 'data': analysis_json['data']}
+
+    else:
+        start_next_analysis_str_1 = 'start_next_analysis_1'
+        json_to_save = {start_next_analysis_str_1: analysis_json[start_next_analysis_str_1], start_next_analysis_str : start_next_analysis, 'data': analysis_json['data']}
+
+    with open(file_path, 'w') as file:
+        json.dump(json_to_save, file)
 
 
 
@@ -804,7 +1125,7 @@ def download_show_output(minimum_event_number, mean_threshold):
     This function takes as input data stored in analysis_json/ ans return the output available for pandas DATAFRAME
     '''
 
-    path = "/home/alberto/Docker/Trading/analysis/analysis_json/"
+    path = "/home/alberto/Docker/Trading/analysis/analysis_json2/"
     file_path = path + 'analysis' + '.json'
 
     with open(file_path, 'r') as file:
@@ -816,10 +1137,12 @@ def download_show_output(minimum_event_number, mean_threshold):
     output = {}
     complete_info = {}
     for key in list(shared_data.keys()):
+        # print(key)
+        # print(shared_data[key].keys())
         if key is not 'coins' or key is not 'events':
             if shared_data[key]['events'] >= minimum_event_number:
 
-                vol, buy_vol, timeframe, buy_vol_value, vol_value = getsubstring_fromkey(key)
+                vol, vol_value, buy_vol, buy_vol_value, timeframe = getsubstring_fromkey(key)
 
                 shared_data[key]['total_means'] = np.array(shared_data[key]['total_means'])
 
@@ -891,7 +1214,7 @@ def getsubstring_fromkey(key):
     for idx in range(idx1 + len(sub1) + 1, idx2):
         timeframe = timeframe + key[idx]
 
-    return vol, buy_vol, timeframe, buy_vol_value, vol_value
+    return vol, vol_value, buy_vol, buy_vol_value, timeframe
 
 
 
@@ -913,7 +1236,8 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False):
     file_path = path + key_json + '.json'
 
     # get substrings (vol, buy_vol, timeframe) from key
-    vol_field, buy_vol_field, timeframe, buy_vol_value, vol_value = getsubstring_fromkey(key)
+    # vol, vol_value, buy_vol, buy_vol_value, timeframe
+    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
 
     fields = [vol_field, buy_vol_field, timeframe, buy_vol_value, vol_value]
 
@@ -992,6 +1316,20 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False):
     plotTimeseries(timeseries, fields, check_past)
 
 
+def get_event_info(observations, timestamp_start, vol_field, buy_vol_field):
+    '''
+    this returns the price, vol_value and buy_value registered at the event triggering
+    '''
+    position = 0
+    for obj in observations:
+        position += 1
+        if obj.get('_id') == timestamp_start:
+            return obj['price'], obj[vol_field], obj[buy_vol_field] 
+    
+    print('something went wrong "get_position_from_list_of_objects"')
+    return None
+
+
 def plotTimeseries(timeseries, fields, check_past):
 
     vol_field = fields[0]
@@ -1019,19 +1357,20 @@ def plotTimeseries(timeseries, fields, check_past):
 
             # label x-axis every "interval" minutes
             interval = int(timeframe / 6)
+            current_price, volume_event, buy_volume_event = get_event_info(timeseries[coin][timestamp_start]['data'], timestamp_start, vol_field, buy_vol_field)
 
-            volume_event = (datetime.fromisoformat(timeseries[coin][timestamp_start]['data'][check_past]['_id']), timeseries[coin][timestamp_start]['data'][check_past][vol_field])
-            buy_volume_event = (datetime.fromisoformat(timeseries[coin][timestamp_start]['data'][check_past]['_id']), timeseries[coin][timestamp_start]['data'][check_past][buy_vol_field])
-            print(buy_volume_event)
+            volume_event = (datetime.fromisoformat(timestamp_start), volume_event)
+            buy_volume_event = (datetime.fromisoformat(timestamp_start), buy_volume_event)
+            print(f'Event occurred at {timestamp_start}')
+            print(f'Purchase Price: {current_price} - {buy_vol_field}: {buy_volume_event[1]} - {vol_field}: {volume_event[1]} ')
 
             # get max price and min price
-            max_price = (datetime.fromisoformat(timeseries[coin][timestamp_start]['data'][check_past]['_id']), timeseries[coin][timestamp_start]['data'][check_past]['price'])
-            min_price = (datetime.fromisoformat(timeseries[coin][timestamp_start]['data'][check_past]['_id']), timeseries[coin][timestamp_start]['data'][check_past]['price'])
+            max_price = (datetime.fromisoformat(timestamp_start), current_price)
+            min_price = (datetime.fromisoformat(timestamp_start), current_price)
 
             if check_past != False:
                 #print('1')
-                start_price = timeseries[coin][timestamp_start]['data'][check_past]['price']
-                start_timestamp = timeseries[coin][timestamp_start]['data'][check_past]['_id']
+                start_price = current_price
                 #print(start_price)
 
                 max_change = 0
@@ -1043,11 +1382,11 @@ def plotTimeseries(timeseries, fields, check_past):
                     price_list.append(obs['price'])
                     vol_list.append(obs[vol_field])
                     buy_vol_list.append(obs[buy_vol_field])
-                    if datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(start_timestamp):
+                    if datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(timestamp_start):
                         if obs['price'] > max_price[1]:
                             max_price = (datetime.fromisoformat(obs['_id']), obs['price'])
                             max_change = round_(((max_price[1] - start_price) / start_price)*100,2)
-                        if obs['price'] < min_price[1]:
+                        elif obs['price'] < min_price[1]:
                             min_price = (datetime.fromisoformat(obs['_id']), obs['price'])
                             min_change = round_(((min_price[1] - start_price) / start_price)*100,2)
             else:
@@ -1068,6 +1407,9 @@ def plotTimeseries(timeseries, fields, check_past):
                     if obs['price'] < min_price[1]:
                         min_price = (datetime.fromisoformat(obs['_id']), obs['price'])
                         min_change = round_(((min_price[1] - start_price) / start_price)*100,2)
+            
+            print(f'Max price occurred at {max_price[0]}: {max_price[1]} ({max_change})')
+            print(f'Min price occurred at {min_price[0]}: {min_price[1]} ({min_change})')
 
             #print('ok')
             fig, ax = plt.subplots(3, 1, sharex=True, figsize=(20, 10))

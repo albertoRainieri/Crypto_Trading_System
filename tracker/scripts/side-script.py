@@ -22,8 +22,8 @@ def main(db, logger, db_logger):
             Benchmark.computeVolumeAverage(db=db)
             logger.info("volumes have been updated")
 
-        
-        if minute == 59 and second == 12 and hour == 23:
+
+        if minute == 59 and second == 20 and hour == 23:
             BinanceController.main_sort_pairs_list(logger=logger, db_logger=db_logger)
             logger.info("list of instruments updated")
         

@@ -4,13 +4,13 @@
 /bin/bash /backend/scripts/fastapi_process.sh &
   
 # Start the second process
-#/bin/bash /backend/scripts/python_process.sh &
-
-#/bin/bash /backend/scripts/python_process_btc_eth.sh &
-
 /bin/bash /backend/scripts/wss_python_process.sh &
 sleep 10
+
+# Start the third process
 /bin/bash /backend/scripts/wss_python_process_2.sh &
+
+
 # Wait for any process to exit
 wait -n
   
