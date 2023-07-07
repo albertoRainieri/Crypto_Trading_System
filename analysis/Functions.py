@@ -38,7 +38,7 @@ def check_correlation(data, field_volume, field_price, coin = None, limit_volume
     print(jump)
 
     # analyze one coin if speicified
-    if coin is not None:
+    if coin != None:
         for obs in data[coin]:
             
             if obs[field_volume] != None and obs[field_price] != None:
@@ -139,7 +139,7 @@ def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_
 
             # the observation must not be younger than "end_interval_analysis". The reason is explained in function "total_function_multiprocessing"
             if datetime_obs < end_interval_analysis:
-                if buy_vol_field in obs and buy_vol_field in obs and obs[buy_vol_field] is not None and obs[vol_field] is not None:
+                if buy_vol_field in obs and buy_vol_field in obs and obs[buy_vol_field] != None and obs[vol_field] != None:
                     # if buy_vol is greater than limit and
                     # if vol is greater than limit and
                     # if datetime_obs does not fall in a previous analysis window. (i.e. datetime_obs is greater than the limit_window set)
@@ -253,7 +253,7 @@ def show_output(shared_data):
     df_output = {}
     coins = {}
     for key in list(shared_data.keys()):
-        if key is not 'coins' or key is not 'events':
+        if key != 'coins' or key != 'events':
             if shared_data[key]['events'] > 0:
                 shared_data[key]['price_changes'] = np.array(shared_data[key]['price_changes'])
 
@@ -614,7 +614,7 @@ def updateData_for_load_data(data, path, most_traded_coin_list, start_interval, 
 
     return data
 
-def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=datetime.now(tz=pytz.UTC), filter_position=(0,50)):
+def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=datetime.now(tz=pytz.UTC), filter_position=(0,50), coin=None):
     '''
     This functions loads all the data from "start_interval" until "end_interval".
     The data should be already download through "getData.ipynb" and stored in "analysis/json" path.
@@ -857,7 +857,11 @@ def get_dynamic_volume_avg(benchmark_info):
             #dynamic_benchmark_volume[coin][date] = {'vol_avg': mean_one_date, 'vol_std': std_one_date}
             
             # get percentage std over mean
-            dynamic_benchmark_volume[coin][date] = std_one_date / mean_one_date
+            if mean_one_date != 0:
+                dynamic_benchmark_volume[coin][date] = std_one_date / mean_one_date
+            else:
+                dynamic_benchmark_volume[coin][date] = 1
+
 
     for var in list(locals()):
         if var.startswith('__') and var.endswith('__'):
@@ -962,7 +966,7 @@ def total_function_multiprocessing(list_buy_vol, list_vol, list_minutes, list_ev
 
 def total_function_multiprocessing_lessRAM(list_buy_vol, list_vol, list_minutes, list_event_buy_volume, list_event_volume, n_processes, LOAD_DATA, slice_i):
     '''
-    this function loads only the data not analyzed and starts "wrap_analyze_events_multiprocessing" function. Finally it saves the output a path dedicated
+    this function loads only the data not analyzed and starts "wrap_analyze_events_multiprocessing" function. Finally it saves the output to a dedicated path
 
     '''
     t1 = time()
@@ -989,8 +993,8 @@ def total_function_multiprocessing_lessRAM(list_buy_vol, list_vol, list_minutes,
         analysis_timeframe = 5.5
     else:
         analysis_timeframe = 5 #days. How many days "total_function_multiprocessing" will analyze data from last saved?
+
     # Load files form json_analysis if exists otherwise initialize. Finally define "start_interval" and "end_interval" for loading the data to be analyzed
-    
     if os.path.exists(file_path):
         with open(file_path, 'r') as file:
             # Retrieve shared memory for JSON data and "start_interval"
@@ -1049,9 +1053,12 @@ def total_function_multiprocessing_lessRAM(list_buy_vol, list_vol, list_minutes,
     print('pool closed')
     pool.join()
     print('pool joined')
-    del data_arguments
+    del data_arguments, dynamic_benchmark_volume
+    if "arg" in locals():
+        del arg
 
 
+    # update the analysis json for storing performances
     updateAnalysisJson(shared_data.value, file_path, slice_i, start_next_analysis_str, start_next_analysis)
 
     t2 = time()
@@ -1059,14 +1066,43 @@ def total_function_multiprocessing_lessRAM(list_buy_vol, list_vol, list_minutes,
 
 def updateAnalysisJson(shared_data_value, file_path, slice_i, start_next_analysis_str, start_next_analysis):
 
+    # Get the local variables
+    local_vars = locals()
+
+    # Get the global variables
+    global_vars = globals()
+
+    # Create a list to store the variable names and sizes
+    variables = []
+
+    # Iterate over the local variables and calculate their sizes
+    for var_name, var_value in local_vars.items():
+        variables.append((var_name, sys.getsizeof(var_value)))
+
+    # Iterate over the global variables and calculate their sizes
+    for var_name, var_value in global_vars.items():
+        variables.append((var_name, sys.getsizeof(var_value)))
+
+    # Sort the variables based on their sizes in descending order
+    variables.sort(key=lambda x: x[1], reverse=True)
+
+    # Print the variables and their sizes
+    for var_name, var_size in variables:
+        print(f"{var_name}: {var_size} bytes")
+
     if os.path.exists(file_path):
         with open(file_path, 'r') as file:
             # Retrieve shared memory for JSON data and "start_interval"
             analysis_json = json.load(file)
+            print('analysis_json is loaded')
     else:
         analysis_json = {'data': {}}
 
     new_data = json.loads(shared_data_value)
+
+    print('new data was jsonized')
+    del shared_data_value
+
     for key in list(new_data.keys()):
 
         if key not in analysis_json['data']:
@@ -1091,6 +1127,9 @@ def updateAnalysisJson(shared_data_value, file_path, slice_i, start_next_analysi
                     analysis_json['data'][key]['nan'][coin] = []
                 for event in new_data[key]['nan'][coin]:
                     analysis_json['data'][key]['nan'][coin].append(event)
+            
+            del new_data[key]
+
 
         else:
             # initialize the keys of analysis_json['data'][key]
@@ -1101,7 +1140,7 @@ def updateAnalysisJson(shared_data_value, file_path, slice_i, start_next_analysi
             analysis_json['data'][key]['info'] = new_data[key]['info']
             analysis_json['data'][key]['nan'] = new_data[key]['nan']
 
-    del shared_data_value, new_data
+    del new_data
     
     if slice_i == 1:
         start_next_analysis_str_2 = 'start_next_analysis_2'
@@ -1120,9 +1159,18 @@ def updateAnalysisJson(shared_data_value, file_path, slice_i, start_next_analysi
 
 
             
-def download_show_output(minimum_event_number, mean_threshold):
+def download_show_output(minimum_event_number, minimum_coin_number, mean_threshold, group_coins=False, best_coins_volatility=None):
     '''
-    This function takes as input data stored in analysis_json/ ans return the output available for pandas DATAFRAME
+    This function takes as input data stored in analysis_json/ ans return the output available for pandas DATAFRAME. 
+    This is useful to have a good visualization about what TRIGGER have a better performance
+    The input is taken from "analysis_json" path.
+    The input is a dict where each key corresponds of a specific TRIGGER (e.g. "buy_vol_15m:0.75/vol_60m:20/timeframe:1440/vlty:3")
+    with this function, you can decide whether;
+    - set a minimum number of events per key 
+    - set a minimum number of coins per key
+    - set a minimum mean threshold for all events for a specific key
+    - group all keys which share the same TRIGGER (e.g. "buy_vol_15m:0.75/vol_60m:20/timeframe:1440/") but have a different volatility ("vlty:<x>")
+    - represent only the best keys grouped by volatility. This is activated only if "group_coins=False". "best_coins_volatility" must be an integer in this case.
     '''
 
     path = "/home/alberto/Docker/Trading/analysis/analysis_json2/"
@@ -1136,13 +1184,70 @@ def download_show_output(minimum_event_number, mean_threshold):
     shared_data = shared_data['data']
     output = {}
     complete_info = {}
-    for key in list(shared_data.keys()):
-        # print(key)
-        # print(shared_data[key].keys())
-        if key is not 'coins' or key is not 'events':
-            if shared_data[key]['events'] >= minimum_event_number:
+    volatility_list = {}
 
+    if not group_coins:
+        for key in list(shared_data.keys()):
+            if key != 'coins' or key != 'events':
+
+                # compute number of events
+                n_coins = len(shared_data[key]['info'])
+                n_events = 0
+                for coin in shared_data[key]['info']:
+                    n_events += len(shared_data[key]['info'][coin])
+
+                
+                if n_events >= minimum_event_number and n_coins >= minimum_coin_number:
+
+                    vol, vol_value, buy_vol, buy_vol_value, timeframe = getsubstring_fromkey(key)
+                    volatility = key.split('vlty:')[1]
+                    
+
+                    shared_data[key]['total_means'] = np.array(shared_data[key]['total_means'])
+
+                    isfinite = np.isfinite(shared_data[key]['total_means'])
+                    shared_data[key]['total_means'] = shared_data[key]['total_means'][isfinite]
+
+                    mean = round_(np.mean(shared_data[key]['total_means'])*100,2)
+                    std = round_(pooled_standard_deviation(shared_data[key]['total_stds'], sample_size=int(timeframe))*100,2)
+                    
+                    if best_coins_volatility:
+                        upper_bound = mean + std
+                        lower_bound = mean + std
+
+                        if volatility not in volatility_list:
+                            volatility_list[volatility] = [{'key': key, 'upper_bound': upper_bound}]
+                        else:
+                            volatility_list[volatility].append({'key': key, 'upper_bound': upper_bound})
+
+                    if mean > mean_threshold:
+                    
+                        complete_info[key] = {'info': shared_data[key]['info'], 'coins': n_coins, 'events': n_events}
+                        output[key] = {'mean': mean, 'std': std, 'upper_bound': mean + std, 'lower_bound': mean - std, 'n_coins': n_coins, 'n_events': n_events}
+        
+        if best_coins_volatility:
+            keys_to_keep = {}
+            for volatility in volatility_list:
+                #print(volatility_list[volatility])
+                volatility_list[volatility].sort(key=lambda x: x['upper_bound'], reverse=True)
+                volatility_list[volatility] = volatility_list[volatility][:best_coins_volatility]
+                keys_to_keep[volatility] = [x['key'] for x in volatility_list[volatility]]
+
+            new_output = {}
+            for key in output:
+                volatility = key.split('vlty:')[1]
+                if key in keys_to_keep[volatility]:
+                    new_output[key] = output[key]
+            
+            return new_output, complete_info
+                    
+    else:
+        for key in list(shared_data.keys()):
+            # print(key)
+            # print(shared_data[key].keys())
+            if key != 'coins' or key != 'events':
                 vol, vol_value, buy_vol, buy_vol_value, timeframe = getsubstring_fromkey(key)
+                key_without_volatility = key.split('vlty:')[0]
 
                 shared_data[key]['total_means'] = np.array(shared_data[key]['total_means'])
 
@@ -1152,16 +1257,31 @@ def download_show_output(minimum_event_number, mean_threshold):
                 mean = round_(np.mean(shared_data[key]['total_means'])*100,2)
                 std = round_(pooled_standard_deviation(shared_data[key]['total_stds'], sample_size=int(timeframe))*100,2)
 
-                if mean > mean_threshold:
-                
-                    if 'nan' in shared_data[key]:
-                        complete_info[key] = {'info': shared_data[key]['info'], 'nan': shared_data[key]['nan'], 'coins': shared_data[key]['coins'], 'events': shared_data[key]['events']}
-                    else:
-                        complete_info[key] = {'info': shared_data[key]['info'], 'coins': shared_data[key]['coins'], 'events': shared_data[key]['events']}
+                if key_without_volatility not in output:
+                    output[key_without_volatility] = {'mean': [mean], 'std': [std], 'n_coins': len(shared_data[key]['coins']), 'n_events': shared_data[key]['events']}
+                else:
+                    output[key_without_volatility]['mean'].append(mean)
+                    output[key_without_volatility]['std'].append(std)
+                    output[key_without_volatility]['n_coins'] += len(shared_data[key]['coins'])
+                    output[key_without_volatility]['n_events'] += shared_data[key]['events']
+        
+        delete_keys = []
+        for key in output:
+            if output[key]['n_events'] >= minimum_event_number:
+                output[key]['mean'] = round_(np.mean(output[key]['mean']),2)
+                output[key]['std'] = round_(np.mean(output[key]['std']),2)
+            
+                output[key]['upper_bound'] = output[key]['mean'] + output[key]['std']
+                output[key]['lower_bound'] = output[key]['mean'] - output[key]['std']
+            else:
+                delete_keys.append(key)
 
-                    output[key] = {'mean': mean, 'std': std, 'upper_bound': mean + std, 'lower_bound': mean - std, 'n_coins': len(shared_data[key]['coins']), 'n_events': shared_data[key]['events']}
-            # else:
-            #     output[key] = {'mean': None, 'std': None, 'lower_bound': None, 'n_coins': 0, 'n_events': 0}
+        for key in delete_keys:
+            output.pop(key)
+
+            
+        
+        complete_info = None
 
     return output, complete_info
 
@@ -1460,3 +1580,140 @@ def plotTimeseries(timeseries, fields, check_past):
 
 
     
+def RiskManagement(key, info):
+
+    # get timeseries
+    timeseries_path = "/home/alberto/Docker/Trading/analysis/timeseries_json/"
+    timeseries_file = key.replace(':', '_')
+    timeseries_file = timeseries_file.replace('/', '_')
+    timeseries_full_path = timeseries_path + timeseries_file + '.json'
+    if not os.path.exists(timeseries_full_path):
+        response = getTimeseries(info, key, check_past=360, look_for_newdata=True)
+
+
+    f = open(timeseries_full_path, "r")
+    timeseries_json = json.loads(f.read())
+    
+
+
+    # get timeframe
+    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
+    timeframe = int(timeframe) - 0.2*(int(timeframe))
+
+
+    results = {}
+    mean_list = []
+    coin_list = []
+    n_events = 0
+
+
+    # iterate through each coin
+    for coin in timeseries_json:
+        
+        # check if there is at least a time window of "timeframe" between 2 events of the same coin
+        timestamp_list = list(timeseries_json[coin].keys())
+        timestamp_list = sorted(timestamp_list)
+        timestamp_to_analyze = [timestamp_list[0]]
+
+        if len(timestamp_list) > 1:
+            for timestamp in timestamp_list[1:]:
+                if datetime.fromisoformat(timestamp) - datetime.fromisoformat(timestamp_to_analyze[-1]) > timedelta(minutes=timeframe):
+                    timestamp_to_analyze.append(timestamp)
+                else:
+                    print(f'found duplicate for {coin} between {timestamp} and {timestamp_to_analyze[-1]}')
+
+
+        # iterate through each event
+        for start_timestamp in timestamp_to_analyze:
+
+            coin_list.append(coin)
+
+            STEP = 0.05
+            GOLDEN_ZONE_BOOL = False
+            GOLDEN_ZONE = 0.3 #%
+            GOLDEN_ZONE_LB = GOLDEN_ZONE - STEP
+            GOLDEN_ZONE_UB = GOLDEN_ZONE + STEP
+            LB_THRESHOLD = None
+            UB_THRESHOLD = None
+
+            n_events += 1
+            iterator = timeseries_json[coin][start_timestamp]['data']
+            initial_price = iterator[0]['price']
+
+            # iterate through each obs
+            for obs, obs_i in zip(iterator, range(1, len(iterator) + 1)):
+                current_price = obs['price']
+                current_change = (current_price - initial_price) / initial_price
+
+                # if I'm already in GOLDEN ZONE, then just manage this scenario
+                if GOLDEN_ZONE_BOOL:
+                    SELL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL = manageGoldenZoneChanges(current_change, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL)
+                    if SELL:
+                        results[start_timestamp] = current_change
+                        break
+
+                # check if price went above golden zone
+                if current_change > GOLDEN_ZONE:
+                    SELL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL = manageGoldenZoneChanges(current_change, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL)
+
+                # check if minimum time window has passed
+                elif datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(start_timestamp) + timedelta(minutes=timeframe):
+                    SELL, LB_THRESHOLD, UB_THRESHOLD = manageUsualPriceChanges(current_change, LB_THRESHOLD, UB_THRESHOLD, STEP)
+                    if SELL:
+                        results[start_timestamp] = current_change
+                
+                if obs_i == len(iterator):
+                    results[start_timestamp] = current_change
+
+    for start_timestamp in results:
+        mean_list.append(results[start_timestamp])
+
+
+    mean = round_((np.mean(mean_list))*100,2)
+    print(f'Mean is {mean} % for {n_events} events')
+    INVESTMENT_PER_EVENT = 200
+    profit = round_((200 * n_events) * (mean/100),2)
+    print(f'{profit} euro of profit for an investment of {INVESTMENT_PER_EVENT} euro per event')
+    
+    
+    df = pd.DataFrame({'events': list(results.keys()), 'mean': mean_list, 'coin': coin_list})
+    
+    return df
+
+    
+
+def manageGoldenZoneChanges(current_change, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL):
+    GOLDEN_ZONE_BOOL = True
+    SELL = False
+
+    if current_change > GOLDEN_ZONE_UB:
+        GOLDEN_ZONE_UB += STEP
+        GOLDEN_ZONE_LB += STEP
+        STEP += 0.01
+
+    elif current_change < GOLDEN_ZONE_LB:
+        SELL = True
+        return SELL, None, None, None, None
+    
+
+    return SELL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL
+
+def manageUsualPriceChanges(current_change, LB_THRESHOLD, UB_THRESHOLD, STEP):
+    SELL = False
+
+    if LB_THRESHOLD == None:
+        LB_THRESHOLD = current_change - STEP
+        UB_THRESHOLD = current_change + STEP
+        return SELL, LB_THRESHOLD, UB_THRESHOLD
+    
+    if current_change > UB_THRESHOLD:
+        UB_THRESHOLD += STEP
+        LB_THRESHOLD += STEP
+    
+    elif current_change < LB_THRESHOLD:
+        SELL = True
+        return SELL, None, None
+    
+    return SELL, LB_THRESHOLD, UB_THRESHOLD
+    
+ 
