@@ -1183,10 +1183,14 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
 
     path = ROOT_PATH + "/analysis_json/"
     file_path = path + 'analysis' + '.json'
+    t1 = time()
 
     with open(file_path, 'r') as file:
         # Retrieve shared memory for JSON data and "start_interval"
         shared_data = json.load(file)
+        t2 = time()
+        delta_t_1 = round_(t2 - t1,2)
+        print(f'Download completed in {delta_t_1} seconds')
 
     #return shared_data
     shared_data = shared_data['data']
@@ -1290,6 +1294,11 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
             
         
         complete_info = None
+    
+    t3 = time()
+    delta_t_2 = round_(t3 - t2,2)
+    print(f'Data Preparation completed in {delta_t_2} seconds')
+
 
     return output, complete_info
 
@@ -1588,7 +1597,7 @@ def plotTimeseries(timeseries, fields, check_past):
 
 
     
-def RiskManagement(key, info):
+def RiskManagement(key):
 
     # get timeseries
     timeseries_path = ROOT_PATH + "/timeseries_json/"
@@ -1596,7 +1605,9 @@ def RiskManagement(key, info):
     timeseries_file = timeseries_file.replace('/', '_')
     timeseries_full_path = timeseries_path + timeseries_file + '.json'
     if not os.path.exists(timeseries_full_path):
-        response = getTimeseries(info, key, check_past=360, look_for_newdata=True)
+        #response = getTimeseries(info, key, check_past=360, look_for_newdata=True)
+        print(f'KEY DOES NOT EXIST. Download timeseries {key} ')
+        return None
 
 
     f = open(timeseries_full_path, "r")
@@ -1611,6 +1622,9 @@ def RiskManagement(key, info):
 
     results = {}
     mean_list = []
+    timestamp_exit_list = []
+    exit_price_list = []
+    buy_price_list = []
     coin_list = []
     n_events = 0
 
@@ -1657,7 +1671,7 @@ def RiskManagement(key, info):
                 if GOLDEN_ZONE_BOOL:
                     SELL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL = manageGoldenZoneChanges(current_change, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL)
                     if SELL:
-                        results[start_timestamp] = current_change
+                        results[start_timestamp] = (current_change, obs['_id'], initial_price, current_price)                        
                         break
 
                 # check if price went above golden zone
@@ -1668,13 +1682,16 @@ def RiskManagement(key, info):
                 elif datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(start_timestamp) + timedelta(minutes=timeframe):
                     SELL, LB_THRESHOLD, UB_THRESHOLD = manageUsualPriceChanges(current_change, LB_THRESHOLD, UB_THRESHOLD, STEP)
                     if SELL:
-                        results[start_timestamp] = current_change
+                        results[start_timestamp] = (current_change, obs['_id'], initial_price, current_price)
                 
                 if obs_i == len(iterator):
-                    results[start_timestamp] = current_change
+                    results[start_timestamp] = (current_change, obs['_id'], initial_price, current_price)
 
     for start_timestamp in results:
-        mean_list.append(results[start_timestamp])
+        mean_list.append(results[start_timestamp][0])
+        timestamp_exit_list.append(results[start_timestamp][1])
+        buy_price_list.append(results[start_timestamp][2])
+        exit_price_list.append(results[start_timestamp][3])
 
 
     mean = round_((np.mean(mean_list))*100,2)
@@ -1684,7 +1701,7 @@ def RiskManagement(key, info):
     print(f'{profit} euro of profit for an investment of {INVESTMENT_PER_EVENT} euro per event')
     
     
-    df = pd.DataFrame({'events': list(results.keys()), 'mean': mean_list, 'coin': coin_list})
+    df = pd.DataFrame({'events': list(results.keys()), 'mean': mean_list, 'buy_price': buy_price_list, 'exit_price': exit_price_list,  'timestamp_exit': timestamp_exit_list, 'coin': coin_list})
     
     return df
 
