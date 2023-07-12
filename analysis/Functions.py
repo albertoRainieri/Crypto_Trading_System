@@ -7,13 +7,14 @@ import requests
 import os, sys
 from time import sleep
 import pytz
-from scipy.stats import pearsonr
+#from scipy.stats import pearsonr
 import pandas as pd
 from time import time
 from Functions_getData import getData
 from multiprocessing import Pool, Manager
 
 
+ROOT_PATH = os.getcwd()
 
 def round_(number, decimal):
     return float(format(number, f".{decimal}f"))
@@ -383,7 +384,7 @@ def start_wrap_analyze_events_multiprocessing(data, list_buy_vol, list_vol, list
     data_arguments = data_preparation(data, n_processes = n_processes)
     total_combinations = len(list_buy_vol) * len(list_vol) * len(list_minutes) * len(list_event_volume) * len(list_event_buy_volume)
     print('total_combinantions', ': ', total_combinations)
-    path = "/home/alberto/Docker/Trading/analysis/analysis_json/"
+    path = ROOT_PATH + "/analysis_json/"
     file_path = path + 'analysis' + '.json'
 
     manager = Manager()
@@ -582,7 +583,7 @@ def retrieve_datetime_for_load_data(json_info, list_json_info, index):
     month = int(next_path_split[2])
     year = int(next_path_split[3])
     hour = int(next_path_split[4])
-    minute = int(next_path_split[5][:2])
+    minute = int(next_path_split[5].split('.')[0])
     datetime2 = datetime(year=year, month=month, day=day, hour=hour, minute=minute)
 
     return datetime1, datetime2
@@ -634,7 +635,7 @@ def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=d
     del volume_info, df_benchmark
 
     # get all the json paths in "analysis/json"
-    path_dir = "/home/alberto/Docker/Trading/analysis/json"
+    path_dir = ROOT_PATH + "/json"
     list_json = os.listdir(path_dir)
     full_paths = [path_dir + "/{0}".format(x) for x in list_json]
     print(full_paths)
@@ -730,7 +731,7 @@ def get_volume_info():
     ENDPOINT = 'https://algocrypto.eu'
     #ENDPOINT = 'http://localhost'
 
-    method_most_traded_coins = '/analysis/get-volumeinfo'
+    method_most_traded_coins = '/get-volumeinfo'
 
     url_mosttradedcoins = ENDPOINT + method_most_traded_coins
     response = requests.get(url_mosttradedcoins)
@@ -750,7 +751,7 @@ def get_benchmark_info():
     month = now.month
     day = now.day
     file = 'benchmark-' + str(day) + '-' + str(month) + '-' + str(year)
-    full_path = '/home/alberto/Docker/Trading/analysis/benchmark_json/' + file
+    full_path = ROOT_PATH + '/benchmark_json/' + file
 
     if os.path.exists(full_path):
         print(f'{full_path} exists. Loading the file...')
@@ -891,34 +892,36 @@ def total_function_multiprocessing(list_buy_vol, list_vol, list_minutes, list_ev
     # get dynamic benchmark volume. This will be used for each observation for each coin, to see what was the current volatility (std_dev / mean) of the last 30 days.
     benchmark_info = get_benchmark_info()
     dynamic_benchmark_volume = get_dynamic_volume_avg(benchmark_info)
+    del benchmark_info
 
     # get json_analysis path. Check if there is already some data analyzed in json_analysis/ path. The new data will be appended
     total_combinations = len(list_buy_vol) * len(list_vol) * len(list_minutes) * len(list_event_volume) * len(list_event_buy_volume)
     print('total_combinantions', ': ', total_combinations)
-    path = "/home/alberto/Docker/Trading/analysis/analysis_json/"
+    path = ROOT_PATH + "/analysis_json/"
     file_path = path + 'analysis' + '.json'
 
     # initialize Manager for "shared_data". Used for multiprocessing
     manager = Manager()
 
     
-    analysis_timeframe = 7 #days. How many days "total_function_multiprocessing" will analyze data from last saved?
+    analysis_timeframe = 10 #days. How many days "total_function_multiprocessing" will analyze data from last saved?
     # Load files form json_analysis if exists otherwise initialize. Finally define "start_interval" and "end_interval" for loading the data to be analyzed
     
     if os.path.exists(file_path):
         with open(file_path, 'r') as file:
             # Retrieve shared memory for JSON data and "start_interval"
             analysis_json = json.load(file)
-            shared_data = manager.Value(str, json.dumps(analysis_json['data']))
             start_interval = analysis_json['start_next_analysis']
+            del analysis_json
     else:
         # Create shared memory for JSON data and initialize "start_interval"
-        shared_data = manager.Value(str, json.dumps({}))
         start_interval = datetime(2023,5,11).isoformat()
     
     # define "end_interval" and "filter_position"
     end_interval = min(datetime.now(), datetime.fromisoformat(start_interval) + timedelta(days=analysis_timeframe))
-    filter_position = (0,180) # this is enough to load all the coins available
+    filter_position = (0,500) # this is enough to load all the coins available
+
+    shared_data = manager.Value(str, json.dumps({}))
 
     # load data from local (json/) and store in "data" variable
     data = load_data(start_interval=datetime.fromisoformat(start_interval), end_interval=end_interval, filter_position=filter_position)
@@ -945,23 +948,24 @@ def total_function_multiprocessing(list_buy_vol, list_vol, list_minutes, list_ev
     pool.starmap(wrap_analyze_events_multiprocessing, [(arg, arg_i, list_buy_vol, list_vol, list_minutes,
                                         list_event_buy_volume, list_event_volume, dynamic_benchmark_volume, end_interval_analysis, lock, shared_data) for arg, arg_i in zip(data_arguments, range(1,len(data_arguments)+1))])
 
-    print('wrap_analyze_events_multiprocessing function is completed')
     # Close the pool
     pool.close()
+    print('pool closed')
     pool.join()
+    print('pool joined')
+    del data_arguments, dynamic_benchmark_volume
+    if "arg" in locals():
+        del arg
 
     data = json.loads(shared_data.value)
     # save new updated analysis to json_analysis/
 
 
-    # json_to_save = {'start_next_analysis': start_next_analysis, 'data': data}
-    # with open(file_path, 'w') as file:
-    #     json.dump(json_to_save, file)
+    # update the analysis json for storing performances
+    updateAnalysisJson(shared_data.value, file_path, start_next_analysis)
 
     t2 = time()
     print(t2-t1, ' seconds')
-
-    return shared_data
 
 
 def total_function_multiprocessing_lessRAM(list_buy_vol, list_vol, list_minutes, list_event_buy_volume, list_event_volume, n_processes, LOAD_DATA, slice_i):
@@ -983,16 +987,16 @@ def total_function_multiprocessing_lessRAM(list_buy_vol, list_vol, list_minutes,
     # get json_analysis path. Check if there is already some data analyzed in json_analysis/ path. The new data will be appended
     total_combinations = len(list_buy_vol) * len(list_vol) * len(list_minutes) * len(list_event_volume) * len(list_event_buy_volume)
     print('total_combinantions', ': ', total_combinations)
-    path = "/home/alberto/Docker/Trading/analysis/analysis_json2/"
+    path = ROOT_PATH + "/analysis_json2/"
     file_path = path + 'analysis' + '.json'
 
     # initialize Manager for "shared_data". Used for multiprocessing
     manager = Manager()
 
     if slice_i == 1:
-        analysis_timeframe = 5.5
+        analysis_timeframe = 4.7333333
     else:
-        analysis_timeframe = 5 #days. How many days "total_function_multiprocessing" will analyze data from last saved?
+        analysis_timeframe = 3.266 #days. How many days "total_function_multiprocessing" will analyze data from last saved?
 
     # Load files form json_analysis if exists otherwise initialize. Finally define "start_interval" and "end_interval" for loading the data to be analyzed
     if os.path.exists(file_path):
@@ -1059,12 +1063,12 @@ def total_function_multiprocessing_lessRAM(list_buy_vol, list_vol, list_minutes,
 
 
     # update the analysis json for storing performances
-    updateAnalysisJson(shared_data.value, file_path, slice_i, start_next_analysis_str, start_next_analysis)
+    updateAnalysisJson(shared_data.value, file_path, start_next_analysis, slice_i, start_next_analysis_str)
 
     t2 = time()
     print(t2-t1, ' seconds')
 
-def updateAnalysisJson(shared_data_value, file_path, slice_i, start_next_analysis_str, start_next_analysis):
+def updateAnalysisJson(shared_data_value, file_path, start_next_analysis, slice_i=None, start_next_analysis_str=None):
 
     # Get the local variables
     local_vars = locals()
@@ -1142,16 +1146,20 @@ def updateAnalysisJson(shared_data_value, file_path, slice_i, start_next_analysi
 
     del new_data
     
-    if slice_i == 1:
-        start_next_analysis_str_2 = 'start_next_analysis_2'
-        if start_next_analysis_str_2 in analysis_json:
-            json_to_save = {start_next_analysis_str_2: analysis_json[start_next_analysis_str_2], start_next_analysis_str : start_next_analysis, 'data': analysis_json['data']}
-        else:
-            json_to_save = {start_next_analysis_str_2: datetime(2023,6,7).isoformat(), start_next_analysis_str : start_next_analysis, 'data': analysis_json['data']}
+    if slice_i != None:
+        if slice_i == 1:
+            start_next_analysis_str_2 = 'start_next_analysis_2'
+            if start_next_analysis_str_2 in analysis_json:
+                json_to_save = {start_next_analysis_str_2: analysis_json[start_next_analysis_str_2], start_next_analysis_str : start_next_analysis, 'data': analysis_json['data']}
+            else:
+                json_to_save = {start_next_analysis_str_2: datetime(2023,6,7).isoformat(), start_next_analysis_str : start_next_analysis, 'data': analysis_json['data']}
 
+        else:
+            start_next_analysis_str_1 = 'start_next_analysis_1'
+            json_to_save = {start_next_analysis_str_1: analysis_json[start_next_analysis_str_1], start_next_analysis_str : start_next_analysis, 'data': analysis_json['data']}
     else:
-        start_next_analysis_str_1 = 'start_next_analysis_1'
-        json_to_save = {start_next_analysis_str_1: analysis_json[start_next_analysis_str_1], start_next_analysis_str : start_next_analysis, 'data': analysis_json['data']}
+        json_to_save = {'start_next_analysis' : start_next_analysis, 'data': analysis_json['data']}
+
 
     with open(file_path, 'w') as file:
         json.dump(json_to_save, file)
@@ -1173,7 +1181,7 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
     - represent only the best keys grouped by volatility. This is activated only if "group_coins=False". "best_coins_volatility" must be an integer in this case.
     '''
 
-    path = "/home/alberto/Docker/Trading/analysis/analysis_json2/"
+    path = ROOT_PATH + "/analysis_json/"
     file_path = path + 'analysis' + '.json'
 
     with open(file_path, 'r') as file:
@@ -1352,7 +1360,7 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False):
     key_json = key.replace(':', '_')
     key_json = key_json.replace('/', '_')
 
-    path = "/home/alberto/Docker/Trading/analysis/timeseries_json/"
+    path = ROOT_PATH + "/timeseries_json/"
     file_path = path + key_json + '.json'
 
     # get substrings (vol, buy_vol, timeframe) from key
@@ -1583,7 +1591,7 @@ def plotTimeseries(timeseries, fields, check_past):
 def RiskManagement(key, info):
 
     # get timeseries
-    timeseries_path = "/home/alberto/Docker/Trading/analysis/timeseries_json/"
+    timeseries_path = ROOT_PATH + "/timeseries_json/"
     timeseries_file = key.replace(':', '_')
     timeseries_file = timeseries_file.replace('/', '_')
     timeseries_full_path = timeseries_path + timeseries_file + '.json'
