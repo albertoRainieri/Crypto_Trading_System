@@ -169,6 +169,7 @@ class AnalysisController:
                         # datetime_start is the beginning start from which retrieving the observation
                         datetime_start = timeseries_start - timedelta(minutes=check_past)
                         datetime_end = timeseries_start + timedelta(minutes=timeframe) + timedelta(minutes=check_past)
+                        
                     
                     # let's get the iso format timestamps for querying mongodb
                     timestamp_start = datetime_start.isoformat()
