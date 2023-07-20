@@ -103,10 +103,13 @@ class AnalysisController:
                     dict_[coin][field] = cursor_benchmark[0][field]
 
                 elif field == 'Last_30_Trades':
-                    print(coin)
-                    dict_[coin]['score_last_30_days'] = round_(cursor_benchmark[0][field]['score_last_30_trades'],2)
-                    dict_[coin]['n_obs'] = len(cursor_benchmark[0][field]['list_last_30_trades'])
-
+                    #print(coin)
+                    if field in cursor_benchmark[0]:
+                        dict_[coin]['score_last_30_days'] = round_(cursor_benchmark[0][field]['score_last_30_trades'],2)
+                        dict_[coin]['n_obs'] = len(cursor_benchmark[0][field]['list_last_30_trades'])
+                    else:
+                        dict_[coin]['score_last_30_days'] = 0
+                        dict_[coin]['n_obs'] = 0
                 else:
                     dict_[coin][field] = cursor_benchmark[0][field]
         
