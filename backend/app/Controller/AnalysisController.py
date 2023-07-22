@@ -129,12 +129,16 @@ class AnalysisController:
         timeframe = request['timeframe']
         if timeframe > 4000:
             n_event_limit = 3
+            n_coin_limit = 30
         elif timeframe > 1000:
             n_event_limit = 6
+            n_coin_limit = 70
         elif timeframe > 300:
             n_event_limit = 15
+            n_coin_limit = 100
         else:
             n_event_limit = 100
+            n_coin_limit = 200
 
         db = DatabaseConnection()
         db_tracker = db.get_db(DATABASE_TRACKER)
@@ -147,45 +151,52 @@ class AnalysisController:
         else:
             check_past = False
 
-        response = {}
+        response = {'data': {}, 'msg': 'All data have been downloaded'}
+
+        n_coin = 0
 
         for coin in coins:
-            events = request['info'][coin]
+            n_coin += 1
 
-            # let's retrieve the last event that has been already downloaded
-            if 'last_timestamp' in request and coin in request['last_timestamp']:
-                most_recent_datetime = datetime.fromisoformat(request['last_timestamp'][coin])
+            if n_coin <= n_coin_limit:
+                events = request['info'][coin]
+
+                # let's retrieve the last event that has been already downloaded
+                if 'last_timestamp' in request and coin in request['last_timestamp']:
+                    most_recent_datetime = datetime.fromisoformat(request['last_timestamp'][coin])
+                else:
+                    most_recent_datetime = datetime(2023,5,11)
+
+                n_events = 0
+
+                for event in events:
+                    if datetime.fromisoformat(event['event']) > most_recent_datetime and n_events <= n_event_limit:
+                        n_events += 1
+                        if not check_past:
+                            # datetime_start is the timestamp of the triggered event
+                            datetime_start = datetime.fromisoformat(event['event']).replace(second=0, microsecond=0)
+                            datetime_end = datetime_start + timedelta(minutes=timeframe)
+                        else:
+                            # timeseries_start is the timestamp of the triggered event
+                            timeseries_start = datetime.fromisoformat(event['event']).replace(second=0, microsecond=0)
+                            # datetime_start is the beginning start from which retrieving the observation
+                            datetime_start = timeseries_start - timedelta(minutes=check_past)
+                            datetime_end = timeseries_start + timedelta(minutes=timeframe) + timedelta(minutes=timeframe/3)
+
+                        
+                        # let's get the iso format timestamps for querying mongodb
+                        timestamp_start = datetime_start.isoformat()
+                        timestamp_end = datetime_end.isoformat()
+                        
+                        docs = list(db_tracker[coin].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}}))
+                        
+                        if coin not in response['data']:
+                            response['data'][coin] = {}
+                    
+                        response['data'][coin][event['event']] = {'data': docs, 'statistics': {'mean': event['mean'], 'std': event['std'], 'timeframe': timeframe, }}
             else:
-                most_recent_datetime = datetime(2023,5,11)
-
-            n_events = 0
-
-            for event in events:
-                if datetime.fromisoformat(event['event']) > most_recent_datetime and n_events <= n_event_limit:
-                    n_events += 1
-                    if not check_past:
-                        # datetime_start is the timestamp of the triggered event
-                        datetime_start = datetime.fromisoformat(event['event']).replace(second=0, microsecond=0)
-                        datetime_end = datetime_start + timedelta(minutes=timeframe)
-                    else:
-                        # timeseries_start is the timestamp of the triggered event
-                        timeseries_start = datetime.fromisoformat(event['event']).replace(second=0, microsecond=0)
-                        # datetime_start is the beginning start from which retrieving the observation
-                        datetime_start = timeseries_start - timedelta(minutes=check_past)
-                        datetime_end = timeseries_start + timedelta(minutes=timeframe) + timedelta(minutes=timeframe/3)
-
-                    
-                    # let's get the iso format timestamps for querying mongodb
-                    timestamp_start = datetime_start.isoformat()
-                    timestamp_end = datetime_end.isoformat()
-                    
-                    docs = list(db_tracker[coin].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}}))
-                    
-                    if coin not in response:
-                        response[coin] = {}
-                
-                    response[coin][event['event']] = {'data': docs, 'statistics': {'mean': event['mean'], 'std': event['std'], 'timeframe': timeframe}}
-
+                response['msg'] = 'WARNING: Request too big. Not all data have been downloaded, retry...'
+                break
 
         json_string = jsonable_encoder(response)
         return JSONResponse(content=json_string)
