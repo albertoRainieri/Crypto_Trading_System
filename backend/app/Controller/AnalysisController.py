@@ -153,12 +153,11 @@ class AnalysisController:
 
         response = {'data': {}, 'msg': 'All data have been downloaded'}
 
-        n_coin = 0
+        n_coin = []
 
         for coin in coins:
-            n_coin += 1
 
-            if n_coin <= n_coin_limit:
+            if len(n_coin) <= n_coin_limit:
                 events = request['info'][coin]
 
                 # let's retrieve the last event that has been already downloaded
@@ -171,6 +170,9 @@ class AnalysisController:
 
                 for event in events:
                     if datetime.fromisoformat(event['event']) > most_recent_datetime and n_events <= n_event_limit:
+                        if coin not in n_coin:
+                            n_coin.append(coin)
+
                         n_events += 1
                         if not check_past:
                             # datetime_start is the timestamp of the triggered event
