@@ -1175,6 +1175,7 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
                 if key in keys_to_keep[volatility]:
                     new_output[key] = output[key]
             
+
             return new_output, complete_info
                     
     else:
@@ -1219,10 +1220,9 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
 
         for key in delete_keys:
             output.pop(key)
-
-            
-        
         complete_info = None
+
+    
     
     t3 = time()
     delta_t_2 = round_(t3 - t2,2)
@@ -1336,7 +1336,10 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
             # send request
             response = requests.post(url, json = request)
             print('Status Code is : ', response.status_code)
-            new_timeseries = json.loads(response.text)
+            response = json.loads(response.text)
+            new_timeseries = response['data']
+            msg = response['msg']
+            print(msg)
 
             n_events = 0
             # let's update "timeseries" with the new events occurred in "new_timeseries"
@@ -1374,7 +1377,10 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
 
         response = requests.post(url, json = request)
         print('Status Code is : ', response.status_code)
-        timeseries = json.loads(response.text)
+        response = json.loads(response.text)
+        timeseries = response['data']
+        msg = response['msg']
+        print(msg)
 
         with open(file_path, 'w') as file:
             json.dump(timeseries, file)
@@ -1736,9 +1742,9 @@ def infoTimeseries(info, key):
     # sort all the vents chronologically
     for coin in info[key]['info']:
         for event in info[key]['info'][coin]:
-            timeseries_info.append(event)
+            timeseries_info.append((event, coin))
 
-    timeseries_info.sort(key=lambda x: x['event'], reverse=False)
+    timeseries_info.sort(key=lambda x: x[0]['event'], reverse=False)
 
     timestamp_timeseries = []
     datetime_timeseries = []
@@ -1750,12 +1756,13 @@ def infoTimeseries(info, key):
 
     for event, i in zip(timeseries_info, range(len(timeseries_info))):
         
-        mean_list.append(event['mean'])
-        std_list.append(event['std'])
+        mean_list.append(event[0]['mean'])
+        std_list.append(event[0]['std'])
+        coin_list.append(event[1])
 
         mean_timeseries.append(np.mean(mean_list))
         std_timeseries.append(np.mean(std_list))
-        timestamp_timeseries.append(event['event'])
+        timestamp_timeseries.append(event[0]['event'])
 
     upper_bound = np.array(mean_timeseries) + np.array(std_timeseries)
     lower_bound = np.array(mean_timeseries) - np.array(std_timeseries)
@@ -1763,7 +1770,7 @@ def infoTimeseries(info, key):
     for timestamp in timestamp_timeseries:
         datetime_timeseries.append(datetime.fromisoformat(timestamp))
 
-    df = pd.DataFrame({'event': timestamp_timeseries, 'mean': mean_list, 'std': std_list})
+    df = pd.DataFrame({'event': timestamp_timeseries, 'mean_series': mean_timeseries, 'mean_event': mean_list, 'std_event': std_list, 'coin': coin_list})
     fig, ax = plt.subplots(1, 1, sharex=True, figsize=(20, 10))
 
     ax.plot(mean_timeseries)
@@ -1771,3 +1778,47 @@ def infoTimeseries(info, key):
     ax.plot(lower_bound)
     ax.axhline(y=0, color='red', linestyle='--')
     return df
+
+
+def check_invevestment_amount(info, output, investment_amount = 100):
+
+    investment_list_info = []
+
+    for key in output:
+        vol, vol_value, buy_vol, buy_vol_value, timeframe = getsubstring_fromkey(key)
+        for coin in info[key]['info']:
+            for event in info[key]['info'][coin]:
+                obj1 = {'event': event['event'], 'side': 1}
+                exit_timestamp =  (datetime.fromisoformat(event['event']) + timedelta(minutes=int(timeframe))).isoformat()
+                obj2 = {'event': exit_timestamp, 'side': -1}
+
+                investment_list_info.append(obj1)
+                investment_list_info.append(obj2)
+    
+    investment_list_info.sort(key=lambda x: x['event'], reverse=False)
+
+    datetime_list = []
+    investment_list = []
+    total_investment_amount = 0
+
+    for investement_event in investment_list_info:
+        datetime_list.append(datetime.fromisoformat(investement_event['event']))
+        total_investment_amount += investement_event['side'] * investment_amount
+        investment_list.append(total_investment_amount)
+
+    
+    plt.figure(figsize=(8, 6))
+    plt.plot(datetime_list, investment_list)
+    plt.xlabel('Time')
+    plt.ylabel('Capital Investement (euro)')
+    plt.title('Dynamic Capital Investment')
+    plt.grid(True)
+    plt.xticks(rotation=45)  # Rotate x-axis labels for better visibility
+    plt.tight_layout()  # Adjust layout to prevent overlapping labels
+    plt.show()
+
+    #return datetime_list, investment_list
+
+
+    #return investment_list
+
