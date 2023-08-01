@@ -31,7 +31,7 @@ if __name__ == "__main__":
 
                 #TODO: BUY ORDER
                 
-
+                logger.info("process started")
                 # Start Subprocess for "coin". This will launch a wss connection for getting bid price coin in real time
                 process = subprocess.Popen(["python3", "/trading/scripts/wss-trading.py", coin, id, purchase_price])
                 

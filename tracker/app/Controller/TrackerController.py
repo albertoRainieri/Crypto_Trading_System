@@ -7,8 +7,9 @@ from datetime import datetime, timedelta
 from tracker.app.Helpers.Helpers import round_, timer_func
 import numpy as np
 from tracker.database.DatabaseConnection import DatabaseConnection
-#from tracker.app.Controller.TradingController import TradingController
+from tracker.app.Controller.TradingController import TradingController
 from tracker.constants.constants import *
+import asyncio
 
 
 class TrackerController:
@@ -26,7 +27,7 @@ class TrackerController:
         #TrackerController.db_operations(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, logger=logger)
 
         # try:
-        TrackerController.db_operations(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, db_trading=db_trading, logger=logger, db_logger=db_logger)
+        asyncio.run(TrackerController.db_operations(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, db_trading=db_trading, logger=logger, db_logger=db_logger))
         # except Exception as e:
         #     logger.error(e)
         #     logger.error('Something Wrong Happened. Check the logs above')
@@ -53,7 +54,7 @@ class TrackerController:
 
 
     #@timer_func
-    def db_operations(db_trades, db_tracker, db_benchmark, db_trading, logger, db_logger):
+    async def db_operations(db_trades, db_tracker, db_benchmark, db_trading, logger, db_logger):
         now = datetime.now()
         now_isoformat = now.isoformat()
         reference_1day_datetime = now - timedelta(days=1)
@@ -88,8 +89,14 @@ class TrackerController:
 
         coins_list = db_trades.list_collection_names()
         trading_coins_list = db_trading.list_collection_names()
+
+        #download list of most_traded_coins
         f = open ('/tracker/json/most_traded_coins.json', "r")
         data = json.loads(f.read())
+
+        f = open ('/tracker/trading/trading_configuration.json', "r")
+        trading_configuration = json.loads(f.read())
+
         #coin_list_subset = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
         coin_list_subset = data["most_traded_coins"]
         # logger.info(coin_list_subset)
@@ -123,7 +130,7 @@ class TrackerController:
                         db_logger[DATABASE_TRACKER_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
                     continue
 
-                volatility_coin = int(std_volume_1_month / avg_volume_1_month)
+                volatility_coin = str(int(std_volume_1_month / avg_volume_1_month))
 
                 # here, the coin must pass some checks.
                 # In particular, it is required that the coin has been in the "most_traded_coins" in the last consecutive "benchmark_days".
@@ -559,7 +566,7 @@ class TrackerController:
                         }
                 
                 # CHECK IF THE EVENT CAN TRIGGER A BUY ORDER
-                #TradingController.check_event_triggering(coin, doc_db, volatility_coin, logger, db_trading, db_logger, trading_coins_list)
+                asyncio.create_task(TradingController.check_event_triggering(coin, doc_db, volatility_coin, logger, db_trading, db_logger, trading_coins_list, trading_configuration))
             
                 #logger.info(doc_db)
 

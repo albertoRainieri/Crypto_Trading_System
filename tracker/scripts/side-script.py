@@ -7,6 +7,7 @@ from app.Controller.LoggingController import LoggingController
 from database.DatabaseConnection import DatabaseConnection
 from app.Controller.BinanceController import BinanceController
 from app.Controller.BenchmarkController import Benchmark
+from app.Controller.RiskManagement import RiskManagement
 from constants.constants import *
 from datetime import datetime
 
@@ -36,7 +37,13 @@ def main(db, logger, db_logger):
 if __name__ == '__main__':
     db = DatabaseConnection()
     db_logger = db.get_db(DATABASE_API_ERROR)
+    db_trading = db.get_db(DATABASE_TRADING)
+    db_benchmark = db.get_db(DATABASE_BENCHMARK)
+
     logger = LoggingController.start_logging()
     
     sleep(2)
+    RiskManagement.clean_db_trading(logger, db_trading, db_benchmark)
+    del db_trading, db_benchmark
+
     main(db=db, logger=logger, db_logger=db_logger)

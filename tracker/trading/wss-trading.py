@@ -18,46 +18,57 @@ import sys
 
 
 def on_error(ws, error):
-    pass
+    msg = str(error)
+    if msg != "\'data\'":
+        db_logger[DATABASE_TRADING_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+
+
 
 def on_close(*args):
-    pass
+    logger.info(f'closing connection {coin}:{id}. Now Restarting...')
+    riskmanagement = RiskManagement(id, coin, purchase_price, timeframe, 
+                                    riskmanagement_configuration,
+                                    db_trading, logger)
+
+    launch_wss_session(coin)
 
 
-def test_close_connection():
+def test_close_connection(ws):
     '''
     compute total seconds until next wss restart.
     This function restarts the wss connection every 24 hours
     '''
 
-    sleep(240)
+    sleep(300)
     terminate_process()
+
+def terminate_all_trading_process():
+    pass
 
 
 
 def on_message(ws, message):
-    global prices
-    global doc_db
-    global coin_list
-    global n_list_coins
+
+    global riskmanagement
+
     #sleep(0.5)
+    #logger.info(message)
     
-    logger.info(message)
     data = json.loads(message)
     current_bid_price = float(data['data']['b'])
+    now = datetime.now()
     
     # RISK MANAGEMENT
-    
-    riskmanagement.updateProfit(current_bid_price)
-    if riskmanagement.isCloseOrder():
-        #TODO: send order close to Binance
+    riskmanagement.updateProfit(current_bid_price, now)
 
+    if riskmanagement.SELL:
+        #TODO: send order close to Binance
 
         # terminate process
         terminate_process()
 
     # every minute I update the record in the db
-    riskmanagement.saveToDb(current_bid_price)
+    riskmanagement.saveToDb(current_bid_price, now)
 
 
 
@@ -70,14 +81,19 @@ def terminate_process():
         if doc['_id'] == id:
             db_trading[COLLECTION_TRADING_LIVE].delete_one({'_id': id})
 
+
+            # Specify the filter for the document to update
+            filter = {'_id': id}
+            # Specify the update operation. update current_bid_price and profit
+            update = {'$set': {'on_trade': False}}
+            # Perform the update operation
+            db_trading[COLLECTION_TRADING_HISTORY].update_one(filter, update)
+
     logger.info(f'record for {coin}:{id} has been deleted in Live Trading')
     
     pid = os.getpid()
     logger.info(f'Terminating process {pid}')
     os.kill(pid, SIGKILL)
-
-def initializeVariables(coin_list):
-    pass
 
 def get_db(db_name):
     '''
@@ -90,11 +106,12 @@ def get_db(db_name):
 def define_on_open(coin):
     def on_open(ws, coin=coin):
 
-        #msg = f'on_open: Wss Started for trading'
-        #logger.info(msg)
-        coin = coin.lower()
-        parameters = [coin + '@bookTicker']
-        print("### Opened ###")
+        # msg = f'on_open: Wss Started for trading'
+        # logger.info(msg)
+
+        coin_lower = coin.lower()
+        parameters = [coin_lower + '@bookTicker']
+        #print("### Opened ###")
         subscribe_message = {
             "method": "SUBSCRIBE",
             "params": parameters,
@@ -113,26 +130,26 @@ def launch_wss_session(coin):
                                 on_error = on_error,
                                 on_close = on_close
                                 )
-    threading.Thread(target=test_close_connection).start()
+    threading.Thread(target=test_close_connection(ws)).start()
     ws.run_forever()
 
 
 if __name__ == "__main__":
+    global riskmanagement
+
     db_logger = get_db(DATABASE_LOGGING)
     db_trading = get_db(DATABASE_TRADING)
-    db_benchmark = get_db(DATABASE_BENCHMARK)
     logger = LoggingController.start_logging()
     
-
     coin = sys.argv[1]
     id = sys.argv[2]
     purchase_price = float(sys.argv[3])
+    timeframe = int(sys.argv[4])
+    riskmanagement_configuration = json.loads(sys.argv[5])
 
-    strategy = 'trading_steps'
-
-    logger.info(f'Start Trading on {coin}')
-    riskmanagement = RiskManagement(id, coin, purchase_price, strategy,
-                                     db_trading, db_benchmark, logger)
+    riskmanagement = RiskManagement(id, coin, purchase_price, timeframe, 
+                                    riskmanagement_configuration,
+                                    db_trading, logger)
 
     launch_wss_session(coin)
 
