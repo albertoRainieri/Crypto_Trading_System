@@ -1537,125 +1537,21 @@ def plotTimeseries(timeseries, fields, check_past, plot):
                 # Display the graph
                 plt.show()
 
-# def RiskManagement_multiprocessing():
-#         for extratimeframe in EXTRATIMEFRAMES:
-#             for STEP_NOGOLDEN in STEPS_NOGOLDEN:
-#                 for STEP_original in STEPS_GOLDEN:
-#                     for GOLDEN_ZONE_original in GOLDEN_ZONES:
-
-#                         risk_key = 'risk_golden_zone:' + str(GOLDEN_ZONE_original) + '_step:' + str(STEP_original) + '_step_no_golden:' + str(STEP_NOGOLDEN) + '_extratime:' + str(round_(extratimeframe,2))
-#                         results[risk_key] = {}
-
-#                         # iterate through each coin
-#                         for coin in timeseries_json:
-                            
-#                             # check if there is at least a time window of "timeframe" between 2 events of the same coin
-#                             timestamp_list = list(timeseries_json[coin].keys())
-#                             timestamp_list = sorted(timestamp_list)
-#                             timestamp_to_analyze = [timestamp_list[0]]
-
-#                             if len(timestamp_list) > 1:
-#                                 for timestamp in timestamp_list[1:]:
-#                                     if datetime.fromisoformat(timestamp) - datetime.fromisoformat(timestamp_to_analyze[-1]) > timedelta(minutes=timeframe):
-#                                         timestamp_to_analyze.append(timestamp)
-#                                     #else:
-#                                         #print(f'found duplicate for {coin} between {timestamp} and {timestamp_to_analyze[-1]}')
-
-
-#                             # iterate through each event
-#                             for start_timestamp in timestamp_to_analyze:
-#                                 STEP = copy(STEP_original)
-#                                 GOLDEN_ZONE = copy(GOLDEN_ZONE_original)
-#                                 #print(f'new event: {coin}; {start_timestamp}')
-#                                 #coin_list.append(coin)
-
-#                                 #STEP = 0.05
-#                                 GOLDEN_ZONE_BOOL = False
-#                                 #GOLDEN_ZONE = 0.3 #
-#                                 GOLDEN_ZONE_LB = GOLDEN_ZONE - STEP
-#                                 GOLDEN_ZONE_UB = GOLDEN_ZONE + STEP
-#                                 LB_THRESHOLD = None
-#                                 UB_THRESHOLD = None
-
-#                                 iterator = timeseries_json[coin][start_timestamp]['data']
-#                                 #initial_price = iterator[0]['price']
-#                                 SKIP = True
-
-#                                 # iterate through each obs
-#                                 for obs, obs_i in zip(iterator, range(1, len(iterator) + 1)):
-#                                     #print(GOLDEN_ZONE_BOOL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP)
-#                                     if obs['_id'] == start_timestamp:
-#                                         SKIP = False
-#                                         initial_price = obs['price']
-                                    
-#                                     if SKIP == False:
-#                                         current_price = obs['price']
-#                                         current_change = (current_price - initial_price) / initial_price
-
-#                                         # if I'm already in GOLDEN ZONE, then just manage this scenario
-#                                         if GOLDEN_ZONE_BOOL:
-#                                             SELL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL = manageGoldenZoneChanges(current_change, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL)
-#                                             if SELL:
-#                                                 results[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True)                        
-#                                                 break
-
-#                                         # check if price went above golden zone
-#                                         if current_change > GOLDEN_ZONE:
-#                                             SELL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL = manageGoldenZoneChanges(current_change, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL)
-
-#                                         # check if minimum time window has passed
-#                                         elif datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(start_timestamp) + timedelta(minutes=timeframe):
-#                                             SELL, LB_THRESHOLD, UB_THRESHOLD = manageUsualPriceChanges(current_change, LB_THRESHOLD, UB_THRESHOLD, STEP_NOGOLDEN)
-#                                             if SELL:
-#                                                 results[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True)
-#                                                 break
-                                        
-#                                         #print(int(timeframe * extratimeframe))
-#                                         extra = int(timeframe * extratimeframe)
-#                                         if datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(start_timestamp) + timedelta(minutes=timeframe) + timedelta(minutes= extra):
-#                                             results[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, False)
-#                                             break
-                                            
-#                                         elif obs_i == len(iterator):
-#                                             results[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, False)
+def RiskManagement_multiprocessing(timeseries_json, arg_i, EXTRATIMEFRAMES, STEPS_NOGOLDEN, STEPS_GOLDEN,
+                                        GOLDEN_ZONES, timeframe, lock, results):
+    '''
+    This function is used by def "RiskManagement". The purpose is to analyze the best combinations of variables for handling the risk management
+    Similar to "total_function_multiprocessing", a multiprocessing task gets carried out.
+    '''
     
-def RiskManagement(key, investment_per_event):
-
-    EXTRATIMEFRAMES = [1/3, 1/6, 1/9]
-    STEPS_NOGOLDEN = [0.01, 0.03, 0.05]
-    STEPS_GOLDEN = [0.05, 0.075, 0.1, 0.15, 0.2, 0.3]
-    GOLDEN_ZONES = [0.10, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1]
-    
-    n_combinations = len(EXTRATIMEFRAMES) * len(STEPS_NOGOLDEN) * len(STEPS_GOLDEN) * len(GOLDEN_ZONES)
-    print(f'Number of combinations {n_combinations}')
-
-    # get timeseries
-    timeseries_path = ROOT_PATH + "/timeseries_json/"
-    timeseries_file = key.replace(':', '_')
-    timeseries_file = timeseries_file.replace('/', '_')
-    timeseries_full_path = timeseries_path + timeseries_file + '.json'
-    if not os.path.exists(timeseries_full_path):
-        #response = getTimeseries(info, key, check_past=360, look_for_newdata=True)
-        print(f'KEY DOES NOT EXIST. Download timeseries {key} ')
-        return None
-
-    f = open(timeseries_full_path, "r")
-    timeseries_json = json.loads(f.read())
-
-    # get timeframe
-    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
-    timeframe = int(timeframe) - 0.2*int(timeframe)
-    results = {}
-
-
-
+    tmp = {}
     for extratimeframe in EXTRATIMEFRAMES:
         for STEP_NOGOLDEN in STEPS_NOGOLDEN:
             for STEP_original in STEPS_GOLDEN:
                 for GOLDEN_ZONE_original in GOLDEN_ZONES:
 
                     risk_key = 'risk_golden_zone:' + str(GOLDEN_ZONE_original) + '_step:' + str(STEP_original) + '_step_no_golden:' + str(STEP_NOGOLDEN) + '_extratime:' + str(round_(extratimeframe,2))
-                    results[risk_key] = {}
+                    tmp[risk_key] = {}
 
                     # iterate through each coin
                     for coin in timeseries_json:
@@ -1707,7 +1603,7 @@ def RiskManagement(key, investment_per_event):
                                     if GOLDEN_ZONE_BOOL:
                                         SELL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL = manageGoldenZoneChanges(current_change, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL)
                                         if SELL:
-                                            results[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True)                        
+                                            tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True)                        
                                             break
 
                                     # check if price went above golden zone
@@ -1718,17 +1614,72 @@ def RiskManagement(key, investment_per_event):
                                     elif datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(start_timestamp) + timedelta(minutes=timeframe):
                                         SELL, LB_THRESHOLD, UB_THRESHOLD = manageUsualPriceChanges(current_change, LB_THRESHOLD, UB_THRESHOLD, STEP_NOGOLDEN)
                                         if SELL:
-                                            results[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True)
+                                            tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True)
                                             break
                                     
                                     #print(int(timeframe * extratimeframe))
                                     extra = int(timeframe * extratimeframe)
                                     if datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(start_timestamp) + timedelta(minutes=timeframe) + timedelta(minutes= extra):
-                                        results[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, False)
+                                        tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, False)
                                         break
                                         
                                     elif obs_i == len(iterator):
-                                        results[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, False)
+                                        tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, False)
+
+    with lock:
+        resp = json.loads(results.value)
+        for key in list(tmp.keys()):
+            
+            if key not in resp:
+                resp[key] = {}
+
+            # update complete "info"
+            for start_timestamp in tmp[key]:
+                resp[key][start_timestamp] = tmp[key][start_timestamp]
+
+        results.value = json.dumps(resp)
+
+def RiskManagement(key, investment_per_event):
+
+    EXTRATIMEFRAMES = [1/3, 1/6, 1/9]
+    STEPS_NOGOLDEN = [0.01, 0.03, 0.05]
+    STEPS_GOLDEN = [0.05, 0.075, 0.1, 0.15, 0.2, 0.3]
+    GOLDEN_ZONES = [0.10, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1]
+    
+    n_combinations = len(EXTRATIMEFRAMES) * len(STEPS_NOGOLDEN) * len(STEPS_GOLDEN) * len(GOLDEN_ZONES)
+    print(f'Number of combinations {n_combinations}')
+
+    # get timeseries
+    timeseries_path = ROOT_PATH + "/timeseries_json/"
+    timeseries_file = key.replace(':', '_')
+    timeseries_file = timeseries_file.replace('/', '_')
+    timeseries_full_path = timeseries_path + timeseries_file + '.json'
+    if not os.path.exists(timeseries_full_path):
+        #response = getTimeseries(info, key, check_past=360, look_for_newdata=True)
+        print(f'KEY DOES NOT EXIST. Download timeseries {key} ')
+        return None
+
+    f = open(timeseries_full_path, "r")
+    timeseries_json = json.loads(f.read())
+
+    # get timeframe
+    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
+    timeframe = int(timeframe) - 0.2*int(timeframe)
+
+    # MULTIPROCESSING
+    data_arguments = riskmanagement_data_preparation(timeseries_json, n_processes=8)
+    manager = Manager()
+    results = manager.Value(str, json.dumps({}))
+    lock = Manager().Lock()
+    pool = Pool()
+    pool.starmap(RiskManagement_multiprocessing, [(arg, arg_i, EXTRATIMEFRAMES, STEPS_NOGOLDEN, STEPS_GOLDEN,
+                                        GOLDEN_ZONES, timeframe, lock, results) for arg, arg_i in zip(data_arguments, range(1,len(data_arguments)+1))])
+
+    pool.close()
+    pool.join()
+
+    # split data
+    results = json.loads(results.value)
 
     mean_list = {}
     timestamp_exit_list = {}
@@ -1789,6 +1740,39 @@ def RiskManagement(key, investment_per_event):
                            'coin': coin_list[risk_key], 'early_sell': early_sell[risk_key]})
     
     return df1, df2
+
+def riskmanagement_data_preparation(data, n_processes):
+    # CONSTANTS
+    data_arguments = []
+    coins_list = list(data.keys())
+    coins_slices = []
+    n_coins = len(data)
+    step = n_coins // n_processes
+    remainder = n_coins % n_processes
+    remainder_coins = coins_list[-remainder:]
+    slice_start = 0
+    slice_end = slice_start + step
+
+    for i in range(n_processes):
+        data_i = {}
+        for coin in coins_list[slice_start:slice_end]:
+            data_i[coin] = data[coin]
+
+        data_arguments.append(data_i)
+        del data_i
+        slice_start = slice_end
+        slice_end += step
+    
+    # add the remaining coins to the data_arguments
+    if remainder != 0:
+        for coin, index in zip(remainder_coins, range(len(remainder_coins))):
+            data_arguments[index][coin] = data[coin]
+                           
+    for data_argument, index in zip(data_arguments, range(len(data_arguments))):
+        len_data_argument = len(data_argument)
+        print(f'Length of data argument {index}: {len_data_argument}')
+
+    return data_arguments
 
     
 
