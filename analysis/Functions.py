@@ -13,6 +13,9 @@ from time import time
 from Functions_getData import getData
 from multiprocessing import Pool, Manager
 from copy import copy
+from random import randint
+import shutil
+
 
 ROOT_PATH = os.getcwd()
 
@@ -592,7 +595,7 @@ def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=d
     # get the most traded coins from function "get_benchmark_info"
     start_coin = filter_position[0]
     end_coin = filter_position[1]
-    benchmark_info, df_benchmark = get_benchmark_info()
+    benchmark_info, df_benchmark, volatility = get_benchmark_info()
     volume_info = []
     for coin in benchmark_info:
         volume_info.append({'coin': coin, 'volume_30': benchmark_info[coin]['volume_30_avg']})
@@ -738,10 +741,18 @@ def get_benchmark_info():
             json.dump(benchmark_info, outfile)
 
     # check if there is any 0 in "volume_30_avg"
+    # Also let's count how volatility is distributed across all the coins
+    volatility = {}
     for coin in benchmark_info:
         if benchmark_info[coin]['volume_30_avg'] == 0:
             benchmark_info[coin]['volume_30_avg'] = 1
             benchmark_info[coin]['volume_30_std'] = 1
+        else:
+            coin_volatility = str(int(benchmark_info[coin]['volume_30_std'] / benchmark_info[coin]['volume_30_avg']))
+            if coin_volatility not in volatility:
+                volatility[coin_volatility] = 1
+            else:
+                volatility[coin_volatility] += 1
             
     #benchmark_info = json.loads(benchmark_info)
     df = pd.DataFrame(benchmark_info).transpose()
@@ -759,7 +770,7 @@ def get_benchmark_info():
             continue
         del locals()[var]
 
-    return benchmark_info, df
+    return benchmark_info, df, volatility
 
 def get_dynamic_volume_avg(benchmark_info):
     '''
@@ -1089,7 +1100,7 @@ def updateAnalysisJson(shared_data_value, file_path, start_next_analysis, slice_
 
 
             
-def download_show_output(minimum_event_number, minimum_coin_number, mean_threshold, group_coins=False, best_coins_volatility=None):
+def download_show_output(minimum_event_number, minimum_coin_number, mean_threshold, lb_threshold, frequency_threshold, group_coins=False, best_coins_volatility=None):
     '''
     This function takes as input data stored in analysis_json/ ans return the output available for pandas DATAFRAME. 
     This is useful to have a good visualization about what TRIGGER have a better performance
@@ -1131,35 +1142,47 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
                 mean_list = []
                 std_list = []
 
-
+                # I want to get earliest and latest event
+                # intitialize first_event and last_event
+                random_coin = list(shared_data[key]['info'].keys())[0]
+                first_event = datetime.fromisoformat(shared_data[key]['info'][random_coin][0]['event'])
+                last_event =  datetime.fromisoformat(shared_data[key]['info'][random_coin][-1]['event'])
+                
                 for coin in shared_data[key]['info']:
+                    first_event = min(datetime.fromisoformat(shared_data[key]['info'][coin][0]['event']), first_event)
+                    last_event = max(datetime.fromisoformat(shared_data[key]['info'][coin][-1]['event']), last_event)
                     n_events += len(shared_data[key]['info'][coin])
                     for event in shared_data[key]['info'][coin]:
                         mean_list.append(event['mean'])
                         std_list.append(event['std'])
+                
+                # get frequency event per month
+                time_interval_analysis = (last_event - first_event).days
+                if time_interval_analysis != 0:
+                    event_frequency_month = round_((n_events / time_interval_analysis) * 30,2)
 
                 
-                if n_events >= minimum_event_number and n_coins >= minimum_coin_number:
+                if n_events >= minimum_event_number and n_coins >= minimum_coin_number and event_frequency_month >= frequency_threshold:
 
                     vol, vol_value, buy_vol, buy_vol_value, timeframe = getsubstring_fromkey(key)
                     volatility = key.split('vlty:')[1]
                     
                     mean = round_(np.mean(np.array(mean_list))*100,2)
                     std = round_(pooled_standard_deviation(np.array(std_list), sample_size=int(timeframe))*100,2)
-                    
-                    if best_coins_volatility:
-                        upper_bound = mean + std
-                        lower_bound = mean + std
+                    upper_bound = mean + std
+                    lower_bound = mean - std
 
-                        if volatility not in volatility_list:
-                            volatility_list[volatility] = [{'key': key, 'upper_bound': upper_bound}]
-                        else:
-                            volatility_list[volatility].append({'key': key, 'upper_bound': upper_bound})
+                    if mean > mean_threshold and lower_bound > lb_threshold:
 
-                    if mean > mean_threshold:
+                        if best_coins_volatility:
+                            if volatility not in volatility_list:
+                                volatility_list[volatility] = [{'key': key, 'upper_bound': upper_bound}]
+                            else:
+                                volatility_list[volatility].append({'key': key, 'upper_bound': upper_bound})
                     
-                        complete_info[key] = {'info': shared_data[key]['info'], 'coins': n_coins, 'events': n_events}
-                        output[key] = {'mean': mean, 'std': std, 'upper_bound': mean + std, 'lower_bound': mean - std, 'n_coins': n_coins, 'n_events': n_events}
+                        complete_info[key] = {'info': shared_data[key]['info'], 'coins': n_coins, 'events': n_events, 'frequency/month': event_frequency_month}
+                        output[key] = {'mean': mean, 'std': std, 'upper_bound': upper_bound, 'lower_bound': lower_bound,
+                                        'n_coins': n_coins, 'n_events': n_events, 'frequency/month': event_frequency_month}
         
         if best_coins_volatility:
             keys_to_keep = {}
@@ -1170,13 +1193,15 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
                 keys_to_keep[volatility] = [x['key'] for x in volatility_list[volatility]]
 
             new_output = {}
+            new_info = {}
             for key in output:
                 volatility = key.split('vlty:')[1]
                 if key in keys_to_keep[volatility]:
                     new_output[key] = output[key]
-            
+                    new_info[key] = complete_info[key]
 
-            return new_output, complete_info
+            del output, complete_info
+            return new_output, new_info
                     
     else:
         for key in list(shared_data.keys()):
@@ -1386,6 +1411,12 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
             json.dump(timeseries, file)
     
     plotTimeseries(timeseries, fields, check_past, plot)
+
+    # this part is added for "RiskConfiguration" function, in order to retry the request if the following message is received
+    if msg == "WARNING: Request too big. Not all data have been downloaded, retry...":
+        return True
+    else:
+        return False
 
 
 def get_event_info(observations, timestamp_start, vol_field, buy_vol_field):
@@ -1639,7 +1670,7 @@ def RiskManagement_multiprocessing(timeseries_json, arg_i, EXTRATIMEFRAMES, STEP
 
         results.value = json.dumps(resp)
 
-def RiskManagement(key, investment_per_event):
+def RiskManagement(key, investment_per_event=100):
 
     EXTRATIMEFRAMES = [1/3, 1/6, 1/9]
     STEPS_NOGOLDEN = [0.01, 0.03, 0.05]
@@ -1657,7 +1688,7 @@ def RiskManagement(key, investment_per_event):
     if not os.path.exists(timeseries_full_path):
         #response = getTimeseries(info, key, check_past=360, look_for_newdata=True)
         print(f'KEY DOES NOT EXIST. Download timeseries {key} ')
-        return None
+        return False, False, False
 
     f = open(timeseries_full_path, "r")
     timeseries_json = json.loads(f.read())
@@ -1725,8 +1756,10 @@ def RiskManagement(key, investment_per_event):
         #print(f'{risk_key}: Mean is {mean_print} % for {n_events} events')
         if mean > best_mean:
             best_mean = mean
+            best_std = std
             best_risk_key = risk_key
             best_mean_print = round_(best_mean*100,2)
+            best_std_print = round_(best_std*100,2)
     
     df1 = pd.DataFrame({'risk_key': risk_key_df, 'mean': mean_list_df, 'std': std_list_df})
 
@@ -1739,7 +1772,8 @@ def RiskManagement(key, investment_per_event):
                          'exit_price': exit_price_list[risk_key],  'timestamp_exit': timestamp_exit_list[risk_key],
                            'coin': coin_list[risk_key], 'early_sell': early_sell[risk_key]})
     
-    return df1, df2
+    risk_configuration = {'best_risk_key': best_risk_key, 'best_mean_print':  best_mean_print, 'best_std_print': best_std_print}
+    return df1, df2, risk_configuration
 
 def riskmanagement_data_preparation(data, n_processes):
     # CONSTANTS
@@ -1768,9 +1802,9 @@ def riskmanagement_data_preparation(data, n_processes):
         for coin, index in zip(remainder_coins, range(len(remainder_coins))):
             data_arguments[index][coin] = data[coin]
                            
-    for data_argument, index in zip(data_arguments, range(len(data_arguments))):
-        len_data_argument = len(data_argument)
-        print(f'Length of data argument {index}: {len_data_argument}')
+    # for data_argument, index in zip(data_arguments, range(len(data_arguments))):
+    #     len_data_argument = len(data_argument)
+    #     print(f'Length of data argument {index}: {len_data_argument}')
 
     return data_arguments
 
@@ -1817,7 +1851,7 @@ def manageUsualPriceChanges(current_change, LB_THRESHOLD, UB_THRESHOLD, STEP):
 
 def infoTimeseries(info, key):
     '''
-    This function plots the performance of a KEY event
+    This function plots the performance of a KEY event, without regard of risk management
     '''
 
     timeseries_info = []
@@ -1854,7 +1888,7 @@ def infoTimeseries(info, key):
         datetime_timeseries.append(datetime.fromisoformat(timestamp))
 
     df = pd.DataFrame({'event': timestamp_timeseries, 'mean_series': mean_timeseries, 'mean_event': mean_list, 'std_event': std_list, 'coin': coin_list})
-    fig, ax = plt.subplots(1, 1, sharex=True, figsize=(20, 10))
+    fig, ax = plt.subplots(1, 1, sharex=True, figsize=(10, 6))
 
     ax.plot(mean_timeseries)
     ax.plot(upper_bound)
@@ -1864,7 +1898,9 @@ def infoTimeseries(info, key):
 
 
 def check_invevestment_amount(info, output, investment_amount = 100):
-
+    '''
+    This function helps to understand the account balance required for investing based on "investment_amount"
+    '''
     investment_list_info = []
 
     for key in output:
@@ -1889,8 +1925,10 @@ def check_invevestment_amount(info, output, investment_amount = 100):
         total_investment_amount += investement_event['side'] * investment_amount
         investment_list.append(total_investment_amount)
 
-    
-    plt.figure(figsize=(8, 6))
+    average_investment = np.mean(investment_list)
+
+    plt.figure(figsize=(10, 6))
+    plt.axhline(y=average_investment, color='red', linestyle='--')
     plt.plot(datetime_list, investment_list)
     plt.xlabel('Time')
     plt.ylabel('Capital Investement (euro)')
@@ -1900,8 +1938,152 @@ def check_invevestment_amount(info, output, investment_amount = 100):
     plt.tight_layout()  # Adjust layout to prevent overlapping labels
     plt.show()
 
-    #return datetime_list, investment_list
+def get_substring_between(original_string, start_substring, end_substring):
+    start_index = original_string.find(start_substring)
+    end_index = original_string.find(end_substring, start_index + len(start_substring))
+
+    if start_index == -1 or end_index == -1:
+        return None
+
+    return original_string[start_index + len(start_substring):end_index]
 
 
-    #return investment_list
+def RiskConfiguration(info, riskmanagement_conf):
+    '''
+    This functions has the objective to define the best risk configuration for a selected number of keys.
+    "download_show_output" function will provide the input
+    the riskmanagement_configuration will be used during the live trading for optimization /risk management
+    '''
+    t1 = time()
+    keys_list = list(info.keys())
+    n_keys = len(keys_list)
+    print(f'{n_keys} keys will be analyzed in terms of risk configuration')
+    risk_configuration = {}
 
+    for key, key_i in zip(keys_list, range(1,len(keys_list)+1)):
+        print(f'ITERATION {key_i} has started')
+        volatility = key.split('vlty:')[1]
+        # initialize key in risk_configuration
+        if volatility not in risk_configuration:
+            risk_configuration[volatility] = {}
+        
+        # get latest timeseries
+        retry = True        
+        # if response is not complete, retry with a new request
+        while retry:
+            retry = getTimeseries(info, key, check_past=360, look_for_newdata=True, plot=False)
+
+        df1, df2, risk = RiskManagement(key)
+
+        best_risk_key = risk['best_risk_key']
+        best_mean_print = risk['best_mean_print']
+        best_std_print = risk['best_std_print']
+
+        golden_zone_str = get_substring_between(best_risk_key, "risk_golden_zone:", "_step:")
+        golden_step_str = get_substring_between(best_risk_key, "_step:", "_step_no_golden:")
+        nogolden_step_str = get_substring_between(best_risk_key, "_step_no_golden:", "_extratime:")
+        extratime = best_risk_key.split('_extratime:')[1]
+        frequency = info[key]["frequency/month"]
+
+        risk_configuration[volatility][key] = {
+            'riskmanagement_conf': {
+                'golden_zone': golden_zone_str,
+                'step_golden': golden_step_str,
+                'step_nogolden': nogolden_step_str,
+                'extra_timeframe': extratime,
+                'estimated_gain': best_mean_print,
+                'estimated_std': best_std_print,
+                'frequency': frequency
+            }}
+        
+
+    key_list = []
+    golden_zone_list = []
+    step_golden_list = []
+    step_nogolden_list = []
+    extra_timeframe_list = []
+    estimated_gain_list = []
+    estimated_std_list = []
+    frequency_list = []
+
+    # GET INFO FOR KEYS SELECTION (same info of "download_show_output")
+    risk_configuration_dict = {
+        "minimum_event_number": riskmanagement_conf[0],
+        "minimum_coin_number": riskmanagement_conf[1],
+        "mean_threshold": riskmanagement_conf[2],
+        "lb_threshold": riskmanagement_conf[3],
+        "frequency_threshold": riskmanagement_conf[4],
+        "group_coins": riskmanagement_conf[5],
+        "best_coins_volatility": riskmanagement_conf[6]
+    }
+
+     # PREPARE FILES FOR PANDAS AND FOR SAVING
+    for volatility in risk_configuration:
+        for key in risk_configuration[volatility]:
+            key_list.append(key)
+            golden_zone_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['golden_zone'])
+            step_golden_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['step_golden'])
+            step_nogolden_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['step_nogolden'])
+            extra_timeframe_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['extra_timeframe'])
+            estimated_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['estimated_gain'])
+            estimated_std_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['estimated_std'])
+            frequency_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['frequency'])
+
+
+    df_dict = {"keys": key_list, "golden_zone": golden_zone_list, 'step_golden': step_golden_list, 'step_nogolden': step_nogolden_list,
+                'extra_timeframe': extra_timeframe_list, 'estimated_gain': estimated_gain_list, 'estimated_std': estimated_std_list, 'frequency': frequency_list}
+    risk_management_config_json = {'Timestamp': datetime.now().isoformat(), 'Info': risk_configuration_dict, 'Data': df_dict}
+
+    # SAVE FILE
+    file_path = ROOT_PATH + "/riskmanagement_json/riskmanagement.json"
+    with open(file_path, 'w') as file:
+        json.dump(risk_management_config_json, file)
+
+    # BACKUP RISKMANAGEMENT CONFIGURATION
+    random_id = str(randint(1,1000))
+    now = datetime.now()
+    day = str(now.day)
+    month = str(now.month)
+    year = str(now.year)
+    src = file_path
+    dst = f"{ROOT_PATH}/riskmanagement_backup/riskmanagement-{day}-{month}-{year}-{random_id}.json"
+    shutil.copyfile(src, dst)
+
+    # CREATE PANDAS DATAFRAME
+    df = pd.DataFrame(df_dict)
+    df = df.sort_values("estimated_gain", ascending=False)
+    return df
+
+
+
+def load_riskconfiguration():
+    file_path = ROOT_PATH + "/riskmanagement_json/riskmanagement.json"
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as file:
+            # Retrieve shared memory for JSON data and "start_interval"
+            riskmanagement_dict = json.load(file)
+
+    df_dict = riskmanagement_dict['Data']
+    info = riskmanagement_dict['Info']
+    timestamp = riskmanagement_dict['Timestamp']
+    info['timestamp'] = timestamp
+    pretty_json = json.dumps(info, indent=4)
+
+    #Compute Percentage Gain in 1 Month
+    estimated_gain_list = df_dict['estimated_gain']
+    frequency_list = df_dict['frequency']
+
+    investment_amount = 100
+    weighted_average_gain = sum(np.array(estimated_gain_list) * (np.array(frequency_list)/sum(frequency_list))) / 100
+    average_gain_per_event = weighted_average_gain * investment_amount
+    total_estimated_gain_1month = int(average_gain_per_event*sum(frequency_list))
+
+    print(f'Estimated gain each month: {total_estimated_gain_1month} euro with investment amount {investment_amount} euro per event')
+
+    # Print the pretty JSON
+    print(pretty_json)
+
+    df = pd.DataFrame(df_dict)
+    df = df.sort_values("estimated_gain", ascending=False)
+
+    return df
