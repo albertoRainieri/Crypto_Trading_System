@@ -204,6 +204,25 @@ class AnalysisController:
         return JSONResponse(content=json_string)
     
 
+    def riskmanagement_configuration(request):
+
+        
+        file_path = "/backend/riskmanagement/riskmanagement.json"
+        print(type(request))
+        try:
+            with open(file_path, 'w') as file:
+                json.dump(request, file)
+            
+            msg = 'Success'
+        except Exception as e:
+            msg = f'Error: {e}'
+
+        response = {'msg': msg}
+        json_string = jsonable_encoder(response)
+        return JSONResponse(content=json_string)
+
+
+
         
         
 

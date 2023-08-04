@@ -52,6 +52,7 @@ services:
       - ./backend/constants:/tracker/constants:ro
       - ./backend/database:/tracker/database:ro
       - ./backend/app/Helpers:/tracker/app/Helpers
+      - ./backend/riskmanagement:/tracker/riskmanagement
     environment:
       - BACKEND_URL= $BACKEND_URL
       - MONGO_USERNAME=$MONGO_USERNAME
@@ -60,6 +61,9 @@ services:
       - MONGO_PORT=$MONGO_PORT
       - TZ=$TIME_ZONE
       - PRODUCTION=$PRODUCTION
+      - CLEAN_DB_TRADING=$CLEAN_DB_TRADING
+      - INVESTMENT_AMOUNT=$INVESTMENT_AMOUNT
+
     networks:
       - local-net
 

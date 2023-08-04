@@ -21,7 +21,7 @@ def on_error(ws, error):
     msg = str(error)
     if msg != "\'data\'":
         db_logger[DATABASE_TRADING_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
-
+        logger.info(error)
 
 
 def on_close(*args):
@@ -33,7 +33,7 @@ def on_close(*args):
     launch_wss_session(coin)
 
 
-def test_close_connection(ws):
+def test_close_connection():
     '''
     compute total seconds until next wss restart.
     This function restarts the wss connection every 24 hours
@@ -65,6 +65,7 @@ def on_message(ws, message):
         #TODO: send order close to Binance
 
         # terminate process
+        riskmanagement.saveToDb(current_bid_price, now)
         terminate_process()
 
     # every minute I update the record in the db
@@ -117,12 +118,15 @@ def define_on_open(coin):
             "params": parameters,
             "id": 1
         }
+
+        #logger.info(subscribe_message)
         ws.send(json.dumps(subscribe_message))
 
     return on_open
 
 def launch_wss_session(coin):
 
+    #logger.info('hello!')
     on_open = define_on_open(coin)
     ws = websocket.WebSocketApp("wss://stream.binance.com:9443/stream?streams=",
                                 on_open = on_open,
@@ -130,7 +134,9 @@ def launch_wss_session(coin):
                                 on_error = on_error,
                                 on_close = on_close
                                 )
-    threading.Thread(target=test_close_connection(ws)).start()
+    # logger.info('you there?')
+    # logger.info(ws)
+    #threading.Thread(target=test_close_connection).start()
     ws.run_forever()
 
 
@@ -140,6 +146,7 @@ if __name__ == "__main__":
     db_logger = get_db(DATABASE_LOGGING)
     db_trading = get_db(DATABASE_TRADING)
     logger = LoggingController.start_logging()
+    #logger.info('Started')
     
     coin = sys.argv[1]
     id = sys.argv[2]
@@ -150,6 +157,9 @@ if __name__ == "__main__":
     riskmanagement = RiskManagement(id, coin, purchase_price, timeframe, 
                                     riskmanagement_configuration,
                                     db_trading, logger)
+    
+    # logger.info(riskmanagement.GOLDEN_ZONE)
+    # logger.info(type(riskmanagement.GOLDEN_ZONE))
 
     launch_wss_session(coin)
 

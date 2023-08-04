@@ -154,16 +154,59 @@ services:
     networks:
         - local-net
 
+  # mongo-backup:
+  #   container_name: "mongodb_backup"
+  #   build:
+  #     context: ./mongodb_backup/
+  #     args:
+  #       - MONGO_INITDB_ROOT_USERNAME=$MONGO_INITDB_ROOT_USERNAME
+  #       - MONGO_INITDB_ROOT_PASSWORD=$MONGO_INITDB_ROOT_PASSWORD
+  #       - MONGO_USERNAME=$MONGO_USERNAME
+  #       - MONGO_PASSWORD=$MONGO_PASSWORD
+  #       - MONGO_DB_URL=${MONGO_DB_URL}
+  #       - DATABASE_TRACKER=${DATABASE_TRACKER}
+  #       - DATABASE_MARKET_TRADES=${DATABASE_MARKET_TRADES}
+  #       - DATABASE_BENCHMARK=${DATABASE_BENCHMARK}
+  #       - UID=${UID}
+  #       - GID=${GID}
+  #   restart: always
+  #   tty: true
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "2m"
+  #       max-file: "2"
+  #   environment:
+  #     - PUID=$PUID
+  #     - PGID=$PGID
+  #     - MONGO_INITDB_ROOT_USERNAME=$MONGO_INITDB_ROOT_USERNAME
+  #     - MONGO_INITDB_ROOT_PASSWORD=$MONGO_INITDB_ROOT_PASSWORD
+  #     - MONGO_DB_URL=$MONGO_DB_URL
+  #     - MONGO_DB_NAME=$MONGO_DB_NAME
+  #     - MONGO_PORT=$MONGO_PORT
+  #     - MONGO_VERSION=$MONGO_VERSION
+  #     - TZ=$TIME_ZONE
+  #     - DATABASE_TRACKER=$DATABASE_TRACKER
+  #     - DATABASE_MARKET_TRADES=$DATABASE_MARKET_TRADES
+  #     - DATABASE_BENCHMARK=$DATABASE_BENCHMARK
+  #   volumes:
+  #     - ./mongodb/db:/data/db
+  #     - ./mongodb_backup/logs:/logs
+  #     - ./mongodb_backup/backup:/data/db/backup
+  #     - ./mongodb_backup/scripts:/scripts
+  #   networks:
+  #     - local-net
+
   nginx:
     build:
       context: ./nginx
-      args:
-        - UID=${UID}
-        - GID=${GID}
+      # args:
+      #   - UID=${UID}
+      #   - GID=${GID}
     restart: always
     ports:
       - "80:80"
-      - "443:443"
+      #- "443:443"
     volumes:
       - ./nginx/logs/:/var/log/nginx
       - ./nginx/conf/default:/etc/nginx/sites-available/default
@@ -179,6 +222,9 @@ services:
       - ./certbot/www/:/var/www/certbot/:rw
       - ./certbot/logs:/var/log/
       - ./certbot/conf/:/etc/letsencrypt/:rw
+
+
+
 
   
 networks:

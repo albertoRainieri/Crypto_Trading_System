@@ -1,0 +1,2 @@
+# This directory stores the riskmanagment configuration used for live trading.
+# This directory is mounted from backend

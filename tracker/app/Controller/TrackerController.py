@@ -88,13 +88,14 @@ class TrackerController:
         minute_6h_ago =  reference_6h_datetime.minute
 
         coins_list = db_trades.list_collection_names()
-        trading_coins_list = db_trading.list_collection_names()
+        trading_coins_list = list(db_trading[COLLECTION_TRADING_LIVE].find())
+        investment_amount = float(os.getenv('INVESTMENT_AMOUNT'))
 
         #download list of most_traded_coins
         f = open ('/tracker/json/most_traded_coins.json', "r")
         data = json.loads(f.read())
 
-        f = open ('/tracker/trading/trading_configuration.json', "r")
+        f = open ('/tracker/riskmanagement/riskmanagement.json', "r")
         trading_configuration = json.loads(f.read())
 
         #coin_list_subset = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
@@ -471,7 +472,7 @@ class TrackerController:
 
                     
 
-                if sum(volumes_24h_list) != 0 and sum(trades_24h_list) != 0:
+                if sum(volumes_24h_list) != 0 and len(volumes_24h_list) > 1420:
                     volumes_24h = round_(np.mean(volumes_24h_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_24h = round_(sum(buy_volume_24h_list)/sum(volumes_24h_list),2)
                     buy_trades_perc_24h = round_(sum(buy_trades_24h_list)/sum(trades_24h_list),2)
@@ -483,7 +484,7 @@ class TrackerController:
                     volumes_24h_std = None
 
                 
-                if sum(volumes_6h_list) != 0 and sum(trades_6h_list) != 0:
+                if sum(volumes_6h_list) != 0 and len(volumes_6h_list) > 350:
                     volumes_6h = round_(np.mean(volumes_6h_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_6h = round_(sum(buy_volume_6h_list)/sum(volumes_6h_list),2)
                     buy_trades_perc_6h = round_(sum(buy_trades_6h_list)/sum(trades_6h_list),2)
@@ -494,7 +495,7 @@ class TrackerController:
                     buy_trades_perc_6h = None
                     volumes_6h_std = None
 
-                if sum(volumes_3h_list) != 0 and sum(trades_3h_list) != 0:
+                if sum(volumes_3h_list) != 0 and len(volumes_24h_list) > 170:
                     volumes_3h = round_(np.mean(volumes_3h_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_3h = round_(sum(buy_volume_3h_list)/sum(volumes_3h_list),2)
                     buy_trades_perc_3h = round_(sum(buy_trades_3h_list)/sum(trades_3h_list),2)
@@ -506,7 +507,7 @@ class TrackerController:
                     volumes_3h_std = None
 
 
-                if sum(volumes_60m_list) != 0 and sum(trades_60m_list) != 0:
+                if sum(volumes_60m_list) != 0 and len(volumes_24h_list) >= 50:
                     volumes_60m = round_(np.mean(volumes_60m_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_60m = round_(sum(buy_volume_60m_list)/sum(volumes_60m_list),2)
                     buy_trades_perc_60m = round_(sum(buy_trades_60m_list)/sum(trades_60m_list),2)
@@ -518,7 +519,7 @@ class TrackerController:
                     volumes_60m_std = None
                 
 
-                if sum(volumes_30m_list) != 0 and sum(trades_30m_list) != 0:
+                if sum(volumes_30m_list) != 0 and len(volumes_24h_list) >= 25:
                     volumes_30m = round_(np.mean(volumes_30m_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_30m = round_(sum(buy_volume_30m_list)/sum(volumes_30m_list),2)
                     buy_trades_perc_30m = round_(sum(buy_trades_30m_list)/sum(trades_30m_list),2)
@@ -530,7 +531,7 @@ class TrackerController:
                     volumes_30m_std = None
 
 
-                if sum(volumes_15m_list) != 0 and sum(trades_15m_list) != 0:
+                if sum(volumes_15m_list) != 0 and len(volumes_24h_list) >= 12:
                     volumes_15m = round_(np.mean(volumes_15m_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_15m = round_(sum(buy_volume_15m_list)/sum(volumes_15m_list),2)
                     buy_trades_perc_15m = round_(sum(buy_trades_15m_list)/sum(trades_15m_list),2)
@@ -541,7 +542,7 @@ class TrackerController:
                     buy_trades_perc_15m = None
                     volumes_15m_std = None
 
-                if sum(volumes_5m_list) != 0 and sum(trades_5m_list) != 0:
+                if sum(volumes_5m_list) != 0 and len(volumes_24h_list) >= 4:
                     volumes_5m = round_(np.mean(volumes_5m_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_5m = round_(sum(buy_volume_5m_list)/sum(volumes_5m_list),2)
                     buy_trades_perc_5m = round_(sum(buy_trades_5m_list)/sum(trades_5m_list),2)
@@ -551,6 +552,15 @@ class TrackerController:
                     buy_volume_perc_5m = None
                     buy_trades_perc_5m = None
                     volumes_5m_std = None
+
+                # if coin == "BTCUSDT":
+                #     logger.info(f'24h: {len(volumes_24h_list)}')
+                #     logger.info(f'6h: {len(volumes_6h_list)}')
+                #     logger.info(f'3h: {len(volumes_3h_list)}')
+                #     logger.info(f'60m: {len(volumes_60m_list)}')
+                #     logger.info(f'30m: {len(volumes_30m_list)}')
+                #     logger.info(f'15m: {len(volumes_15m_list)}')
+                #     logger.info(f'5m: {len(volumes_5m_list)}')
 
 
 
@@ -566,7 +576,7 @@ class TrackerController:
                         }
                 
                 # CHECK IF THE EVENT CAN TRIGGER A BUY ORDER
-                asyncio.create_task(TradingController.check_event_triggering(coin, doc_db, volatility_coin, logger, db_trading, db_logger, trading_coins_list, trading_configuration))
+                asyncio.create_task(TradingController.check_event_triggering(coin, doc_db, volatility_coin, logger, db_trading, db_logger, trading_coins_list, trading_configuration, investment_amount))
             
                 #logger.info(doc_db)
 

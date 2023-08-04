@@ -2029,10 +2029,14 @@ def RiskConfiguration(info, riskmanagement_conf):
             estimated_std_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['estimated_std'])
             frequency_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['frequency'])
 
-
+    average_gain_percentage = sum(np.array(estimated_gain_list) * (np.array(frequency_list)/sum(frequency_list))) / 100
     df_dict = {"keys": key_list, "golden_zone": golden_zone_list, 'step_golden': step_golden_list, 'step_nogolden': step_nogolden_list,
                 'extra_timeframe': extra_timeframe_list, 'estimated_gain': estimated_gain_list, 'estimated_std': estimated_std_list, 'frequency': frequency_list}
-    risk_management_config_json = {'Timestamp': datetime.now().isoformat(), 'Info': risk_configuration_dict, 'Data': df_dict}
+    
+
+    
+    risk_management_config_json = {'Timestamp': datetime.now().isoformat(), 'Info': risk_configuration_dict,
+                                    'Dataframe': df_dict, 'RiskManagement': risk_configuration, 'Gain': {'average_per_event': round_(average_gain_percentage,2), 'n_events_per_month': sum(frequency_list)}}
 
     # SAVE FILE
     file_path = ROOT_PATH + "/riskmanagement_json/riskmanagement.json"
@@ -2046,8 +2050,15 @@ def RiskConfiguration(info, riskmanagement_conf):
     month = str(now.month)
     year = str(now.year)
     src = file_path
-    dst = f"{ROOT_PATH}/riskmanagement_backup/riskmanagement-{day}-{month}-{year}-{random_id}.json"
+    minimum_event_number = str(risk_configuration_dict['minimum_event_number'])
+    mean_threshold = str(risk_configuration_dict['mean_threshold'])
+    dst = f"{ROOT_PATH}/riskmanagement_backup/riskmanagement-{day}-{month}-{year}-{minimum_event_number}-{mean_threshold}-{random_id}.json"
     shutil.copyfile(src, dst)
+    t2 = time()
+    time_spent = t2 - t1
+    print(f'{time_spent} seconds spent to run wrap_analyze_events')
+
+
 
     # CREATE PANDAS DATAFRAME
     df = pd.DataFrame(df_dict)
@@ -2055,15 +2066,18 @@ def RiskConfiguration(info, riskmanagement_conf):
     return df
 
 
-
-def load_riskconfiguration():
-    file_path = ROOT_PATH + "/riskmanagement_json/riskmanagement.json"
+def load_riskconfiguration(another_riskconfiguration=None):
+    if another_riskconfiguration == None:
+        file_path = ROOT_PATH + "/riskmanagement_json/riskmanagement.json"
+    else:
+        file_path = another_riskconfiguration
+        
     if os.path.exists(file_path):
         with open(file_path, 'r') as file:
             # Retrieve shared memory for JSON data and "start_interval"
             riskmanagement_dict = json.load(file)
 
-    df_dict = riskmanagement_dict['Data']
+    df_dict = riskmanagement_dict['Dataframe']
     info = riskmanagement_dict['Info']
     timestamp = riskmanagement_dict['Timestamp']
     info['timestamp'] = timestamp
@@ -2074,8 +2088,8 @@ def load_riskconfiguration():
     frequency_list = df_dict['frequency']
 
     investment_amount = 100
-    weighted_average_gain = sum(np.array(estimated_gain_list) * (np.array(frequency_list)/sum(frequency_list))) / 100
-    average_gain_per_event = weighted_average_gain * investment_amount
+    weighted_average_gain_percentage = sum(np.array(estimated_gain_list) * (np.array(frequency_list)/sum(frequency_list))) / 100
+    average_gain_per_event = weighted_average_gain_percentage * investment_amount
     total_estimated_gain_1month = int(average_gain_per_event*sum(frequency_list))
 
     print(f'Estimated gain each month: {total_estimated_gain_1month} euro with investment amount {investment_amount} euro per event')
@@ -2087,3 +2101,19 @@ def load_riskconfiguration():
     df = df.sort_values("estimated_gain", ascending=False)
 
     return df
+
+def send_riskconfiguration():
+    file_path = ROOT_PATH + "/riskmanagement_json/riskmanagement.json"
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as file:
+            # Retrieve shared memory for JSON data and "start_interval"
+            riskmanagement_dict = json.load(file)
+
+    # send request
+    request = riskmanagement_dict['RiskManagement']
+    url = 'http://localhost/analysis/riskmanagement-configuration'
+    #url = 'https://algocrypto.eu/analysis/riskmanagement-configuration'
+
+    response = requests.post(url, json = request)
+    print('Status Code is : ', response.status_code)
+    response = json.loads(response.text)

@@ -7,12 +7,12 @@ from app.Controller.LoggingController import LoggingController
 from database.DatabaseConnection import DatabaseConnection
 from app.Controller.BinanceController import BinanceController
 from app.Controller.BenchmarkController import Benchmark
-from app.Controller.RiskManagement import RiskManagement
+from app.Controller.TradingController import TradingController
 from constants.constants import *
 from datetime import datetime
 
 
-def main(db, logger, db_logger):
+def main(db, logger, db_trading, db_logger):
     while True:
         now=datetime.now()
         minute = now.minute
@@ -27,6 +27,9 @@ def main(db, logger, db_logger):
         if minute == 59 and second == 20 and hour == 23:
             BinanceController.main_sort_pairs_list(logger=logger, db_logger=db_logger)
             logger.info("list of instruments updated")
+
+        if second == 10:
+            TradingController.checkPerformance(db_trading, logger)
         
         sleep(0.8)
 
@@ -39,11 +42,12 @@ if __name__ == '__main__':
     db_logger = db.get_db(DATABASE_API_ERROR)
     db_trading = db.get_db(DATABASE_TRADING)
     db_benchmark = db.get_db(DATABASE_BENCHMARK)
+    investment_amount = os.getenv('INVESTMENT_AMOUNT')
 
     logger = LoggingController.start_logging()
     
     sleep(2)
-    RiskManagement.clean_db_trading(logger, db_trading, db_benchmark)
-    del db_trading, db_benchmark
+    TradingController.clean_db_trading(logger, db_trading, db_benchmark)
+    del db_benchmark
 
-    main(db=db, logger=logger, db_logger=db_logger)
+    main(db=db, logger=logger, db_trading=db_trading, db_logger=db_logger)
