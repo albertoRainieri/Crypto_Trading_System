@@ -73,7 +73,7 @@ class TradingController:
                         pid = process.pid
                         
                         # send query to db_trading. for logging
-                        doc_db = {'_id': id, 'coin': coin, 'profit': None, 'purchase_price': purchase_price, 'current_price': None, 'on_trade': True, 'event': event_key, 'investment_amount': investment_amount, 'risk_configuration': trading_configuration[volatility_coin][event_key], 'pid': pid}
+                        doc_db = {'_id': id, 'coin': coin, 'profit': 0, 'purchase_price': purchase_price, 'current_price': None, 'on_trade': True, 'event': event_key, 'investment_amount': investment_amount, 'risk_configuration': trading_configuration[volatility_coin][event_key], 'pid': pid}
                         db_trading[COLLECTION_TRADING_LIVE].insert_one(doc_db)
                         db_trading[COLLECTION_TRADING_HISTORY].insert_one(doc_db)
                         msg = f"{coin} - Event Triggered: {vol_field}:{vol_value} - {buy_vol_field}:{buy_vol_value}"

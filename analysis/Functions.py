@@ -2111,8 +2111,8 @@ def send_riskconfiguration():
 
     # send request
     request = riskmanagement_dict['RiskManagement']
-    url = 'http://localhost/analysis/riskmanagement-configuration'
-    #url = 'https://algocrypto.eu/analysis/riskmanagement-configuration'
+    #url = 'http://localhost/analysis/riskmanagement-configuration'
+    url = 'https://algocrypto.eu/analysis/riskmanagement-configuration'
 
     response = requests.post(url, json = request)
     print('Status Code is : ', response.status_code)

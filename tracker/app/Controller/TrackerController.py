@@ -472,7 +472,7 @@ class TrackerController:
 
                     
 
-                if sum(volumes_24h_list) != 0 and len(volumes_24h_list) > 1420:
+                if sum(volumes_24h_list) != 0 and len(volumes_24h_list) > 1400:
                     volumes_24h = round_(np.mean(volumes_24h_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_24h = round_(sum(buy_volume_24h_list)/sum(volumes_24h_list),2)
                     buy_trades_perc_24h = round_(sum(buy_trades_24h_list)/sum(trades_24h_list),2)
@@ -484,7 +484,7 @@ class TrackerController:
                     volumes_24h_std = None
 
                 
-                if sum(volumes_6h_list) != 0 and len(volumes_6h_list) > 350:
+                if sum(volumes_6h_list) != 0 and len(volumes_6h_list) > 330:
                     volumes_6h = round_(np.mean(volumes_6h_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_6h = round_(sum(buy_volume_6h_list)/sum(volumes_6h_list),2)
                     buy_trades_perc_6h = round_(sum(buy_trades_6h_list)/sum(trades_6h_list),2)
@@ -495,7 +495,7 @@ class TrackerController:
                     buy_trades_perc_6h = None
                     volumes_6h_std = None
 
-                if sum(volumes_3h_list) != 0 and len(volumes_24h_list) > 170:
+                if sum(volumes_3h_list) != 0 and len(volumes_24h_list) > 160:
                     volumes_3h = round_(np.mean(volumes_3h_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_3h = round_(sum(buy_volume_3h_list)/sum(volumes_3h_list),2)
                     buy_trades_perc_3h = round_(sum(buy_trades_3h_list)/sum(trades_3h_list),2)
@@ -519,7 +519,7 @@ class TrackerController:
                     volumes_60m_std = None
                 
 
-                if sum(volumes_30m_list) != 0 and len(volumes_24h_list) >= 25:
+                if sum(volumes_30m_list) != 0 and len(volumes_24h_list) >= 24:
                     volumes_30m = round_(np.mean(volumes_30m_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_30m = round_(sum(buy_volume_30m_list)/sum(volumes_30m_list),2)
                     buy_trades_perc_30m = round_(sum(buy_trades_30m_list)/sum(trades_30m_list),2)
