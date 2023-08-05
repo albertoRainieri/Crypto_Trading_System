@@ -210,11 +210,11 @@ class TradingController:
                 elif datetime_investment > six_months_ago:
                     performance_six_month.append(profit)
             
-            profit_one_week = np.mean(performance_one_week)
-            profit_one_month = np.mean(performance_one_month) 
-            profit_three_months = np.mean(performance_three_month) 
-            profit_six_months = np.mean(performance_six_month)
-            total_profit = np.mean(total_performance_list)
+            profit_one_week = round_(np.mean(performance_one_week),4)
+            profit_one_month = round_(np.mean(performance_one_month),4) 
+            profit_three_months = round_(np.mean(performance_three_month),4) 
+            profit_six_months = round_(np.mean(performance_six_month),4)
+            total_profit = round_(np.mean(total_performance_list),4)
             total_performance = round_(total_performance,2)
 
             db_doc = {'total_gain': total_performance, 'total_profit': total_profit,
