@@ -1712,7 +1712,7 @@ def RiskManagement(key, investment_per_event=100):
     # split data
     results = json.loads(results.value)
 
-    mean_list = {}
+    profit_list = {}
     timestamp_exit_list = {}
     buy_price_list = {}
     exit_price_list = {}
@@ -1720,15 +1720,15 @@ def RiskManagement(key, investment_per_event=100):
     early_sell = {}
 
     for risk_key in list(results.keys()):
-        mean_list[risk_key] = []
+        profit_list[risk_key] = []
         timestamp_exit_list[risk_key] = []
         buy_price_list[risk_key] = []
         exit_price_list[risk_key] = []
         coin_list[risk_key] = []
         early_sell[risk_key] = []
 
-        for start_timestamp in results[risk_key]:
-            mean_list[risk_key].append(results[risk_key][start_timestamp][0])
+        for start_timestamp in results[risk_key]:            
+            profit_list[risk_key].append(results[risk_key][start_timestamp][0])
             timestamp_exit_list[risk_key].append(results[risk_key][start_timestamp][1])
             buy_price_list[risk_key].append(results[risk_key][start_timestamp][2])
             exit_price_list[risk_key].append(results[risk_key][start_timestamp][3])
@@ -1736,43 +1736,51 @@ def RiskManagement(key, investment_per_event=100):
             early_sell[risk_key].append(results[risk_key][start_timestamp][5])
 
     best_risk_key = ''
-    best_mean = - 10
+    best_profit = - 10
 
     risk_key_df = []
-    mean_list_df = []
-    std_list_df = []
+    profit_mean_list_df = []
+    profit_std_list_df = []
 
-    for risk_key in mean_list:
-        mean = np.mean(mean_list[risk_key])
-        std = np.std(mean_list[risk_key])
+    risk_configuration_list = []
+    for risk_key in profit_list:
+        profit = np.mean(profit_list[risk_key])
+        std = np.std(profit_list[risk_key])
 
         risk_key_df.append(risk_key)
-        mean_list_df.append(mean)
-        std_list_df.append(std)
+        profit_mean_list_df.append(profit)
+        profit_std_list_df.append(std)
 
-        n_events = len(mean_list[risk_key])
-        mean_print = round_(mean*100,2)
+        n_events = len(profit_list[risk_key])
+        profit_print = round_(profit*100,2)
 
         #print(f'{risk_key}: Mean is {mean_print} % for {n_events} events')
-        if mean > best_mean:
-            best_mean = mean
+        if profit > best_profit:
+            best_profit = profit
             best_std = std
             best_risk_key = risk_key
-            best_mean_print = round_(best_mean*100,2)
+            best_profit_print = round_(best_profit*100,2)
             best_std_print = round_(best_std*100,2)
     
-    df1 = pd.DataFrame({'risk_key': risk_key_df, 'mean': mean_list_df, 'std': std_list_df})
+    df1 = pd.DataFrame({'risk_key': risk_key_df, 'mean': profit_mean_list_df, 'std': profit_std_list_df})
 
     #INVESTMENT_PER_EVENT = 200
-    profit = round_((investment_per_event * n_events) * (best_mean),2)
-    print(f'{profit} euro of profit for an investment of {investment_per_event} euro per event (total of {n_events} events). {best_risk_key} with {best_mean_print} %')
+    profit = round_((investment_per_event * n_events) * (best_profit),2)
+    print(f'{profit} euro of profit for an investment of {investment_per_event} euro per event (total of {n_events} events). {best_risk_key} with {best_profit_print} %')
     
     
-    df2 = pd.DataFrame({'events': list(results[risk_key].keys()), 'gain': mean_list[risk_key], 'buy_price': buy_price_list[risk_key],
+    df2 = pd.DataFrame({'events': list(results[risk_key].keys()), 'gain': profit_list[risk_key], 'buy_price': buy_price_list[risk_key],
                          'exit_price': exit_price_list[risk_key],  'timestamp_exit': timestamp_exit_list[risk_key],
                            'coin': coin_list[risk_key], 'early_sell': early_sell[risk_key]})
     
-    risk_configuration = {'best_risk_key': best_risk_key, 'best_mean_print':  best_mean_print, 'best_std_print': best_std_print}
+    # mean of all events per key
+    mean_all_configs_print = round_(np.mean(profit_mean_list_df)*100,2)
+    std_all_configs_print = round_(np.mean(profit_std_list_df)*100,2)
+    median_all_configs_print = round_(np.median(profit_mean_list_df)*100,2)
+
+    risk_configuration = {'best_risk_key': best_risk_key, 'best_mean_print':  best_profit_print, 'best_std_print': best_std_print,
+                           'statistics': {'mean': mean_all_configs_print, 'std': std_all_configs_print, 'median': median_all_configs_print}}
+    
     return df1, df2, risk_configuration
 
 def riskmanagement_data_preparation(data, n_processes):
@@ -1948,7 +1956,7 @@ def get_substring_between(original_string, start_substring, end_substring):
     return original_string[start_index + len(start_substring):end_index]
 
 
-def RiskConfiguration(info, riskmanagement_conf):
+def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_gain_threshold):
     '''
     This functions has the objective to define the best risk configuration for a selected number of keys.
     "download_show_output" function will provide the input
@@ -1978,6 +1986,10 @@ def RiskConfiguration(info, riskmanagement_conf):
         best_risk_key = risk['best_risk_key']
         best_mean_print = risk['best_mean_print']
         best_std_print = risk['best_std_print']
+        statistica_all_configs = risk['statistics']
+        mean = statistica_all_configs['mean']
+        std = statistica_all_configs['std']
+        median = statistica_all_configs['median']
 
         golden_zone_str = get_substring_between(best_risk_key, "risk_golden_zone:", "_step:")
         golden_step_str = get_substring_between(best_risk_key, "_step:", "_step_no_golden:")
@@ -1985,16 +1997,21 @@ def RiskConfiguration(info, riskmanagement_conf):
         extratime = best_risk_key.split('_extratime:')[1]
         frequency = info[key]["frequency/month"]
 
-        risk_configuration[volatility][key] = {
-            'riskmanagement_conf': {
-                'golden_zone': golden_zone_str,
-                'step_golden': golden_step_str,
-                'step_nogolden': nogolden_step_str,
-                'extra_timeframe': extratime,
-                'estimated_gain': best_mean_print,
-                'estimated_std': best_std_print,
-                'frequency': frequency
-            }}
+        # FILTER ONLY THE BEST KEY EVENTS
+        if best_mean_print >= optimized_gain_threshold and mean >= mean_gain_threshold:
+            risk_configuration[volatility][key] = {
+                'riskmanagement_conf': {
+                    'golden_zone': golden_zone_str,
+                    'step_golden': golden_step_str,
+                    'step_nogolden': nogolden_step_str,
+                    'extra_timeframe': extratime,
+                    'optimized_gain': best_mean_print,
+                    'optimized_std': best_std_print,
+                    'frequency': frequency,
+                    'mean_gain_all_configs': mean,
+                    'median_gain_all_configs': median,
+                    'std_gain_all_configs': std
+                }}
         
 
     key_list = []
@@ -2002,9 +2019,12 @@ def RiskConfiguration(info, riskmanagement_conf):
     step_golden_list = []
     step_nogolden_list = []
     extra_timeframe_list = []
-    estimated_gain_list = []
-    estimated_std_list = []
+    optimized_gain_list = []
+    optimized_std_list = []
     frequency_list = []
+    mean_gain_list = []
+    median_gain_list = []
+    std_gain_list = []
 
     # GET INFO FOR KEYS SELECTION (same info of "download_show_output")
     risk_configuration_dict = {
@@ -2025,13 +2045,18 @@ def RiskConfiguration(info, riskmanagement_conf):
             step_golden_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['step_golden'])
             step_nogolden_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['step_nogolden'])
             extra_timeframe_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['extra_timeframe'])
-            estimated_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['estimated_gain'])
-            estimated_std_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['estimated_std'])
+            optimized_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['optimized_gain'])
+            optimized_std_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['optimized_std'])
             frequency_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['frequency'])
+            mean_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['mean_gain_all_configs'])
+            median_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['median_gain_all_configs'])
+            std_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['std_gain_all_configs'])
 
-    average_gain_percentage = sum(np.array(estimated_gain_list) * (np.array(frequency_list)/sum(frequency_list))) / 100
+
+    average_gain_percentage = sum(np.array(optimized_gain_list) * (np.array(frequency_list)/sum(frequency_list))) / 100
     df_dict = {"keys": key_list, "golden_zone": golden_zone_list, 'step_golden': step_golden_list, 'step_nogolden': step_nogolden_list,
-                'extra_timeframe': extra_timeframe_list, 'estimated_gain': estimated_gain_list, 'estimated_std': estimated_std_list, 'frequency': frequency_list}
+                'extra_timeframe': extra_timeframe_list, 'optimized_gain': optimized_gain_list, 'optimized_std': optimized_std_list,
+                  'frequency': frequency_list, 'mean_gain': mean_gain_list, 'median_gain': median_gain_list, 'std_gain': std_gain_list}
     
 
     
@@ -2062,7 +2087,7 @@ def RiskConfiguration(info, riskmanagement_conf):
 
     # CREATE PANDAS DATAFRAME
     df = pd.DataFrame(df_dict)
-    df = df.sort_values("estimated_gain", ascending=False)
+    df = df.sort_values("optimized_gain", ascending=False)
     return df
 
 
@@ -2084,21 +2109,29 @@ def load_riskconfiguration(another_riskconfiguration=None):
     pretty_json = json.dumps(info, indent=4)
 
     #Compute Percentage Gain in 1 Month
-    estimated_gain_list = df_dict['estimated_gain']
+    optimized_gain_list = df_dict['optimized_gain']
+    mean_gain_list = df_dict['mean_gain']
     frequency_list = df_dict['frequency']
 
     investment_amount = 100
-    weighted_average_gain_percentage = sum(np.array(estimated_gain_list) * (np.array(frequency_list)/sum(frequency_list))) / 100
-    average_gain_per_event = weighted_average_gain_percentage * investment_amount
-    total_estimated_gain_1month = int(average_gain_per_event*sum(frequency_list))
 
-    print(f'Estimated gain each month: {total_estimated_gain_1month} euro with investment amount {investment_amount} euro per event')
+    weighted_average_optimized_gain_percentage = sum(np.array(optimized_gain_list) * (np.array(frequency_list)/sum(frequency_list))) / 100
+    average_optimized_gain_per_event = weighted_average_optimized_gain_percentage * investment_amount
+    total_optimized_gain_1month = int(average_optimized_gain_per_event*sum(frequency_list))
+
+    weighted_average_mean_gain_percentage = sum(np.array(mean_gain_list) * (np.array(frequency_list)/sum(frequency_list))) / 100
+    average_mean_gain_per_event = weighted_average_mean_gain_percentage * investment_amount
+    total_mean_gain_1month = int(average_mean_gain_per_event*sum(frequency_list))
+
+    print(f'Optimized gain each month: {total_optimized_gain_1month} euro with investment amount {investment_amount} euro per event')
+    print(f'Mean gain each month: {total_mean_gain_1month} euro with investment amount {investment_amount} euro per event')
+
 
     # Print the pretty JSON
     print(pretty_json)
 
     df = pd.DataFrame(df_dict)
-    df = df.sort_values("estimated_gain", ascending=False)
+    df = df.sort_values("optimized_gain", ascending=False)
 
     return df
 

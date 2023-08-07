@@ -152,9 +152,9 @@ class TradingController:
                 std_volume_1_month = volume_coin[0]['volume_30_std']
                 volatility_coin = str(int(std_volume_1_month / avg_volume_1_month))
 
-                f = open ('/tracker/riskmanagement/riskmanagement.json', "r")
-                trading_configuration = json.loads(f.read())
-                risk_management_configuration = json.dumps(trading_configuration[volatility_coin][event_key])
+                # f = open ('/tracker/riskmanagement/riskmanagement.json', "r")
+                # trading_configuration = json.loads(f.read())
+                risk_management_configuration = json.dumps(doc['risk_configuration'])
                 id = doc['_id']
                 logger.info(f'WSS Connection has resumed for {coin}: {id}')
                 process = subprocess.Popen(["python3", "/tracker/trading/wss-trading.py", coin, id, str(purchase_price), str(timeframe), risk_management_configuration])
