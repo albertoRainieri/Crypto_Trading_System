@@ -314,6 +314,8 @@ class TrackerController:
                         volumes_15m_list.append(doc_vol)
                         volumes_30m_list.append(doc_vol)
                         volumes_60m_list.append(doc_vol)
+                        volumes_3h_list.append(doc_vol)
+                        volumes_6h_list.append(doc_vol)
 
                         trades_5m_list.append(doc_trades)
                         trades_15m_list.append(doc_trades)
@@ -326,19 +328,15 @@ class TrackerController:
                         buy_volume_15m_list.append(doc_buy_vol)
                         buy_volume_30m_list.append(doc_buy_vol)
                         buy_volume_60m_list.append(doc_buy_vol)
+                        buy_volume_3h_list.append(doc_buy_vol)
+                        buy_volume_6h_list.append(doc_buy_vol)
 
                         buy_trades_5m_list.append(doc_buy_trd)
                         buy_trades_15m_list.append(doc_buy_trd)
                         buy_trades_30m_list.append(doc_buy_trd)
                         buy_trades_60m_list.append(doc_buy_trd)
-
-                        volumes_6h_list.append(doc_vol)
-                        buy_volume_6h_list.append(doc_buy_vol)
-                        buy_trades_6h_list.append(doc_buy_trd)
-                        
-                        volumes_3h_list.append(doc_vol)
-                        buy_volume_3h_list.append(doc_buy_vol)
                         buy_trades_3h_list.append(doc_buy_trd)
+                        buy_trades_6h_list.append(doc_buy_trd)
 
                         continue
                     
@@ -347,6 +345,8 @@ class TrackerController:
                         volumes_15m_list.append(doc_vol)
                         volumes_30m_list.append(doc_vol)
                         volumes_60m_list.append(doc_vol)
+                        volumes_3h_list.append(doc_vol)
+                        volumes_6h_list.append(doc_vol)
 
                         trades_15m_list.append(doc_trades)
                         trades_30m_list.append(doc_trades)
@@ -357,18 +357,14 @@ class TrackerController:
                         buy_volume_15m_list.append(doc_buy_vol)
                         buy_volume_30m_list.append(doc_buy_vol)
                         buy_volume_60m_list.append(doc_buy_vol)
+                        buy_volume_3h_list.append(doc_buy_vol)
+                        buy_volume_6h_list.append(doc_buy_vol)
 
                         buy_trades_15m_list.append(doc_buy_trd)
                         buy_trades_30m_list.append(doc_buy_trd)
                         buy_trades_60m_list.append(doc_buy_trd)
-
-                        volumes_6h_list.append(doc_vol)
-                        buy_volume_6h_list.append(doc_buy_vol)
-                        buy_trades_6h_list.append(doc_buy_trd)
-                        
-                        volumes_3h_list.append(doc_vol)
-                        buy_volume_3h_list.append(doc_buy_vol)
                         buy_trades_3h_list.append(doc_buy_trd)
+                        buy_trades_6h_list.append(doc_buy_trd)
 
                         continue
                     
@@ -376,6 +372,8 @@ class TrackerController:
                     elif timestamp_trade > reference_30m_datetime:
                         volumes_30m_list.append(doc_vol)
                         volumes_60m_list.append(doc_vol)
+                        volumes_3h_list.append(doc_vol)
+                        volumes_6h_list.append(doc_vol)
 
                         trades_30m_list.append(doc_trades)
                         trades_60m_list.append(doc_trades)
@@ -384,54 +382,50 @@ class TrackerController:
 
                         buy_volume_30m_list.append(doc_buy_vol)
                         buy_volume_60m_list.append(doc_buy_vol)
+                        buy_volume_3h_list.append(doc_buy_vol)
+                        buy_volume_6h_list.append(doc_buy_vol)
 
                         buy_trades_30m_list.append(doc_buy_trd)
                         buy_trades_60m_list.append(doc_buy_trd)
-
-                        volumes_6h_list.append(doc_vol)
-                        buy_volume_6h_list.append(doc_buy_vol)
-                        buy_trades_6h_list.append(doc_buy_trd)
-                        
-                        volumes_3h_list.append(doc_vol)
-                        buy_volume_3h_list.append(doc_buy_vol)
                         buy_trades_3h_list.append(doc_buy_trd)
-
+                        buy_trades_6h_list.append(doc_buy_trd)
                         continue
                     
                     # if timestamp trade is not older than 60 minutes
                     elif timestamp_trade > reference_1h_datetime:
                         
                         volumes_60m_list.append(doc_vol)
-                        buy_volume_60m_list.append(doc_buy_vol)
-                        buy_trades_60m_list.append(doc_buy_trd)
-                        
+                        volumes_3h_list.append(doc_vol)
+                        volumes_6h_list.append(doc_vol)
+
                         trades_60m_list.append(doc_trades)
                         trades_3h_list.append(doc_trades)
                         trades_6h_list.append(doc_trades)
-
-                        volumes_6h_list.append(doc_vol)
-                        buy_volume_6h_list.append(doc_buy_vol)
-                        buy_trades_6h_list.append(doc_buy_trd)
                         
-                        volumes_3h_list.append(doc_vol)
+                        buy_volume_60m_list.append(doc_buy_vol)
                         buy_volume_3h_list.append(doc_buy_vol)
+                        buy_volume_6h_list.append(doc_buy_vol)
+
+                        buy_trades_60m_list.append(doc_buy_trd)
                         buy_trades_3h_list.append(doc_buy_trd)
+                        buy_trades_6h_list.append(doc_buy_trd)
 
                         continue
                     
                     # if timestamp trade is not older than 3 hours
                     elif timestamp_trade > reference_3h_datetime:
                         
-                        volumes_6h_list.append(doc_vol)
-                        buy_volume_6h_list.append(doc_buy_vol)
-                        buy_trades_6h_list.append(doc_buy_trd)
-
                         volumes_3h_list.append(doc_vol)
-                        buy_volume_3h_list.append(doc_buy_vol)
-                        buy_trades_3h_list.append(doc_buy_trd)
+                        volumes_6h_list.append(doc_vol)
 
                         trades_3h_list.append(doc_trades)
                         trades_6h_list.append(doc_trades)
+
+                        buy_volume_3h_list.append(doc_buy_vol)
+                        buy_volume_6h_list.append(doc_buy_vol)
+
+                        buy_trades_3h_list.append(doc_buy_trd)
+                        buy_trades_6h_list.append(doc_buy_trd)
 
                         continue
                     
@@ -439,9 +433,12 @@ class TrackerController:
                     elif timestamp_trade > reference_6h_datetime:
                         
                         volumes_6h_list.append(doc_vol)
-                        buy_volume_6h_list.append(doc_buy_vol)
-                        buy_trades_6h_list.append(doc_buy_trd)
+
                         trades_6h_list.append(doc_trades)
+
+                        buy_volume_6h_list.append(doc_buy_vol)
+
+                        buy_trades_6h_list.append(doc_buy_trd)
 
                         continue
                     
@@ -471,6 +468,29 @@ class TrackerController:
                     price_variation_1d = round_((price_now - price_1d_ago) / price_1d_ago, 4)
 
                     
+                # if coin == 'DODOUSDT' and now.minute <= 20 and now.hour == 7:
+                #     path_log = f"/tracker/logs/debug-{now.minute}.json"
+                #     logger.info(f'24h: {len(volumes_24h_list)}')
+                #     logger.info(f'6h: {len(volumes_6h_list)}')
+                #     logger.info(f'3h: {len(volumes_3h_list)}')
+                #     logger.info(f'60m: {len(volumes_60m_list)}')
+                #     logger.info(f'30m: {len(volumes_30m_list)}')
+                #     logger.info(f'15m: {len(volumes_15m_list)}')
+                #     logger.info(f'5m: {len(volumes_5m_list)}')
+
+                #     log = {'_id': now_isoformat,
+                #         'vol_5m': volumes_5m_list,
+                #         'vol_15m': volumes_15m_list, 
+                #         'vol_30m': volumes_30m_list, 
+                #         'vol_60m': volumes_60m_list, 
+                #         'vol_3h': volumes_3h_list,
+                #         'vol_6h': volumes_6h_list, 
+                #         'vol_24h': volumes_24h_list, 
+                #         }
+
+                #     with open(path_log, 'w') as file:
+                #         json.dump(log, file)
+
 
                 if sum(volumes_24h_list) != 0 and len(volumes_24h_list) > 1400:
                     volumes_24h = round_(np.mean(volumes_24h_list) / avg_volume_1_month, 2) 
@@ -495,7 +515,7 @@ class TrackerController:
                     buy_trades_perc_6h = None
                     volumes_6h_std = None
 
-                if sum(volumes_3h_list) != 0 and len(volumes_24h_list) > 160:
+                if sum(volumes_3h_list) != 0 and len(volumes_3h_list) > 160:
                     volumes_3h = round_(np.mean(volumes_3h_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_3h = round_(sum(buy_volume_3h_list)/sum(volumes_3h_list),2)
                     buy_trades_perc_3h = round_(sum(buy_trades_3h_list)/sum(trades_3h_list),2)
@@ -507,7 +527,7 @@ class TrackerController:
                     volumes_3h_std = None
 
 
-                if sum(volumes_60m_list) != 0 and len(volumes_24h_list) >= 50:
+                if sum(volumes_60m_list) != 0 and len(volumes_60m_list) >= 50:
                     volumes_60m = round_(np.mean(volumes_60m_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_60m = round_(sum(buy_volume_60m_list)/sum(volumes_60m_list),2)
                     buy_trades_perc_60m = round_(sum(buy_trades_60m_list)/sum(trades_60m_list),2)
@@ -519,7 +539,7 @@ class TrackerController:
                     volumes_60m_std = None
                 
 
-                if sum(volumes_30m_list) != 0 and len(volumes_24h_list) >= 24:
+                if sum(volumes_30m_list) != 0 and len(volumes_30m_list) >= 24:
                     volumes_30m = round_(np.mean(volumes_30m_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_30m = round_(sum(buy_volume_30m_list)/sum(volumes_30m_list),2)
                     buy_trades_perc_30m = round_(sum(buy_trades_30m_list)/sum(trades_30m_list),2)
@@ -531,7 +551,7 @@ class TrackerController:
                     volumes_30m_std = None
 
 
-                if sum(volumes_15m_list) != 0 and len(volumes_24h_list) >= 12:
+                if sum(volumes_15m_list) != 0 and len(volumes_15m_list) >= 12:
                     volumes_15m = round_(np.mean(volumes_15m_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_15m = round_(sum(buy_volume_15m_list)/sum(volumes_15m_list),2)
                     buy_trades_perc_15m = round_(sum(buy_trades_15m_list)/sum(trades_15m_list),2)
@@ -542,7 +562,7 @@ class TrackerController:
                     buy_trades_perc_15m = None
                     volumes_15m_std = None
 
-                if sum(volumes_5m_list) != 0 and len(volumes_24h_list) >= 4:
+                if sum(volumes_5m_list) != 0 and len(volumes_5m_list) >= 4:
                     volumes_5m = round_(np.mean(volumes_5m_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_5m = round_(sum(buy_volume_5m_list)/sum(volumes_5m_list),2)
                     buy_trades_perc_5m = round_(sum(buy_trades_5m_list)/sum(trades_5m_list),2)
