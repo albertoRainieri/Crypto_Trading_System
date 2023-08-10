@@ -282,4 +282,4 @@ class Benchmark:
                         }}
                     
                     db_benchmark[coin].update_one(filter, new_volume_series)
-                    print(f'{coin} has been updated')
+                    #print(f'{coin} has been updated')
