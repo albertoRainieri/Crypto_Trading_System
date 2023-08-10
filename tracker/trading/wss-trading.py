@@ -57,6 +57,9 @@ def on_message(ws, message):
     data = json.loads(message)
     current_bid_price = float(data['data']['b'])
     now = datetime.now()
+
+    # for attribute, value in vars(riskmanagement).items():
+    #     logger.info(f"Attribute: {attribute}, Value: {value}")
     
     # RISK MANAGEMENT
     riskmanagement.updateProfit(current_bid_price, now)
@@ -157,6 +160,9 @@ if __name__ == "__main__":
     riskmanagement = RiskManagement(id, coin, purchase_price, timeframe, 
                                     riskmanagement_configuration,
                                     db_trading, logger)
+    
+    close_timewindow = riskmanagement.close_timewindow.isoformat()
+    #logger.info(f'Trade {coin} started at {id} will be running no later then {close_timewindow}')
     
     # logger.info(riskmanagement.GOLDEN_ZONE)
     # logger.info(type(riskmanagement.GOLDEN_ZONE))

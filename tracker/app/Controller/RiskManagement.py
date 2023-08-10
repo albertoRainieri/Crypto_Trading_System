@@ -48,11 +48,11 @@ class RiskManagement:
         elif self.profit > self.GOLDEN_ZONE:
             self.manageGoldenZoneChanges()
 
-        elif now > self.ending_timewindow:
-            self.manageUsualPriceChanges()
-
         elif now > self.close_timewindow:
             self.SELL = True
+
+        elif now > self.ending_timewindow:
+            self.manageUsualPriceChanges()
         
     def manageGoldenZoneChanges(self):
         self.GOLDEN_ZONE_BOOL = True
