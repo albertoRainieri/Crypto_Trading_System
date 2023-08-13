@@ -10,6 +10,10 @@ from tracker.database.DatabaseConnection import DatabaseConnection
 from tracker.app.Helpers.Helpers import getsubstring_fromkey
 import requests
 import subprocess
+from time import time
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
+import base64
+
 
 
 class TradingController:
@@ -39,8 +43,6 @@ class TradingController:
             for event_key in trading_configuration[volatility_coin]:
 
                 # check if coin is already on trade for this specific event, if True, pass
-                #trading_coins_list = list(db_trading[COLLECTION_TRADING_LIVE].find())
-                #logger.info(trading_coins_list)
                 COIN_ON_TRADING = False
     
                 vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(event_key)
@@ -63,6 +65,9 @@ class TradingController:
                         id = datetime.now().isoformat()
 
                         #TODO: buy Order
+                        msg = f"{coin} - Event Triggered: {vol_field}:{vol_value} - {buy_vol_field}:{buy_vol_value}"
+                        logger.info(msg)
+                        
                         purchase_price = obs['price']
 
                         # get risk management configuration
@@ -76,8 +81,7 @@ class TradingController:
                         doc_db = {'_id': id, 'coin': coin, 'profit': 0, 'purchase_price': purchase_price, 'current_price': None, 'on_trade': True, 'event': event_key, 'investment_amount': investment_amount, 'risk_configuration': trading_configuration[volatility_coin][event_key], 'pid': pid}
                         db_trading[COLLECTION_TRADING_LIVE].insert_one(doc_db)
                         db_trading[COLLECTION_TRADING_HISTORY].insert_one(doc_db)
-                        msg = f"{coin} - Event Triggered: {vol_field}:{vol_value} - {buy_vol_field}:{buy_vol_value}"
-                        logger.info(msg)
+                        
                         db_logger[DATABASE_TRADING_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
 
                             # insert doc
@@ -180,6 +184,7 @@ class TradingController:
         performance_one_month = []
         performance_three_month = []
         performance_six_month = []
+        total_events = len(events_history)
 
         #first_datetime_investment = datetime.fromisoformat(events_history[0]['_id'])
 
@@ -218,7 +223,7 @@ class TradingController:
             total_performance = round_(total_performance,2)
 
             db_doc = {'total_gain': total_performance, 'total_profit': total_profit,
-                      'one_week_profit': profit_one_week, 'one_month_profit': profit_one_month, 'three_months_profit': profit_three_months, 'six_months_profit': profit_six_months}
+                      'one_week_profit': profit_one_week, 'one_month_profit': profit_one_month, 'three_months_profit': profit_three_months, 'six_months_profit': profit_six_months, 'total_events': total_events}
             
             db_performance = list(db_trading[COLLECTION_TRADING_PERFORMANCE].find())
 
@@ -229,6 +234,82 @@ class TradingController:
                 query = {"_id": id}
                 update = {"$set":db_doc}
                 db_trading[COLLECTION_TRADING_PERFORMANCE].update_one(query, update)
+
+    def makeRequest(api_path, method, params):
+        API_KEY = os.getenv('API_KEY')
+        PRIVATE_KEY_PATH = os.getenv('PRIVATE_KEY_PATH')
+
+        timestamp = int(time() * 1000)
+        params['timestamp'] = timestamp
+
+        with open(PRIVATE_KEY_PATH, 'rb') as f:
+            private_key = load_pem_private_key(data=f.read(),
+                                            password=None)
+            
+        payload = '&'.join([f'{param}={value}' for param, value in params.items()])
+        signature = base64.b64encode(private_key.sign(payload.encode('ASCII')))
+        params['signature'] = signature
+
+        if method == 'GET':
+            data = requests.request(method=method ,url="https://api.binance.com" + api_path,
+                params = params,
+                headers = {
+                    "X-MBX-APIKEY" : API_KEY,
+                }
+            )
+        else:
+            data = requests.request(method=method ,url="https://api.binance.com" + api_path,
+                data = params,
+                headers = {
+                    "X-MBX-APIKEY" : API_KEY,
+                }
+            )
+
+        #print(data.status_code)
+        return data.json()
+
+
+
+    def check_asset_composition():
+        
+        # initialize db
+        db = DatabaseConnection()
+        db_trading = db.get_db(DATABASE_TRADING)
+
+        query = {"on_trade": True}
+        coins_live = list(db_trading[COLLECTION_TRADING_LIVE].find(query))
+
+        # make request for fetching asset composition
+        api_path = "/api/v3/account"
+        params = {}
+        method = 'GET'
+        data = TradingController.makeRequest(api_path=api_path, params=params, method=method)
+
+        # fetch asset whose balance is different from zero
+        data = data['balances']
+        current_wallet = {}
+        for asset in data:
+            if float(asset["free"]) != 0:
+                current_wallet[asset['asset']] = asset['free']
+
+        return current_wallet
+
+
+    def make_order():
+
+        api_path = "/api/v3/order"
+
+        params = {'symbol': 'BTCUSDT',
+                  'side': 'BUY',
+                  'type': 'MARKET',
+                  'quantity': str(1)}
+        
+
+        method = 'POST'
+        data = TradingController.makeRequest(api_path=api_path, params=params, method=method)
+
+
+        return data
                 
 
                             
