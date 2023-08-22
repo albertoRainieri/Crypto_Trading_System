@@ -11,6 +11,7 @@ from app.Helpers.Helpers import round_, timer_func
 from app.Controller.RiskManagement import RiskManagement
 from database.DatabaseConnection import DatabaseConnection
 from app.Controller.LoggingController import LoggingController
+from app.Controller.TradingController import TradingController
 from signal import SIGKILL
 import logging
 import threading
@@ -38,8 +39,7 @@ def test_close_connection():
     compute total seconds until next wss restart.
     This function restarts the wss connection every 24 hours
     '''
-
-    sleep(300)
+    sleep(60)
     terminate_process()
 
 def terminate_all_trading_process():
@@ -78,26 +78,67 @@ def on_message(ws, message):
 
 
 def terminate_process():
+    now = datetime.now()
     # Terminate the process
     docs = list(db_trading[COLLECTION_TRADING_LIVE].find({}))
+    # Specify the query for the document to update
+    query = {'_id': id}
+    # Specify the update operation. 
+    update = {'$set': {'on_trade': False,
+                        'exit_timestamp': now.isoformat(),
+                        }
+              }
 
     for doc in docs:
         if doc['_id'] == id:
-            db_trading[COLLECTION_TRADING_LIVE].delete_one({'_id': id})
+            # SEND SELL ORDER IF TRADING_LIVE
+            trading_live = doc['trading_live']
+            if trading_live:
+                quantity = doc['quantity'] 
+                response, status_code = TradingController.create_order(coin=coin, side="SELL", quantity=quantity)
+                # if REQUEST is succesful, then update db
+                if status_code == 200:
+                    # get info
+                    event_key = doc['event']
 
+                    response = response.json()
+                    quantity_executed = float(response["executedQty"])
+                    sell_price = float(response["price"])
 
-            # Specify the filter for the document to update
-            filter = {'_id': id}
-            # Specify the update operation. update current_bid_price and profit
-            update = {'$set': {'on_trade': False}}
-            # Perform the update operation
-            db_trading[COLLECTION_TRADING_HISTORY].update_one(filter, update)
+                    # update database trading_history, and delete record for trading_live
+                    update['$set']['current_price'] = sell_price
+                    update['$set']['quantity_sell'] = quantity_executed
+                    db_trading[COLLECTION_TRADING_HISTORY].update_one(query, update)
+                    db_trading[COLLECTION_TRADING_LIVE].delete_one({'_id': id})
 
-    logger.info(f'record for {coin}:{id} has been deleted in Live Trading')
+                    # notify/update dbs
+                    msg = f'SELL Order Succeded for {coin}:{id}. origQty: {quantity}, execQty: {quantity_executed}'
+                    logger.info(msg)
+                    db_logger[DATABASE_TRADING_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+
+                    # kill the process
+                    pid = os.getpid()
+                    logger.info(f'Terminating process {pid}')
+                    os.kill(pid, SIGKILL)
+
+                # if REQUEST is not succesfull, then notify to db_logger and do not kill the process
+                else:
+                    msg_text = f'SELL Order FAILED for {coin}:{id}'
+                    msg = {'msg': msg_text, 'error': response.text}
+                    logger.info(msg)
+                    db_logger[DATABASE_TRADING_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+                    db_logger[DATABASE_TRADING_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+            else:
+                # update database trading_history, and delete record for trading_live
+                db_trading[COLLECTION_TRADING_HISTORY].update_one(query, update)
+                db_trading[COLLECTION_TRADING_LIVE].delete_one({'_id': id})
+                
+                
+                logger.info(f'Record for {coin}:{id} has been deleted. Trading_live: {trading_live} ')
     
-    pid = os.getpid()
-    logger.info(f'Terminating process {pid}')
-    os.kill(pid, SIGKILL)
+                pid = os.getpid()
+                logger.info(f'Terminating process {pid}')
+                os.kill(pid, SIGKILL)
 
 def get_db(db_name):
     '''
@@ -139,12 +180,13 @@ def launch_wss_session(coin):
                                 )
     # logger.info('you there?')
     # logger.info(ws)
-    #threading.Thread(target=test_close_connection).start()
+    # threading.Thread(target=test_close_connection).start()
     ws.run_forever()
 
 
 if __name__ == "__main__":
     global riskmanagement
+    global TRADING_LIVE
 
     db_logger = get_db(DATABASE_LOGGING)
     db_trading = get_db(DATABASE_TRADING)
@@ -161,7 +203,8 @@ if __name__ == "__main__":
                                     riskmanagement_configuration,
                                     db_trading, logger)
     
-    close_timewindow = riskmanagement.close_timewindow.isoformat()
+    
+    #close_timewindow = riskmanagement.close_timewindow.isoformat()
     #logger.info(f'Trade {coin} started at {id} will be running no later then {close_timewindow}')
     
     # logger.info(riskmanagement.GOLDEN_ZONE)

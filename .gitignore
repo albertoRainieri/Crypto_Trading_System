@@ -23,3 +23,5 @@ tracker/test
 nginx/conf/default
 tracker/json/most_traded_coins_sample.json
 mongodb_backup/
+backend/riskmanagement/
+analysis/riskmanagement_backup/

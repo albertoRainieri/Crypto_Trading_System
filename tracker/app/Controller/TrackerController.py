@@ -16,23 +16,6 @@ class TrackerController:
     def __init__(self) -> None:
         pass
       
-    # Retrieve data from db and compute statistics
-    def getData(db_trades, logger, db_logger):
-        # f = open ('/tracker/json/most_traded_coin_list.json', "r")
-        # data = json.loads(f.read())
-        db = DatabaseConnection()
-        db_tracker = db.get_db(database=DATABASE_TRACKER)
-        db_benchmark = db.get_db(database=DATABASE_BENCHMARK)
-        db_trading = db.get_db(database=DATABASE_TRADING)
-        #TrackerController.db_operations(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, logger=logger)
-
-        # try:
-        asyncio.run(TrackerController.db_operations(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, db_trading=db_trading, logger=logger, db_logger=db_logger))
-        # except Exception as e:
-        #     logger.error(e)
-        #     logger.error('Something Wrong Happened. Check the logs above')
-
-        pass
 
     def isEqualToReferenceDatetime(actual_timestamp, reference_year_x_ago, reference_month_x_ago, reference_day_x_ago, reference_hour_x_ago, reference_minute_x_ago, logger):
         '''
@@ -54,7 +37,7 @@ class TrackerController:
 
 
     #@timer_func
-    async def db_operations(db_trades, db_tracker, db_benchmark, db_trading, logger, db_logger):
+    async def start_tracking(db_trades, db_tracker, db_benchmark, db_trading, logger, db_logger):
         now = datetime.now()
         now_isoformat = now.isoformat()
         reference_1day_datetime = now - timedelta(days=1)
@@ -89,7 +72,6 @@ class TrackerController:
 
         coins_list = db_trades.list_collection_names()
         trading_coins_list = list(db_trading[COLLECTION_TRADING_LIVE].find())
-        investment_amount = float(os.getenv('INVESTMENT_AMOUNT'))
 
         #download list of most_traded_coins
         f = open ('/tracker/json/most_traded_coins.json', "r")
@@ -102,8 +84,11 @@ class TrackerController:
         coin_list_subset = data["most_traded_coins"]
         # logger.info(coin_list_subset)
         # logger.info(len(coin_list_subset))
+        last_coin = coins_list[-1]
+        first_coin = coins_list[0]
         
         # iterate through each coin
+        # The all cycle takes slightly less than 1 second (from localhost 15/08/2023)
         for coin in coins_list:
 
             if coin not in coin_list_subset:
@@ -596,9 +581,18 @@ class TrackerController:
                         'vol_24h': volumes_24h, 'vol_24h_std': volumes_24h_std, 'buy_vol_24h': buy_volume_perc_24h,'buy_trd_24h': buy_trades_perc_24h,
                         }
                 
+                
+                # if coin == last_coin or coin == first_coin:
+                #     logger.info(f'TrackerController: {coin}')
+
+                
                 # CHECK IF THE EVENT CAN TRIGGER A BUY ORDER
-                asyncio.create_task(TradingController.check_event_triggering(coin, doc_db, volatility_coin, logger, db_trading, db_logger, trading_coins_list, trading_configuration, investment_amount))
-            
+
+                # ASYNC CALL ENABLED call. Enable only if cpu support is high. 4CPUs are probably minimum
+                #asyncio.create_task(TradingController.check_event_triggering(coin, doc_db, volatility_coin, logger, db_trading, db_logger, trading_coins_list, trading_configuration, last_coin, first_coin))
+                
+                # ASYNC DISABLED. THIS IS PREFERRED CHOICE even if CPU Support is high
+                TradingController.check_event_triggering(coin, doc_db, volatility_coin, logger, db_trading, db_logger, trading_coins_list, trading_configuration, last_coin, first_coin)
                 #logger.info(doc_db)
 
                 db_tracker[coin].insert(doc_db)

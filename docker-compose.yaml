@@ -53,8 +53,9 @@ services:
       - ./backend/database:/tracker/database:ro
       - ./backend/app/Helpers:/tracker/app/Helpers
       - ./backend/riskmanagement:/tracker/riskmanagement
+      - ~/.ssh/tradingbot/id_rsa:$PRIVATE_KEY_PATH
     environment:
-      - BACKEND_URL= $BACKEND_URL
+      - BACKEND_URL=$BACKEND_URL
       - MONGO_USERNAME=$MONGO_USERNAME
       - MONGO_PASSWORD=$MONGO_PASSWORD
       - MONGO_DB_URL=$MONGO_DB_URL
@@ -63,7 +64,13 @@ services:
       - PRODUCTION=$PRODUCTION
       - CLEAN_DB_TRADING=$CLEAN_DB_TRADING
       - INVESTMENT_AMOUNT=$INVESTMENT_AMOUNT
-
+      - PRIVATE_KEY_PATH=$PRIVATE_KEY_PATH
+      - API_KEY=$API_KEY
+      - TRADING_LIVE=$TRADING_LIVE
+      - INITIALIZED_BALANCE_ACCOUNT=$INITIALIZED_BALANCE_ACCOUNT
+      - INITIALIZED_INVESTMENT_AMOUNT=$INITIALIZED_INVESTMENT_AMOUNT
+      - MAX_EVENTS_SYNCED=$MAX_EVENTS_SYNCED
+      - MAXIMUM_LOSS=$MAXIMUM_LOSS
     networks:
       - local-net
 

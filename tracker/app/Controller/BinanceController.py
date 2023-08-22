@@ -115,7 +115,7 @@ class BinanceController:
         #print('res', res)
         all_usdt_coins = []
         for coin in res['symbols']:
-            if coin['symbol'][-4:] == 'USDT' and coin['symbol'] != 'USDCUSDT' and coin['symbol'] != 'TUSDUSDT' and coin['symbol'] != 'USDPUSDT' and coin['symbol'] != 'BUSDUSDT' and coin['symbol'] != 'USTUSDT':
+            if coin['symbol'][-4:] == 'USDT' and coin['symbol'] != 'USDCUSDT' and coin['symbol'] != 'TUSDUSDT' and coin['symbol'] != 'USDPUSDT' and coin['symbol'] != 'BUSDUSDT' and coin['symbol'] != 'USTUSDT' and coin['symbol'] != 'EURUSDT':
                 all_usdt_coins.append(coin['symbol'])
         
         #all_usdt_coins = all_usdt_coins[:10]

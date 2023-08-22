@@ -152,8 +152,10 @@ def on_message(ws, message):
     # if data['s'] == 'BTCUSDT':
     #     print(data)
     if NOW is not None:
+        # if same minute then keep on getting statistics
         if NOW == formatted_date:
             getStatisticsOnTrades(data, instrument_name, doc_db, prices)
+        # otherwise let's save it to db
         else:
             n_coins = len(n_list_coins)
             tot_coins = len(prices)
