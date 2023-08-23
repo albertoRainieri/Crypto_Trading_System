@@ -387,8 +387,8 @@ class TradingController:
             logger.info(f'No events to register the {COLLECTION_PERFORMANCE} performance')
         
 
-        doc_db = {'_id': id, 'absolute_profit': absolute_profit, 'weighted_performance_percentage': weighted_performance_percentage,
-                'clean_profit': new_clean_profit, 'total_investment': total_investment, 'total_events_recorded': total_events_recorded,}
+        doc_db = {'_id': id, 'absolute_profit': round_(absolute_profit,2), 'weighted_performance_percentage': round_(weighted_performance_percentage,4),
+                'clean_profit': round_(new_clean_profit,4), 'total_investment': total_investment, 'total_events_recorded': total_events_recorded,}
         
         db_trading[COLLECTION_PERFORMANCE].insert(doc_db)
         pass
@@ -473,10 +473,10 @@ class TradingController:
         if last_record == None:
             CREATE_NEW = True
             last_investment_amount = int(os.getenv('INITIALIZED_INVESTMENT_AMOUNT'))
-            last_balance_account = float(os.getenv('INITIALIZED_BALANCE_ACCOUNT'))
+            average_balance_account = float(os.getenv('INITIALIZED_BALANCE_ACCOUNT'))
         else:
             last_investment_amount = last_record['investment_amount']
-            last_balance_account = last_record['balance_account']
+            average_balance_account = last_record['average_balance']
             query = {'_id': last_record['_id']}
 
             # if It is a new week (it is Monday)
@@ -522,9 +522,9 @@ class TradingController:
                 # logger.info(f' balance_account now: {balance_account}')
 
                 average_balance = round_(((last_record["average_balance"] * (minutes_passed - 1)) + balance_account) / minutes_passed,2)
-                update_data["$set"]['average_balance'] = average_balance
+                update_data["$set"]['average_balance'] = round_(average_balance,4)
                 update_data["$set"]['balance_account'] = round_(balance_account,2)
-                update_data["$set"]['balance_usdt'] = balance_account_usdt
+                update_data["$set"]['balance_usdt'] = round_(balance_account_usdt,4)
                 update_data["$set"]['last_update'] = now_isoformat
 
                 db_trading[COLLECTION_TRADING_BALANCE_ACCOUNT].update_one(query, update_data)
@@ -542,12 +542,15 @@ class TradingController:
                 # maximum loss in terms of multiple of investment_amount (e.g. 2)
                 maximum_loss = float(os.getenv('MAXIMUM_LOSS'))
                 # potential_investment_amount (this is generally a float number), but I want a multiple of 5 to make the investments more consistent
-                # the value of the investment_amount depends on the performance / average_balance_account of the last week.
-                potential_investment_amount = (last_balance_account / (maximum_events_sync + maximum_loss))
+                # the value of the investment_amount depends on the performance of the average_balance_account of the last week.
+                potential_investment_amount = (average_balance_account / (maximum_events_sync + maximum_loss))
                 # maximum between the average balance account of the last week and the last_investment_amount
-                investment_amount = max(int(potential_investment_amount - int(potential_investment_amount % 5)), last_investment_amount)
+                if TRADING_LIVE:
+                    investment_amount = max(int(potential_investment_amount - int(potential_investment_amount % 5)), last_investment_amount)
+                else:
+                    investment_amount = 100
                 # finally I initialize the balance account and average balance account with the "new" balance_account
-                doc_db = {'_id': id, 'balance_account': round_(balance_account,2), 'balance_usdt': round_(balance_account_usdt,2), 'average_balance': round_(balance_account,2), 'investment_amount': investment_amount, 'last_update': now_isoformat}
+                doc_db = {'_id': id, 'balance_account': round_(balance_account,2), 'balance_usdt': round_(balance_account_usdt,4), 'average_balance': round_(balance_account,4), 'investment_amount': investment_amount, 'last_update': now_isoformat}
                 db_trading[COLLECTION_TRADING_BALANCE_ACCOUNT].insert(doc_db)
             
 
@@ -556,7 +559,9 @@ class TradingController:
             # logger.info(f'Time spent for getting balance account info {time_spent}')
         
         else:
+            logger.info('ERROR: WAS NOT ABLE TO RETRIEVE INFO FROM /v3/account Binance API')
             logger.info(response)
+            
         
 
 
