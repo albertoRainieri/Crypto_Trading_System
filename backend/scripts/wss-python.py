@@ -109,11 +109,19 @@ def on_open(ws):
     f = open ('/backend/json/most_traded_coins.json', "r")
     data = json.loads(f.read())
     #coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
+    # I AM MOVING ETHUSDT TO SECOND LIST BECAUSE I NOTED THAT SOMETIMES TRADE VOLUME IN LIST 2 IS VERY LOW AND THEREFORE THE SAVE TO DB HAPPENS TOO LATE,.
+    # THIS IS RISKY FOR THE TRACKER WHICH IS NOT ABLE TO GET THE LAST DATA
     if LIST == 'list1':
         coin_list = data["most_traded_coins"][:200]
+        if 'ETHUSDT' in coin_list:
+            coin_list.remove('ETHUSDT')
     else:
         coin_list = data["most_traded_coins"][200:]
+        if 'ETHUSDT' not in coin_list:
+            coin_list = ['ETHUSDT'] + coin_list
 
+    logger.info(LIST)
+    logger.info(coin_list)
     doc_db, prices, n_list_coins = initializeVariables(coin_list)
     
 
@@ -183,11 +191,7 @@ def initializeVariables(coin_list):
 
 
 def getStatisticsOnTrades(trade, instrument_name, doc_db, prices):
-    try:
-        datetime_trade = datetime.fromtimestamp(trade[TIME]/1000)
-    except:
-        pass
-    
+
     doc_db[instrument_name]['n_trades'] += 1
 
     if trade[ORDER]:
@@ -199,7 +203,7 @@ def getStatisticsOnTrades(trade, instrument_name, doc_db, prices):
     price =  trade[PRICE]
 
 
-    prices[instrument_name] = float(trade[PRICE])
+    prices[instrument_name] = float(price)
 
     doc_db[instrument_name]["quantity"] += float(quantity)
     

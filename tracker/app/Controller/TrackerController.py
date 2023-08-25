@@ -37,9 +37,11 @@ class TrackerController:
 
 
     #@timer_func
-    async def start_tracking(db_trades, db_tracker, db_benchmark, db_trading, logger, db_logger):
+    #async def start_tracking(db_trades, db_tracker, db_benchmark, db_trading, logger, db_logger):
+    #@timer_func
+    def start_tracking(db_trades, db_tracker, db_benchmark, db_trading, logger, db_logger):
         now = datetime.now()
-        now_isoformat = now.isoformat()
+        #now_isoformat = now.isoformat()
         reference_1day_datetime = now - timedelta(days=1)
         reference_6h_datetime = now - timedelta(hours=6)
         reference_3h_datetime = now - timedelta(hours=3)
@@ -570,7 +572,7 @@ class TrackerController:
 
 
 
-                doc_db = {'_id': now_isoformat,"price": price_now, "price_%_1d" : price_variation_1d, "price_%_6h" : price_variation_6h, "price_%_3h" : price_variation_3h, "price_%_1h" : price_variation_1h,
+                doc_db = {'_id': datetime.now().isoformat(),"price": price_now, "price_%_1d" : price_variation_1d, "price_%_6h" : price_variation_6h, "price_%_3h" : price_variation_3h, "price_%_1h" : price_variation_1h,
                         'vol_1m': volume_1m, 'buy_vol_1m': buy_volume_perc_1m, 'buy_trd_1m': buy_trades_perc_1m,
                         'vol_5m': volumes_5m, 'vol_5m_std': volumes_5m_std, 'buy_vol_5m': buy_volume_perc_5m, 'buy_trd_5m': buy_trades_perc_5m,
                         'vol_15m': volumes_15m, 'vol_15m_std': volumes_15m_std, 'buy_vol_15m': buy_volume_perc_15m, 'buy_trd_15m': buy_trades_perc_15m,
@@ -600,6 +602,10 @@ class TrackerController:
             # if Bitcoin was not retrieved 
             elif coin == 'BTCUSDT':
                 msg = 'No trade was saved in Market_Trades in the last minute for list1'
+                logger.info(msg)
+                db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+            elif coin == 'ETHUSDT':
+                msg = 'No trade was saved in Market_Trades in the last minute for list2'
                 logger.info(msg)
                 db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
             

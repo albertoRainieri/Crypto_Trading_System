@@ -34,6 +34,7 @@ def main(TRADING_LIVE, db, logger, db_trading, db_logger):
         
         if second == 55:
             TradingController.get_balance_account(logger, db_trading)
+            sleep(0.2)
         
         sleep(0.8)
 

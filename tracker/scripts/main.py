@@ -5,11 +5,14 @@ sys.path.insert(1, os.path.join(sys.path[0], '..'))
 from database.DatabaseConnection import DatabaseConnection
 from app.Controller.LoggingController import LoggingController
 from app.Controller.TrackerController import TrackerController
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
 from constants.constants import *
 
-def main(db_trades, db_tracker, db_benchmark, db_trading, db_logger, logger):
+SECOND_START_TRACKING = 2
+FIRST_RUN = True
+
+def main(db_trades, db_tracker, db_benchmark, db_trading, db_logger, logger, FIRST_RUN, SECOND_START_TRACKING):
     '''
     This function tracks the statistics of the most traded pairs each minute
     '''
@@ -17,13 +20,20 @@ def main(db_trades, db_tracker, db_benchmark, db_trading, db_logger, logger):
     logger.info('Tracker Started')
 
     while True:
-        now=datetime.now()
-        second = now.second
 
-        if second == 2:
-            asyncio.run(TrackerController.start_tracking(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, db_trading=db_trading, logger=logger, db_logger=db_logger))
 
-        sleep(0.8)
+        if datetime.now().second == SECOND_START_TRACKING:
+            #logger.info(datetime.now())
+            #asyncio.run(TrackerController.start_tracking(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, db_trading=db_trading, logger=logger, db_logger=db_logger))
+            TrackerController.start_tracking(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, db_trading=db_trading, logger=logger, db_logger=db_logger)
+            FIRST_RUN = False
+            time_delta = (datetime.now() + timedelta(minutes=1)).replace(second=SECOND_START_TRACKING, microsecond=0) - datetime.now()
+            sleep_seconds = time_delta.seconds + (time_delta.microseconds / 10**6)
+            sleep(sleep_seconds)
+            
+
+        if FIRST_RUN:
+            sleep(0.5)
 
     
 
@@ -36,5 +46,9 @@ if __name__ == '__main__':
     db_trading = db.get_db(database=DATABASE_TRADING)
     db_logger = db.get_db(DATABASE_LOGGING)
 
+    SECOND_START_TRACKING = 2
+    FIRST_RUN = True
+
     sleep(2)
-    main(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, db_trading=db_trading, db_logger=db_logger, logger=logger)
+    main(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, db_trading=db_trading, 
+         db_logger=db_logger, logger=logger, FIRST_RUN=FIRST_RUN, SECOND_START_TRACKING=SECOND_START_TRACKING)
