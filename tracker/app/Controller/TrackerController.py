@@ -38,7 +38,7 @@ class TrackerController:
 
     #@timer_func
     #async def start_tracking(db_trades, db_tracker, db_benchmark, db_trading, logger, db_logger):
-    @timer_func
+    #@timer_func
     def start_tracking(db_trades, db_tracker, db_benchmark, db_trading, logger, db_logger):
         now = datetime.now()
         #now_isoformat = now.isoformat()
