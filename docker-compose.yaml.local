@@ -53,6 +53,7 @@ services:
       - ./backend/database:/tracker/database:ro
       - ./backend/app/Helpers:/tracker/app/Helpers
       - ./backend/riskmanagement:/tracker/riskmanagement
+      - ~/.ssh/tradingbot/id_rsa:/ssh/id_rsa
     environment:
       - BACKEND_URL= $BACKEND_URL
       - MONGO_USERNAME=$MONGO_USERNAME

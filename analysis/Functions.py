@@ -857,7 +857,7 @@ def get_dynamic_volume_avg(benchmark_info):
 
             
 
-def total_function_multiprocessing(list_buy_vol, list_vol, list_minutes, list_event_buy_volume, list_event_volume, n_processes, LOAD_DATA):
+def total_function_multiprocessing(list_buy_vol, list_vol, list_minutes, list_event_buy_volume, list_event_volume, n_processes, LOAD_DATA, INTEGRATION=False):
     '''
     this function loads only the data not analyzed and starts "wrap_analyze_events_multiprocessing" function. Finally it saves the output a path dedicated
 
@@ -890,14 +890,33 @@ def total_function_multiprocessing(list_buy_vol, list_vol, list_minutes, list_ev
         with open(file_path, 'r') as file:
             # Retrieve shared memory for JSON data and "start_interval"
             analysis_json = json.load(file)
-            start_interval = analysis_json['start_next_analysis']
+
+            # INTEGRATION HAS BEEN ADDED LATER TO ANALYZE NEW COMBINATIONS AND MERGE THE RESULTS INTO THE EXISTING analysis_json
+            if INTEGRATION:
+                analysis_timeframe = 10
+                if 'start_next_analysis_integration' not in analysis_json:
+                    start_interval = datetime(2023,5,11).isoformat()
+                else:
+                    start_interval = analysis_json['start_next_analysis_integration']
+                # get start_next_analysis of primary analysis
+                start_interval_primary = analysis_json['start_next_analysis']
+            else:
+                start_interval = analysis_json['start_next_analysis']
             del analysis_json
     else:
         # Create shared memory for JSON data and initialize "start_interval"
         start_interval = datetime(2023,5,11).isoformat()
     
     # define "end_interval" and "filter_position"
-    end_interval = min(datetime.now(), datetime.fromisoformat(start_interval) + timedelta(days=analysis_timeframe))
+    if INTEGRATION:
+        end_interval = min(datetime.now(), datetime.fromisoformat(start_interval) + timedelta(days=analysis_timeframe))
+        # start_interval_primary is the timestamp that determines the last moment in which data have been analyzed in the last analysis
+        # end interval is the timestamp that determines the timestamp that data must be loaded for the next analysis
+        # end interval is 3 days ahead then end_interval_analysis, that's why I am adding 3 days to start_interval_primary in the following line
+        end_interval = min( datetime.fromisoformat(start_interval_primary) + timedelta(days=3), end_interval)
+    else:
+        end_interval = min(datetime.now(), datetime.fromisoformat(start_interval) + timedelta(days=analysis_timeframe))
+
     filter_position = (0,500) # this is enough to load all the coins available
 
     shared_data = manager.Value(str, json.dumps({}))
@@ -939,7 +958,8 @@ def total_function_multiprocessing(list_buy_vol, list_vol, list_minutes, list_ev
 
 
     # update the analysis json for storing performances
-    updateAnalysisJson(shared_data.value, file_path, start_next_analysis)
+    #updateAnalysisJson(shared_data.value, file_path, start_next_analysis, INTEGRATION)
+    updateAnalysisJson(shared_data.value, file_path, start_next_analysis, slice_i=None, start_next_analysis_str=None, INTEGRATION=INTEGRATION)
 
     t2 = time()
     print(t2-t1, ' seconds')
@@ -1042,7 +1062,7 @@ def total_function_multiprocessing_lessRAM(list_buy_vol, list_vol, list_minutes,
     t2 = time()
     print(t2-t1, ' seconds')
 
-def updateAnalysisJson(shared_data_value, file_path, start_next_analysis, slice_i=None, start_next_analysis_str=None):
+def updateAnalysisJson(shared_data_value, file_path, start_next_analysis, slice_i=None, start_next_analysis_str=None, INTEGRATION=False):
 
     if os.path.exists(file_path):
         with open(file_path, 'r') as file:
@@ -1091,7 +1111,10 @@ def updateAnalysisJson(shared_data_value, file_path, start_next_analysis, slice_
             start_next_analysis_str_1 = 'start_next_analysis_1'
             json_to_save = {start_next_analysis_str_1: analysis_json[start_next_analysis_str_1], start_next_analysis_str : start_next_analysis, 'data': analysis_json['data']}
     else:
-        json_to_save = {'start_next_analysis' : start_next_analysis, 'data': analysis_json['data']}
+        if INTEGRATION:
+            json_to_save = {'start_next_analysis' : analysis_json['start_next_analysis'], 'data': analysis_json['data'], 'start_next_analysis_integration': start_next_analysis}
+        else:
+            json_to_save = {'start_next_analysis' : start_next_analysis, 'data': analysis_json['data'], 'start_next_analysis_integration': analysis_json['start_next_analysis_integration']}
 
 
     with open(file_path, 'w') as file:
@@ -1540,18 +1563,47 @@ def plotTimeseries(timeseries, fields, check_past, plot):
             if check_past != False:
                 #print('1')
                 start_price = current_price
+                one_day_before_price = timeseries[coin][timestamp_start]['data'][0]['price']
+                six_hour_before_price_flag = True
+                three_hour_before_price_flag = True
+                one_hour_before_price_flag = True
+                final_price_price_flag = True
+
+
+                ante_performance_one_day = round_((start_price - one_day_before_price ) / one_day_before_price,2)
                 #print(start_price)
 
                 max_change = 0
                 min_change = 0
                 #print('2')
+                
+                iterator = 0
                 for obs in timeseries[coin][timestamp_start]['data']:
+                    if six_hour_before_price_flag and datetime.fromisoformat(timestamp_start) - datetime.fromisoformat(obs['_id']) < timedelta(hours=6):
+                        ante_performance_six_hour = round_((start_price - obs['price'] ) / obs['price'],2)
+                        six_hour_before_price_flag = False
+                    
+                    if three_hour_before_price_flag and datetime.fromisoformat(timestamp_start) - datetime.fromisoformat(obs['_id']) < timedelta(hours=3):
+                        ante_performance_three_hour = round_((start_price - obs['price'] ) / obs['price'],2)
+                        three_hour_before_price_flag = False
+                    
+                    if one_hour_before_price_flag and datetime.fromisoformat(timestamp_start) - datetime.fromisoformat(obs['_id']) < timedelta(hours=1):
+                        ante_performance_one_hour = round_((start_price - obs['price'] ) / obs['price'],2)
+                        one_hour_before_price_flag = False
+
+                    if final_price_price_flag and datetime.fromisoformat(obs['_id']) - datetime.fromisoformat(timestamp_start) > timedelta(minutes=timeframe):
+                        final_performance_timeseries = round_((obs['price'] - start_price) / start_price,2)
+                        final_price_price_flag = False
+                    
+                    
                     #print('3')
                     datetime_list.append(datetime.fromisoformat(obs['_id']))
                     price_list.append(obs['price'])
                     vol_list.append(obs[vol_field])
                     buy_vol_list.append(obs[buy_vol_field])
+
                     if datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(timestamp_start) and datetime.fromisoformat(obs['_id']) < timestamp_end:
+                            
                         if obs['price'] > max_price[1]:
                             max_price = (datetime.fromisoformat(obs['_id']), obs['price'])
                             max_change = round_(((max_price[1] - start_price) / start_price)*100,2)
@@ -1580,6 +1632,13 @@ def plotTimeseries(timeseries, fields, check_past, plot):
             if plot:
                 print(f'Max price occurred at {max_price[0]}: {max_price[1]} ({max_change})')
                 print(f'Min price occurred at {min_price[0]}: {min_price[1]} ({min_change})')
+                print(f'Performance 1 day at the triggering event {ante_performance_one_day}')
+                print(f'Performance 6 hours at the triggering event {ante_performance_six_hour}')
+                print(f'Performance 3 hours at the triggering event {ante_performance_three_hour}')
+                print(f'Performance 1 hour at the triggering event {ante_performance_one_hour}')
+                print(f'Performance at the end of timeseries {final_performance_timeseries}')
+
+                
 
                 #print('ok')
                 fig, ax = plt.subplots(3, 1, sharex=True, figsize=(20, 10))
@@ -1664,7 +1723,8 @@ def RiskManagement_multiprocessing(timeseries_json, arg_i, EXTRATIMEFRAMES, STEP
 
 
                         # iterate through each event
-                        for start_timestamp in timestamp_to_analyze:
+                        #for start_timestamp in timestamp_to_analyze:
+                        for start_timestamp in timestamp_list:
                             STEP = copy(STEP_original)
                             GOLDEN_ZONE = copy(GOLDEN_ZONE_original)
                             #print(f'new event: {coin}; {start_timestamp}')
@@ -1736,9 +1796,9 @@ def RiskManagement_multiprocessing(timeseries_json, arg_i, EXTRATIMEFRAMES, STEP
 def RiskManagement(key, investment_per_event=100):
 
     EXTRATIMEFRAMES = [0]
-    STEPS_NOGOLDEN = [0.01, 0.03, 0.05]
-    STEPS_GOLDEN = [0.05, 0.075, 0.1, 0.15, 0.2, 0.3]
-    GOLDEN_ZONES = [0.10, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1]
+    STEPS_NOGOLDEN = [0.01]
+    STEPS_GOLDEN = [0.05, 0.075, 0.1, 0.15, 0.2, 0.25, 0.3]
+    GOLDEN_ZONES = [0.10, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
     
     n_combinations = len(EXTRATIMEFRAMES) * len(STEPS_NOGOLDEN) * len(STEPS_GOLDEN) * len(GOLDEN_ZONES)
     print(f'Number of combinations {n_combinations}')
@@ -2043,7 +2103,7 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
         retry = True        
         # if response is not complete, retry with a new request
         while retry:
-            retry = getTimeseries(info, key, check_past=360, look_for_newdata=True, plot=False)
+            retry = getTimeseries(info, key, check_past=1440, look_for_newdata=True, plot=False)
 
         df1, df2, risk = RiskManagement(key)
 
@@ -2378,7 +2438,7 @@ def analyzeRiskManagementPerformance(riskmanagement_path):
         ax.set_title(event_key)
         
         if event_key == 'total':
-            df = pd.DataFrame({'event': timestamp_timeseries, 'mean_series': mean_timeseries, 'mean_event': mean_list, 'balance': balance_account, 'std_event': std_list, 'coin': coin_list})
+            df = pd.DataFrame({'event': timestamp_timeseries, 'mean_series': mean_timeseries, 'mean_event': mean_list, 'balance': balance_account, 'coin': coin_list})
             total_performance = round_(np.mean(mean_list)*100,2)
             n_events_total_performance = len(mean_list)
             post_performance = round_(np.mean(post_mean_list)*100,2)

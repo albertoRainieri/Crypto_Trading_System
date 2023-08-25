@@ -4,6 +4,7 @@ mongodb/db
 *.pyc
 *.log
 backend/logs/*
+backend/json
 analysis/database.py
 analysis/json/
 analysis/json_test
@@ -11,17 +12,23 @@ analysis/json_old
 analysis/benchmark_json
 analysis/backup_analysis_json
 analysis/analysis_json
+analysis/analysis_json_backup
 analysis/timeseries_json
+analysis/timeseries_json_old
+analysis/riskmanagement_json
+analysis/riskmanagement_backup/
 analysis/.*
 analysis/__*
 analysis/old/
 #backend/test
 tracker/logs
 tracker/test
+tracker/json/*.json
+tracker/ssh/
 # tracker/json
 !tracker/json/most_traded_coins_btc_eth.json
 nginx/conf/default
 tracker/json/most_traded_coins_sample.json
 mongodb_backup/
 backend/riskmanagement/
-analysis/riskmanagement_backup/
+backend/info
