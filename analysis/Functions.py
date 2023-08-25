@@ -1114,7 +1114,10 @@ def updateAnalysisJson(shared_data_value, file_path, start_next_analysis, slice_
         if INTEGRATION:
             json_to_save = {'start_next_analysis' : analysis_json['start_next_analysis'], 'data': analysis_json['data'], 'start_next_analysis_integration': start_next_analysis}
         else:
-            json_to_save = {'start_next_analysis' : start_next_analysis, 'data': analysis_json['data'], 'start_next_analysis_integration': analysis_json['start_next_analysis_integration']}
+            if "start_next_analysis_integration" in analysis_json:
+                json_to_save = {'start_next_analysis' : start_next_analysis, 'data': analysis_json['data'], 'start_next_analysis_integration': analysis_json['start_next_analysis_integration']}
+            else:
+                json_to_save = {'start_next_analysis' : start_next_analysis, 'data': analysis_json['data']}
 
 
     with open(file_path, 'w') as file:
@@ -1891,10 +1894,11 @@ def RiskManagement(key, investment_per_event=100):
     profit = round_((investment_per_event * n_events) * (best_profit),2)
     print(f'{profit} euro of profit for an investment of {investment_per_event} euro per event (total of {n_events} events). {best_risk_key} with {best_profit_print} %')
     
+    optimized_riskconfiguration_results = {'events': list(results[best_risk_key].keys()), 'gain': profit_list[best_risk_key], 'buy_price': buy_price_list[best_risk_key],
+                         'exit_price': exit_price_list[best_risk_key],  'timestamp_exit': timestamp_exit_list[best_risk_key],
+                           'coin': coin_list[best_risk_key], 'early_sell': early_sell[best_risk_key]}
     
-    df2 = pd.DataFrame({'events': list(results[risk_key].keys()), 'gain': profit_list[risk_key], 'buy_price': buy_price_list[risk_key],
-                         'exit_price': exit_price_list[risk_key],  'timestamp_exit': timestamp_exit_list[risk_key],
-                           'coin': coin_list[risk_key], 'early_sell': early_sell[risk_key]})
+    df2 = pd.DataFrame(optimized_riskconfiguration_results)
     
     # mean of all events per key
     mean_all_configs_print = round_(np.mean(profit_mean_list_df)*100,2)
@@ -1904,7 +1908,7 @@ def RiskManagement(key, investment_per_event=100):
     risk_configuration = {'best_risk_key': best_risk_key, 'best_mean_print':  best_profit_print, 'best_std_print': best_std_print,
                            'statistics': {'mean': mean_all_configs_print, 'std': std_all_configs_print, 'median': median_all_configs_print}}
     
-    return df1, df2, risk_configuration
+    return df1, df2, risk_configuration, optimized_riskconfiguration_results
 
 def riskmanagement_data_preparation(data, n_processes):
     # CONSTANTS
@@ -2028,13 +2032,28 @@ def infoTimeseries(info, key):
     return df
 
 
-def check_invevestment_amount(info, output, investment_amount = 100):
+def check_invevestment_amount(info, output, investment_amount = 100, riskmanagement_path=None):
     '''
     This function helps to understand the account balance required for investing based on "investment_amount"
     '''
     investment_list_info = []
+    if riskmanagement_path:
+        if os.path.exists(riskmanagement_path):
+            with open(riskmanagement_path, 'r') as file:
+                # Retrieve shared memory for JSON data and "start_interval"
+                riskmanagement_dict = json.load(file)
+                riskmanagement_integration = riskmanagement_dict['Dataframe']["keys"]
+    print(riskmanagement_integration)
 
     for key in output:
+        #print(key)
+        if riskmanagement_path:
+            if key not in riskmanagement_integration:
+                print('KEY NOT PRESENT:', key)
+                continue
+            # else:
+            #     #print('PRESENT:', key)
+
         vol, vol_value, buy_vol, buy_vol_value, timeframe = getsubstring_fromkey(key)
         for coin in info[key]['info']:
             for event in info[key]['info'][coin]:
@@ -2090,6 +2109,7 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
     n_keys = len(keys_list)
     print(f'{n_keys} keys will be analyzed in terms of risk configuration')
     risk_configuration = {}
+    total_optimized_riskconfiguration_results = {}
 
     for key, key_i in zip(keys_list, range(1,len(keys_list)+1)):
         print(key)
@@ -2105,7 +2125,7 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
         while retry:
             retry = getTimeseries(info, key, check_past=1440, look_for_newdata=True, plot=False)
 
-        df1, df2, risk = RiskManagement(key)
+        df1, df2, risk, optimized_riskconfiguration_results = RiskManagement(key)
 
         best_risk_key = risk['best_risk_key']
         best_mean_print = risk['best_mean_print']
@@ -2120,6 +2140,8 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
         nogolden_step_str = get_substring_between(best_risk_key, "_step_no_golden:", "_extratime:")
         extratime = best_risk_key.split('_extratime:')[1]
         frequency = info[key]["frequency/month"]
+
+        total_optimized_riskconfiguration_results[key] = optimized_riskconfiguration_results
 
         # FILTER ONLY THE BEST KEY EVENTS
         if best_mean_print >= optimized_gain_threshold and mean >= mean_gain_threshold:
@@ -2188,9 +2210,13 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
                                     'Dataframe': df_dict, 'RiskManagement': risk_configuration, 'Gain': {'average_per_event': round_(average_gain_percentage,2), 'n_events_per_month': sum(frequency_list)}}
 
     # SAVE FILE
-    file_path = ROOT_PATH + "/riskmanagement_json/riskmanagement.json"
-    with open(file_path, 'w') as file:
+    file_path_riskmanagement = ROOT_PATH + "/riskmanagement_json/riskmanagement.json"
+    with open(file_path_riskmanagement, 'w') as file:
         json.dump(risk_management_config_json, file)
+
+    file_path_optimized_results = ROOT_PATH + "/optimized_results/optimized_results.json"
+    with open(file_path_optimized_results, 'w') as file:
+        json.dump(total_optimized_riskconfiguration_results, file)
 
     # BACKUP RISKMANAGEMENT CONFIGURATION
     random_id = str(randint(1,1000))
@@ -2198,11 +2224,12 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
     day = str(now.day)
     month = str(now.month)
     year = str(now.year)
-    src = file_path
     minimum_event_number = str(risk_configuration_dict['minimum_event_number'])
     mean_threshold = str(risk_configuration_dict['mean_threshold'])
     dst = f"{ROOT_PATH}/riskmanagement_backup/riskmanagement-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-{random_id}.json"
-    shutil.copyfile(src, dst)
+    shutil.copyfile(file_path_riskmanagement, dst)
+    dst = f"{ROOT_PATH}/optimized_results_backup/optimized_results-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-{random_id}.json"
+    shutil.copyfile(file_path_optimized_results, dst)
     t2 = time()
     time_spent = t2 - t1
     print(f'{time_spent} seconds spent to run wrap_analyze_events')
@@ -2278,15 +2305,32 @@ def send_riskconfiguration():
     print('Status Code is : ', response.status_code)
     response = json.loads(response.text)
 
-
-def analyzeRiskManagementPerformance(riskmanagement_path):
+def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True):
     '''
     This function has the goal to anaylze the post performance of an event. 
-    The post performance is referred to the the performance achieved after 
-    the riskmanamgent configuration is injected to TradingController in the tracker container
-    The function takes as input the riskmanagement configuration backup and the analysis.json
-    Before running this function, update the analysis.json
+    The post performance is referred to 2 types: 
+    1) without optimizing with riskmanagement --> OPTIMIZED=False
+    2) with riskmanagement optimization --> OPTIMIZED=True
+    In the first case analysis.json will be considered as input alonmgside riskmanagement.json
+    In the second example optimized_results.json will be considered as input alongside riskmanagement.json
     '''
+
+    PERFORMANCE_SCENARIOS = {'-1:-0.6': [[-1,-0.6],0],
+                              '-0.6:-0.4': [[-0.6,-0.4],0],
+                                '-0.4:-0.2': [[-0.4,-0.2],0],
+                                  '-0.2:-0.1': [[-0.2,-0.1],0],
+                                    '-0.1:-0.05': [[-0.1, -0.05],0],
+                                    '-0.05:-0.02': [[-0.05, -0.02],0],
+                                    '-0.02:0': [[-0.02, 0],0],
+                                    '0:0.02': [[0, 0.02],0],
+                                    '0.02:0.05': [[0.02,0.05],0],
+                              '0.05:0.1': [[0.05,0.1],0],
+                                '0.1:0.2': [[0.1, 0.2],0],
+                                  '0.2:0.4': [[0.2, 0.4],0], 
+                                  '0.4:0.6': [[0.4,0.6],0],
+                                    '0.6:1': [[0.6,1],0],
+                                      '1:10': [[1,10],0]}
+    
 
     #/Users/albertorainieri/Projects/Personal/analysis/riskmanagement_backup/riskmanagement-2023-8-7-15-3-724.json
     riskmanagement_path_split = riskmanagement_path.split('-')
@@ -2297,6 +2341,7 @@ def analyzeRiskManagementPerformance(riskmanagement_path):
     # The analysis starts from the date the riskmanagemnt file was created - 3 days (4320 minutes)
     start_analysis_datetime = datetime(year=year, month=month, day=day) - timedelta(days=3)
 
+    # download riskmanagement_path
     if os.path.exists(riskmanagement_path):
         with open(riskmanagement_path, 'r') as file:
             riskmanagement_dict = json.load(file)
@@ -2307,16 +2352,47 @@ def analyzeRiskManagementPerformance(riskmanagement_path):
 
     riskmanagement = riskmanagement_dict['RiskManagement']
 
+    # load optimized results
+    if OPTIMIZED:
+        path_split = riskmanagement_path.split('riskmanagement')
+        corresponding_optimized_results_suffix = path_split[-1]
+        analysis_json_path = ROOT_PATH + "/optimized_results_backup/optimized_results" + corresponding_optimized_results_suffix
+        analysis_json = {}
+        if os.path.exists(analysis_json_path):
+            with open(analysis_json_path, 'r') as file:
+                optimized_results_dict = json.load(file)
+
+                # let's reproduce analysis_json with the same structure starting from optimized_results.json
+                for event_key in optimized_results_dict:
+                    if event_key not in analysis_json:
+                        analysis_json[event_key] = {'info': {}}
+
+                    for iterator in range(len(optimized_results_dict[event_key]['events'])):
+                        doc_to_add = {'event': optimized_results_dict[event_key]['events'][iterator],
+                                      'mean': optimized_results_dict[event_key]['gain'][iterator],
+                                      'std': 0}
+                        
+                        coin = optimized_results_dict[event_key]['coin'][iterator]
+                        if coin not in analysis_json[event_key]['info']:
+                            analysis_json[event_key]['info'][coin] = [doc_to_add]
+                        else:
+                            analysis_json[event_key]['info'][coin].append(doc_to_add)
+                            
+            #print(f'{analysis_json_path} is loaded')
+        else:
+            print(f'{analysis_json_path} does not exist')
+            pass
     # load analysis_json
-    analysis_json_path = ROOT_PATH + "/analysis_json/analysis.json"
-    if os.path.exists(analysis_json_path):
-        with open(analysis_json_path, 'r') as file:
-            analysis_json_dict = json.load(file)
-            analysis_json = analysis_json_dict['data']
-        #print(f'{analysis_json_path} is loaded')
     else:
-        print(f'{analysis_json_path} does not exist')
-        pass
+        analysis_json_path = ROOT_PATH + "/analysis_json/analysis.json"
+        if os.path.exists(analysis_json_path):
+            with open(analysis_json_path, 'r') as file:
+                analysis_json_dict = json.load(file)
+                analysis_json = analysis_json_dict['data']
+            #print(f'{analysis_json_path} is loaded')
+        else:
+            print(f'{analysis_json_path} does not exist')
+            pass
 
     
     
@@ -2329,6 +2405,8 @@ def analyzeRiskManagementPerformance(riskmanagement_path):
     # this dict divides the series of the event by event_key
     timeseries_info = {}
     timeseries_info = {'total': []}
+    positive_outcome = 0
+    negative_outcome = 0
 
     for volatility in riskmanagement:
         for event_key in riskmanagement[volatility]:
@@ -2347,6 +2425,15 @@ def analyzeRiskManagementPerformance(riskmanagement_path):
                     mean_list.append(event['mean'])
                     std_list.append(event['std'])
                     event['coin'] = coin
+                    for performance_scenario in PERFORMANCE_SCENARIOS:
+                        if event['mean'] >= PERFORMANCE_SCENARIOS[performance_scenario][0][0] and event['mean'] < PERFORMANCE_SCENARIOS[performance_scenario][0][1]:
+                            PERFORMANCE_SCENARIOS[performance_scenario][1] += 1
+                            continue
+
+                    if event['mean'] > 0:
+                        positive_outcome += 1
+                    else:
+                        negative_outcome += 1
 
     del analysis_json, riskmanagement
 
@@ -2427,7 +2514,7 @@ def analyzeRiskManagementPerformance(riskmanagement_path):
         #     print(mean_timeseries)
         
         # plot each timeseries in terms of percentages
-        fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+        fig, ax = plt.subplots(1, 1, figsize=(7, 4))
         #print(len(mean_timeseries), len(upper_bound), len(lower_bound))
         ax.plot(mean_timeseries)
         ax.plot(post_performance_timeseries)
@@ -2446,8 +2533,24 @@ def analyzeRiskManagementPerformance(riskmanagement_path):
 
             print(f'the profit of the entire timeseries is {total_performance}% with {n_events_total_performance} events')
             print(f'the post profit is {post_performance}% with {n_event_post_performance} events')
+            print(f'Positive events: {positive_outcome}')
+            print(f'Negative events: {negative_outcome}')
+            print(f'Biggest Drop: {biggest_drop} at {biggest_drop_date}')
+        
+    keys = list(PERFORMANCE_SCENARIOS.keys())
+    values = [entry[1] for entry in PERFORMANCE_SCENARIOS.values()]
 
-    return df, biggest_drop, biggest_drop_date
+    plt.bar(keys, values)
+    plt.xlabel('Ranges')
+    plt.ylabel('Values')
+    plt.xticks(rotation=45)
+    plt.title('Histogram')
+    plt.tight_layout()
+    plt.axvline(x=keys.index('0:0.02'), color='red', linestyle='--', label='Zero Line')
+
+    plt.show()
+
+    return df, biggest_drop, biggest_drop_date, positive_outcome, negative_outcome, PERFORMANCE_SCENARIOS
     
 
 
