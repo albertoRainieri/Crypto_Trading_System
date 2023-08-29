@@ -18,7 +18,8 @@ RUN apt-get -y install tree
 RUN chown -R bot:bot /app && chmod -R 770 /app && \
         chown -R bot:bot /var/log/nginx && chmod -R 770 /var/log/nginx && \
         chown -R bot:bot /var/lib/nginx && \
-        chown -R bot:bot /etc/nginx/sites-available 
+        #chown -R bot:bot /etc/nginx/sites-available
+        chown -R bot:bot /etc/nginx/
 
 RUN touch /var/run/nginx.pid && \
         chown -R bot:bot /var/run/nginx.pid
