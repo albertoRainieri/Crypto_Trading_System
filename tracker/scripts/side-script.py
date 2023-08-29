@@ -37,7 +37,7 @@ def main(db, logger, db_logger, user_configuration):
             logger.info("volumes have been updated from 'Benchmark.computeVolumeAverage'")
         
         if second == 55:
-            logger.info('Updating Balance Account')
+            #logger.info('Updating Balance Account')
             f = open ('/tracker/user_configuration/userconfiguration.json', "r")
             user_configuration = json.loads(f.read())
             TradingController.get_balance_account(logger, user_configuration)
