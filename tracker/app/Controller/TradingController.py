@@ -566,7 +566,7 @@ class TradingController:
 
             if status_code == 200:
                 if "USDT" in response:
-                    balance_account_usdt = round_(response["USDT"],2)
+                    balance_account_usdt = response["USDT"]
                     balance_account = balance_account_usdt
                 else:
                     balance_account_usdt = 0
@@ -601,10 +601,10 @@ class TradingController:
                     # logger.info(f'minutes passed {minutes_passed}')
                     # logger.info(f' balance_account now: {balance_account}')
 
-                    average_balance = round_(((last_record["average_balance"] * (minutes_passed - 1)) + balance_account) / minutes_passed,2)
-                    update_data["$set"]['average_balance'] = round_(average_balance,4)
+                    average_balance = ((last_record["average_balance"] * (minutes_passed - 1)) + balance_account) / minutes_passed
+                    update_data["$set"]['average_balance'] = average_balance
                     update_data["$set"]['balance_account'] = round_(balance_account,2)
-                    update_data["$set"]['balance_usdt'] = round_(balance_account_usdt,4)
+                    update_data["$set"]['balance_usdt'] = balance_account_usdt
                     update_data["$set"]['last_update'] = now_isoformat
 
                     db_trading[COLLECTION_TRADING_BALANCE_ACCOUNT].update_one(query, update_data)
@@ -630,7 +630,7 @@ class TradingController:
                     else:
                         investment_amount = 100
                     # finally I initialize the balance account and average balance account with the "new" balance_account
-                    doc_db = {'_id': id, 'balance_account': round_(balance_account,2), 'balance_usdt': round_(balance_account_usdt,4), 'average_balance': round_(balance_account,4), 'investment_amount': investment_amount, 'last_update': now_isoformat}
+                    doc_db = {'_id': id, 'balance_account': round_(balance_account,2), 'balance_usdt': balance_account_usdt, 'average_balance': balance_account, 'investment_amount': investment_amount, 'last_update': now_isoformat}
                     db_trading[COLLECTION_TRADING_BALANCE_ACCOUNT].insert(doc_db)
                 
 
