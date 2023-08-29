@@ -2043,7 +2043,10 @@ def check_invevestment_amount(info, output, investment_amount = 100, riskmanagem
                 # Retrieve shared memory for JSON data and "start_interval"
                 riskmanagement_dict = json.load(file)
                 riskmanagement_integration = riskmanagement_dict['Dataframe']["keys"]
-    print(riskmanagement_integration)
+                print(riskmanagement_integration)
+        else:
+            print(f'{riskmanagement_path} does not exist')
+        
 
     for key in output:
         #print(key)
@@ -2305,14 +2308,27 @@ def send_riskconfiguration():
     print('Status Code is : ', response.status_code)
     response = json.loads(response.text)
 
+def send_userconfiguration(request):
+
+    #url = 'https://algocrypto.eu/analysis/user-configuration'
+    url = 'http://localhost/analysis/user-configuration'
+
+    response = requests.post(url, json = request)
+    print('Status Code is : ', response.status_code)
+    response = json.loads(response.text)
+    return response
+
 def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True):
     '''
     This function has the goal to anaylze the post performance of an event. 
     The post performance is referred to 2 types: 
     1) without optimizing with riskmanagement --> OPTIMIZED=False
     2) with riskmanagement optimization --> OPTIMIZED=True
+
     In the first case analysis.json will be considered as input alonmgside riskmanagement.json
     In the second example optimized_results.json will be considered as input alongside riskmanagement.json
+
+    
     '''
 
     PERFORMANCE_SCENARIOS = {'-1:-0.6': [[-1,-0.6],0],

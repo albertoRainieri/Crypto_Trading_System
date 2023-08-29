@@ -37,9 +37,9 @@ class TrackerController:
 
 
     #@timer_func
-    #async def start_tracking(db_trades, db_tracker, db_benchmark, db_trading, logger, db_logger):
+    #async def start_tracking(db_trades, db_tracker, db_benchmark, logger, db_logger):
     #@timer_func
-    def start_tracking(db_trades, db_tracker, db_benchmark, db_trading, logger, db_logger):
+    def start_tracking(db_trades, db_tracker, db_benchmark, logger, db_logger):
         now = datetime.now()
         #now_isoformat = now.isoformat()
         reference_1day_datetime = now - timedelta(days=1)
@@ -73,21 +73,18 @@ class TrackerController:
         minute_6h_ago =  reference_6h_datetime.minute
 
         coins_list = db_trades.list_collection_names()
-        trading_coins_list = list(db_trading[COLLECTION_TRADING_LIVE].find())
 
         #download list of most_traded_coins
         f = open ('/tracker/json/most_traded_coins.json', "r")
         data = json.loads(f.read())
 
         f = open ('/tracker/riskmanagement/riskmanagement.json', "r")
-        trading_configuration = json.loads(f.read())
+        risk_configuration = json.loads(f.read())
 
         #coin_list_subset = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
         coin_list_subset = data["most_traded_coins"]
         # logger.info(coin_list_subset)
         # logger.info(len(coin_list_subset))
-        last_coin = coins_list[-1]
-        first_coin = coins_list[0]
         
         # iterate through each coin
         # The all cycle takes slightly less than 1 second (from localhost 15/08/2023)
@@ -591,10 +588,10 @@ class TrackerController:
                 # CHECK IF THE EVENT CAN TRIGGER A BUY ORDER
 
                 # ASYNC CALL ENABLED call. Enable only if cpu support is high. 4CPUs are probably minimum
-                #asyncio.create_task(TradingController.check_event_triggering(coin, doc_db, volatility_coin, logger, db_trading, db_logger, trading_coins_list, trading_configuration, last_coin, first_coin))
+                #asyncio.create_task(TradingController.check_event_triggering(coin, doc_db, volatility_coin, logger, db_logger, risk_configuration))
                 
                 # ASYNC DISABLED. THIS IS PREFERRED CHOICE even if CPU Support is high
-                TradingController.check_event_triggering(coin, doc_db, volatility_coin, logger, db_trading, db_logger, trading_coins_list, trading_configuration, last_coin, first_coin)
+                TradingController.check_event_triggering(coin, doc_db, volatility_coin, logger, db_logger, risk_configuration)
                 #logger.info(doc_db)
 
                 db_tracker[coin].insert(doc_db)

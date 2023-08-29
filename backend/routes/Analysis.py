@@ -33,3 +33,7 @@ async def getTimeseries(obj: dict = Body(...)):#, request: Request = Depends(Aut
 @router.post("/riskmanagement-configuration")
 async def riskmanagement_configuration(obj: dict = Body(...)):#, request: Request = Depends(Authorization.get_current_active_user)):
     return AnalysisController.riskmanagement_configuration(obj)
+
+@router.post("/user-configuration")
+async def user_configuration(obj: dict = Body(...)):#, request: Request = Depends(Authorization.get_current_active_user)):
+    return AnalysisController.user_configuration(obj)

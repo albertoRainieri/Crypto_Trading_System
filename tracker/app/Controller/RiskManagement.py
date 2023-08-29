@@ -15,13 +15,12 @@ import subprocess
 
 
 class RiskManagement:
-    def __init__(self, id, coin, purchase_price, timeframe, riskmanagement_configuration, db_trading, logger) -> None:
+    def __init__(self, id, coin, purchase_price, timeframe, riskmanagement_configuration, logger) -> None:
         self.id = id
         self.purchase_price = purchase_price #float
         self.logger = logger #instance obj
         self.coin = coin #str
         self.current_minute = datetime.now().minute
-        self.db_trading = db_trading
         self.GOLDEN_ZONE = float(riskmanagement_configuration['riskmanagement_conf']['golden_zone'])
         self.GOLDEN_ZONE_BOOL = False
         self.SELL = False
@@ -80,23 +79,30 @@ class RiskManagement:
             self.SELL = True
     
     
-    def saveToDb(self, bid_price, now):
-        minute_now = now.minute
+    def saveToDb(self, bid_price, db):
 
-        if minute_now != self.current_minute:
-            #self.logger.info('Saving to DB')
+        f = open ('/tracker/user_configuration/userconfiguration.json', "r")
+        user_configuration = json.loads(f.read())
 
-            # Specify the filter for the document to update
-            filter = {'_id': self.id}
+        for user in user_configuration:
+            db_name = DATABASE_TRADING + '_' + user
+            db_trading = db.get_db(db_name)
 
-            # Specify the update operation. update current_bid_price and profit
-            update = {'$set': {'current_price': bid_price, 'profit': round_(self.profit,4)}}
+            minute_now = datetime.now().minute
+            if minute_now != self.current_minute:
+                #self.logger.info('Saving to DB')
 
-            # Perform the update operation
-            self.db_trading[COLLECTION_TRADING_HISTORY].update_one(filter, update)
-            self.db_trading[COLLECTION_TRADING_LIVE].update_one(filter, update)
-            self.current_minute = minute_now
-            #self.logger.info(f'Current Profit for {self.coin}: {self.profit}')
+                # Specify the filter for the document to update
+                filter = {'_id': self.id}
+
+                # Specify the update operation. update current_bid_price and profit
+                update = {'$set': {'current_price': bid_price, 'profit': round_(self.profit,4)}}
+
+                # Perform the update operation
+                db_trading[COLLECTION_TRADING_HISTORY].update_one(filter, update)
+                db_trading[COLLECTION_TRADING_LIVE].update_one(filter, update)
+                self.current_minute = minute_now
+                #self.logger.info(f'Current Profit for {self.coin}: {self.profit}')
 
     def logging(self):
         #self.logger.info(f'Profit ')

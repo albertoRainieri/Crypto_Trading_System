@@ -222,6 +222,43 @@ class AnalysisController:
         return JSONResponse(content=json_string)
 
 
+    def user_configuration(request):
+        # check if request is fine:
+        key_set = set(request.keys())
+        
+        if len(key_set) == len(request):
+            keys_to_check = ['trading_live', 'initialized_balance_account', 'initialized_investment_amount',
+                             'clean_db_trading', 'api_key_path', 'private_key_path']
+            
+            SEND_ERROR = False
+            for user in request:
+                if not set(keys_to_check).issubset(request[user]):
+                    SEND_ERROR = True
+                    user_error = user
+                    msg = f'Configuration for {user} is incorrect. some keys are missing'
+
+                if SEND_ERROR:
+                    print(msg)
+                    break
+                else:
+                    file_path = "/backend/user_configuration/userconfiguration.json"
+                    #print(type(request))
+                    try:
+                        with open(file_path, 'w') as file:
+                            json.dump(request, file)
+                        
+                        msg = 'Success'
+                    except Exception as e:
+                        msg = f'Error: {e}'
+            
+        else:
+            
+            msg = 'Users are not unique'
+            print(msg)
+
+        response = {'msg': msg}
+        json_string = jsonable_encoder(response)
+        return JSONResponse(content=json_string)
 
         
         

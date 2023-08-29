@@ -17,18 +17,19 @@ analysis/timeseries_json
 analysis/timeseries_json_old
 analysis/riskmanagement_json
 analysis/riskmanagement_backup/
+analysis/optimized_results/
 analysis/.*
 analysis/__*
 analysis/old/
 #backend/test
 tracker/logs
 tracker/test
-tracker/json/*.json
+tracker/json
 tracker/ssh/
 # tracker/json
-!tracker/json/most_traded_coins_btc_eth.json
 nginx/conf/default
 tracker/json/most_traded_coins_sample.json
 mongodb_backup/
 backend/riskmanagement/
 backend/info
+backend/user_configuration

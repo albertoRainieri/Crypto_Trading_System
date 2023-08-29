@@ -10,10 +10,13 @@ from app.Controller.BenchmarkController import Benchmark
 from app.Controller.TradingController import TradingController
 from constants.constants import *
 from datetime import datetime
+import json
 
 
-def main(TRADING_LIVE, db, logger, db_trading, db_logger):
+def main(db, logger, db_logger, user_configuration):
+    logger.info('Side Script Started')
     while True:
+        
         now=datetime.now()
         minute = now.minute
         second = now.second
@@ -21,8 +24,9 @@ def main(TRADING_LIVE, db, logger, db_trading, db_logger):
 
         if minute == 59 and second == 15 and hour == 23:
         #if second == 10:
-            TradingController.checkPerformance(db_trading, logger, TRADING_LIVE)
+            TradingController.checkPerformance(logger, user_configuration)
             logger.info("Performance has been updated from 'TradingController.checkPerformance'")
+            sleep(0.2)
 
         if minute == 59 and second == 18 and hour == 23:
             BinanceController.main_sort_pairs_list(logger=logger, db_logger=db_logger)
@@ -33,7 +37,10 @@ def main(TRADING_LIVE, db, logger, db_trading, db_logger):
             logger.info("volumes have been updated from 'Benchmark.computeVolumeAverage'")
         
         if second == 55:
-            TradingController.get_balance_account(logger, db_trading)
+            logger.info('Updating Balance Account')
+            f = open ('/tracker/user_configuration/userconfiguration.json', "r")
+            user_configuration = json.loads(f.read())
+            TradingController.get_balance_account(logger, user_configuration)
             sleep(0.2)
         
         sleep(0.8)
@@ -45,20 +52,20 @@ def main(TRADING_LIVE, db, logger, db_trading, db_logger):
 if __name__ == '__main__':
     db = DatabaseConnection()
     db_logger = db.get_db(DATABASE_API_ERROR)
-    db_trading = db.get_db(DATABASE_TRADING)
-    db_benchmark = db.get_db(DATABASE_BENCHMARK)
 
     logger = LoggingController.start_logging()
-    
+
+    f = open ('/tracker/user_configuration/userconfiguration.json', "r")
+    user_configuration = json.loads(f.read())
+
     sleep(2)
-    TradingController.clean_db_trading(logger, db_trading, db_benchmark, db_logger)
-    del db_benchmark
+    TradingController.clean_db_trading(logger, db_logger, user_configuration)
 
-    TRADING_LIVE = bool(int(os.getenv('TRADING_LIVE')))
-    if TRADING_LIVE:
-        logger.info('Trading Live is enabled')
-    else:
-        logger.info('Trading live is not enabled')
+    for user in user_configuration:
+        if user_configuration[user]['trading_live']:
+            logger.info(f'TRADING_LIVE is enabled for {user}')
+        else:
+            logger.info(f'TRADING_LIVE is NOT enabled for {user}')
 
 
-    main(TRADING_LIVE, db=db, logger=logger, db_trading=db_trading, db_logger=db_logger)
+    main(db=db, logger=logger, db_logger=db_logger, user_configuration=user_configuration)
