@@ -198,12 +198,13 @@ class TradingController:
                     id = doc['_id']
                     
                     # IF TRADING LIVE, THEN SEND SELL ORDER TO BINANCE and update the db
-                    if trading_live:
-                        now = datetime.now()
-                        update = {'$set': {'on_trade': False,
+                    update = {'$set': {'on_trade': False,
                             'exit_timestamp': now.isoformat(),
                             }
-                        }   
+                        } 
+                    if trading_live:
+                        now = datetime.now()
+                          
                         quantity = doc['quantity'] 
                         response, status_code = TradingController.create_order(api_key_path=api_key_path, private_key_path=private_key_path,
                                                                                coin=coin, side="SELL", quantity=quantity)
@@ -241,8 +242,7 @@ class TradingController:
                     # if trading_live is false, just update the db
                     else:
                         result_live = db_trading[COLLECTION_TRADING_LIVE].delete_one(query)
-                        update_data = {"$set": {"on_trade": False}}
-                        result_history = db_trading[COLLECTION_TRADING_HISTORY].update_one(query, update_data)
+                        result_history = db_trading[COLLECTION_TRADING_HISTORY].update_one(query, update)
 
 
                     if result_history.modified_count == 1:
