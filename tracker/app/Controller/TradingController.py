@@ -435,7 +435,7 @@ class TradingController:
                         total_investment += event_to_add['investment_amount']
                         weighted_performance_percentage = absolute_profit / total_investment
                         if total_events_recorded != 0:
-                            new_clean_profit = ((clean_profit / total_events_recorded) + event_to_add['profit']) / (total_events_recorded + 1)
+                            new_clean_profit = ((clean_profit * total_events_recorded) + event_to_add['profit']) / (total_events_recorded + 1)
                         else:
                             clean_profit = event_to_add["profit"]
                             new_clean_profit = event_to_add['profit']
