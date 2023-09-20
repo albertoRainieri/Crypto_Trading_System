@@ -198,12 +198,13 @@ class TradingController:
                     id = doc['_id']
                     
                     # IF TRADING LIVE, THEN SEND SELL ORDER TO BINANCE and update the db
+                    now = datetime.now()
                     update = {'$set': {'on_trade': False,
                             'exit_timestamp': now.isoformat(),
                             }
                         } 
                     if trading_live:
-                        now = datetime.now()
+                        
                           
                         quantity = doc['quantity'] 
                         response, status_code = TradingController.create_order(api_key_path=api_key_path, private_key_path=private_key_path,
@@ -225,7 +226,7 @@ class TradingController:
 
 
                             # notify/update dbs
-                            msg = f'SELL Order Succeded for {coin}:{id}. origQty: {quantity}, execQty: {quantity_executed} for user {user}'
+                            msg = f'SELL Order Succeded for {coin}:{id}. origQty: {quantity}, execQty: {quantity_executed} for user {user} during DB Cleaning'
                             logger.info(msg)
                             db_logger[DATABASE_TRADING_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
 
@@ -246,25 +247,26 @@ class TradingController:
 
 
                     if result_history.modified_count == 1:
-                        msg = f'{coin}:{id} has been succesfully delete in DB Live. Trading_live {trading_live}. User: {user}'
+                        msg = f'{coin}:{id} has been succesfully updated in DB History. Trading_live {trading_live}. User: {user}'
                         logger.info(msg)
                         updated_docs_history += 1
-                    else:
-                        msg = f'ERROR: {coin}:{id} has NOT been deleted in DB Live. Trading_live {trading_live}. User: {user}'
-                        logger.info(msg)
-                        db_logger[DATABASE_TRADING_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
-
-                    if result_live.deleted_count == 1:
-                        msg = f'{coin}:{id} has been succesfully update in DB History. Trading_live {trading_live}. User: {user}'
-                        logger.info(msg)
-                        deleted_docs_live += 1
                     else:
                         msg = f'ERROR: {coin}:{id} has NOT been updated in DB History. Trading_live {trading_live}. User: {user}'
                         logger.info(msg)
                         db_logger[DATABASE_TRADING_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
 
+                    if result_live.deleted_count == 1:
+                        msg = f'{coin}:{id} has been succesfully deleted in DB Live. Trading_live {trading_live}. User: {user}'
+                        logger.info(msg)
+                        deleted_docs_live += 1
+                    else:
+                        msg = f'ERROR: {coin}:{id} has NOT been deleted in DB Live. Trading_live {trading_live}. User: {user}'
+                        logger.info(msg)
+                        db_logger[DATABASE_TRADING_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+
                     
-                logger.info(f"Total Deleted Documents: {deleted_docs_live} in DB_Trading")
+                logger.info(f"Total Deleted Documents in DB Live: {deleted_docs_live} in DB_Trading for User {user}")
+                logger.info(f"Total Updated Documents in DB History: {updated_docs_history} in DB_Trading for User {user}")
                     # TODO: DELETE ORDER IN BINANCE PLATFORM: we need an ORDER_ID to be stored IN DB_TRADING_LIVE
 
             else:
