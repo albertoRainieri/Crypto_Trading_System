@@ -15,6 +15,7 @@ from multiprocessing import Pool, Manager
 from copy import copy
 from random import randint
 import shutil
+import re
 
 
 ROOT_PATH = os.getcwd()
@@ -198,8 +199,10 @@ def get_volatility(dynamic_benchmark_info_coin, full_timestamp):
     '''
     This function outputs the volatility of the coin (timeframe: last 30 days) in a specific point in time
     '''
-
-    short_timestamp = full_timestamp.split('T')[0]
+    # get timestamp of the previous day, since benchmark are updated each midnight
+    correct_full_datetime = datetime.fromisoformat(full_timestamp) - timedelta(days=1)
+    correct_full_timestamp = correct_full_datetime.isoformat()
+    short_timestamp = correct_full_timestamp.split('T')[0]
     volatility =  int(dynamic_benchmark_info_coin[short_timestamp])
     return volatility
 
@@ -532,13 +535,12 @@ def data_preparation(data, n_processes = 5):
         del locals()[var]
     return data_arguments
 
-def retrieve_datetime_for_load_data(json_info, list_json_info, index):
+def retrieve_datetime_for_load_data(path, list_paths, index):
     '''
     this function is used from "load_data" to retrieve the datetimes between two close json in analysis/json
     these two datetimes represent the first timestamps in the list of observations
     '''
     # retrieve first datetime of list_json
-    path = json_info['path']
     path_split = path.split('-')
     day = int(path_split[1])
     month = int(path_split[2])
@@ -548,7 +550,7 @@ def retrieve_datetime_for_load_data(json_info, list_json_info, index):
     datetime1 = datetime(year=year, month=month, day=day, hour=hour, minute=minute)
 
     # retrieve first datetime of the next list_json
-    next_path = list_json_info[index + 1]['path']
+    next_path = list_paths[index + 1]
     next_path_split = next_path.split('-')
     day = int(next_path_split[1])
     month = int(next_path_split[2])
@@ -586,6 +588,20 @@ def updateData_for_load_data(data, path, most_traded_coin_list, start_interval, 
 
     return data
 
+# Custom sorting key function that extracts and formats the date
+def get_date_key(path):
+    # Define a regular expression pattern to match the date part of the filename
+    date_pattern = r"data-(\d{2})-(\d{2})-(\d{4})"
+
+    match = re.search(date_pattern, path)
+    if match:
+        day, month, year = map(int, match.groups())
+        # Create a tuple to use for sorting (year, month, day)
+        return (year, month, day)
+    else:
+        # Handle cases where the filename format doesn't match
+        return ()
+
 def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=datetime.now(tz=pytz.UTC), filter_position=(0,50), coin=None):
     '''
     This functions loads all the data from "start_interval" until "end_interval".
@@ -606,29 +622,23 @@ def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=d
     del volume_info, df_benchmark
 
     # get all the json paths in "analysis/json"
-    path_dir = ROOT_PATH + "/json"
+    path_dir = ROOT_PATH + "/json/"
     list_json = os.listdir(path_dir)
-    full_paths = [path_dir + "/{0}".format(x) for x in list_json]
-    print(full_paths)
+    list_files = sorted(list_json, key=get_date_key)
+    list_paths = [path_dir + file for file in list_files]
+    for path_print in list_paths:
+        print(path_print)
 
-    list_json_info = []
-    for full_path in full_paths:
-        json_ = {'path': full_path, 'time': os.path.getmtime(full_path)}
-        list_json_info.append(json_)
-
-    # this is the list of all the paths in analysis/json/ sorted by time
-    list_json_info.sort(key=lambda x: x['time'], reverse=False)
     STOP_LOADING = False
 
     data= {}
-    for json_info, index in zip(list_json_info, range(len(list_json_info))):
+    for path, index in zip(list_paths, range(len(list_paths))):
         if STOP_LOADING:
             break
         # check if this is not the last json saved
-        if list_json_info.index(json_info) + 1 != len(list_json_info):
-            # retrieve first datetime of json_info and first datetime of the next json_info
-            path = json_info['path']
-            datetime1, datetime2 = retrieve_datetime_for_load_data(json_info, list_json_info, index)
+        if list_paths.index(path) + 1 != len(list_paths):
+            # retrieve first datetime of path and first datetime of the next path
+            datetime1, datetime2 = retrieve_datetime_for_load_data(path, list_paths, index)
             # if start_interval is between these 2 datetimes, retrieve json
             if start_interval > datetime1 and start_interval < datetime2:
 
@@ -638,20 +648,20 @@ def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=d
                 if end_interval < datetime2:
                     break
                 else:
-                    # let's determine the new list_json_info
-                    list_json_info = list_json_info[index+1:]
-                    # iterate through the new "list_json_info" for loading the other json
-                    for json_info, index2 in zip(list_json_info, range(len(list_json_info))):
-                        path = json_info['path']
+                    # let's determine the new list_paths
+                    list_paths = list_paths[index+1:]
+                    # iterate through the new "list_paths" for loading the other json
+                    for path, index2 in zip(list_paths, range(len(list_paths))):
+        
                         data = updateData_for_load_data(data, path, most_traded_coin_list, start_interval, end_interval)
 
                         # if this is the last json than break the loop, the loading is completed
-                        if list_json_info.index(json_info) + 1 == len(list_json_info):
+                        if list_paths.index(path) + 1 == len(list_paths):
                             STOP_LOADING = True
                             break
                         else:
 
-                            datetime1, datetime2 = retrieve_datetime_for_load_data(json_info, list_json_info, index2)
+                            datetime1, datetime2 = retrieve_datetime_for_load_data(path, list_paths, index2)
                             if end_interval > datetime1 and end_interval < datetime2:
                                 STOP_LOADING = True
                                 break
@@ -663,32 +673,8 @@ def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=d
 
         
         else:
-            path = json_info['path']
             data = updateData_for_load_data(data, path, most_traded_coin_list, start_interval, end_interval)
 
-
-    
-    # summary = {}
-    # keys_data = list(data.keys())
-    # for coin in keys_data:
-    #     if len(data[coin]) > 0:
-    #         # get first obs from data[coin]
-    #         start_coin = data[coin][0]['_id']
-    #         # get standard dev on mean (std.dev / mean)
-    #         std_on_mean = benchmark_info[coin]['volume_30_std']  / benchmark_info[coin]['volume_30_avg']
-    #         # update summary
-    #         summary[coin] = {'n_observations': len(data[coin]), 'position': most_traded_coin_list.index(coin), 'vol_30_avg': benchmark_info[coin]['volume_30_avg'], 'std_on_mean': std_on_mean, 'first_obs': start_coin}
-    #     else:
-    #         del data[coin]
-    
-    # n_coins = len(data)
-    # print(f'{n_coins} coins have been loaded')
-
-    # print('Data Loading is completed')
-    # df = pd.DataFrame(summary)
-    # df = df.transpose()
-    # df = df.sort_values(by=['vol_30_avg'], ascending=False)
-    #return data, df, summary
     for var in list(locals()):
         if var.startswith('__') and var.endswith('__'):
             continue  # Skip built-in variables
@@ -794,7 +780,7 @@ def get_dynamic_volume_avg(benchmark_info):
             date = info_1day[0]
             position = list_info.index(info_1day)
 
-            if position <= days:
+            if position < days:
                 # if there are "lte" (lower or equal than) "days" days available, let's get the last "position"s.
                 # if position == 15 --> (0,15) observations
                 range_ = range(position+1)
@@ -1123,8 +1109,39 @@ def updateAnalysisJson(shared_data_value, file_path, start_next_analysis, slice_
     with open(file_path, 'w') as file:
         json.dump(json_to_save, file)
 
+def earlyValidation(minimum_event_number_list, minimum_coin_number, mean_threshold, lb_threshold, frequency_threshold, optimized_gain_threshold,
+                     mean_gain_threshold, group_coins=False, best_coins_volatility=None,
+                       early_validation=False, OPTIMIZED=False, DISCOVER=False, riskmanagement_path=False, std_multiplier=3):
+    
+    if riskmanagement_path == False:
+        print('RiskManagement Path is NOT provided')
+        early_validation_timestamp = early_validation.isoformat()
+        print(f'started data fetching from analysis.json until {early_validation_timestamp}')
+        output, info = nested_download_show_output(minimum_event_number_list=minimum_event_number_list, minimum_coin_number=minimum_coin_number,
+                                        mean_threshold=mean_threshold, lb_threshold=lb_threshold, frequency_threshold=frequency_threshold,
+                                        group_coins=group_coins, best_coins_volatility=best_coins_volatility, early_validation=early_validation, std_multiplier=std_multiplier)
 
-def nested_download_show_output(minimum_event_number_list, minimum_coin_number, mean_threshold, lb_threshold, frequency_threshold, group_coins=False, best_coins_volatility=None):
+        print(f'started data fetching from analysis.json completed')
+
+        print('Starting RiskManagement Configuration')
+        riskmanagement_conf = (minimum_event_number_list, minimum_coin_number, mean_threshold, lb_threshold, frequency_threshold, group_coins, best_coins_volatility)
+        none_df, riskmanagement_path = RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_gain_threshold, early_validation, std_multiplier, DISCOVER)
+        print('RiskManagement Configuration Completed')
+        DISCOVER=False
+    else:
+        print('RiskManagement Path is provided')
+
+    event_investment_amount=100
+    df, biggest_drop, biggest_drop_date, positive_outcome, negative_outcome, PERFORMANCE_SCENARIOS = analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED, DISCOVER, event_investment_amount)
+    
+    print(f'Positive events: {positive_outcome}')
+    print(f'Negative events: {negative_outcome}')
+    print(f'Biggest Drop: {biggest_drop} at {biggest_drop_date}')
+
+    return df
+
+
+def nested_download_show_output(minimum_event_number_list, minimum_coin_number, mean_threshold, lb_threshold, frequency_threshold, group_coins=False, best_coins_volatility=None, early_validation=False, std_multiplier=3):
     '''
     THIS FUNCTION is an evolution of "download_show_output". It tries to fetch the best keys from a set of minimum_coin_number requirement.
     In this way, it is possible to better diversify the strategies.
@@ -1149,7 +1166,7 @@ def nested_download_show_output(minimum_event_number_list, minimum_coin_number, 
 
     for minimum_event_number, i in zip(minimum_event_number_list, range(1,len(minimum_event_number_list)+1)):
         
-        output, complete_info = download_show_output(minimum_event_number, minimum_coin_number, mean_threshold, lb_threshold, frequency_threshold, group_coins, best_coins_volatility, shared_data)
+        output, complete_info = download_show_output(minimum_event_number, minimum_coin_number, mean_threshold, lb_threshold, frequency_threshold, group_coins, best_coins_volatility, shared_data, early_validation, std_multiplier)
         for key in output:
 
             volatility = key.split('vlty:')[1]
@@ -1188,7 +1205,7 @@ def nested_download_show_output(minimum_event_number_list, minimum_coin_number, 
 
 
             
-def download_show_output(minimum_event_number, minimum_coin_number, mean_threshold, lb_threshold, frequency_threshold, group_coins=False, best_coins_volatility=None, shared_data=None):
+def download_show_output(minimum_event_number, minimum_coin_number, mean_threshold, lb_threshold, frequency_threshold, group_coins=False, best_coins_volatility=None, shared_data=None, early_validation=False, std_multiplier=3):
     '''
     This function takes as input data stored in analysis_json/ ans return the output available for pandas DATAFRAME. 
     This is useful to have a good visualization about what TRIGGER have a better performance
@@ -1200,6 +1217,7 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
     - set a minimum mean threshold for all events for a specific key
     - group all keys which share the same TRIGGER (e.g. "buy_vol_15m:0.75/vol_60m:20/timeframe:1440/") but have a different volatility ("vlty:<x>")
     - represent only the best keys grouped by volatility. This is activated only if "group_coins=False". "best_coins_volatility" must be an integer in this case.
+    - early_validation: [datetime] this analyses the keys until a certain point in time. Used to check how analysis behaves in the future
     '''
 
     # download data if shared_data is None
@@ -1235,15 +1253,18 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
                 # intitialize first_event and last_event
                 random_coin = list(shared_data[key]['info'].keys())[0]
                 first_event = datetime.fromisoformat(shared_data[key]['info'][random_coin][0]['event'])
-                last_event =  datetime.fromisoformat(shared_data[key]['info'][random_coin][-1]['event'])
+                last_event =  datetime(1970,1,1)
                 
                 for coin in shared_data[key]['info']:
-                    first_event = min(datetime.fromisoformat(shared_data[key]['info'][coin][0]['event']), first_event)
-                    last_event = max(datetime.fromisoformat(shared_data[key]['info'][coin][-1]['event']), last_event)
-                    n_events += len(shared_data[key]['info'][coin])
                     for event in shared_data[key]['info'][coin]:
-                        mean_list.append(event['mean'])
-                        std_list.append(event['std'])
+                        if early_validation and datetime.fromisoformat(event['event']) > early_validation: 
+                            continue
+                        else:
+                            n_events += 1
+                            mean_list.append(event['mean'])
+                            std_list.append(event['std'])
+                            first_event = min(datetime.fromisoformat(event['event']), first_event)
+                            last_event = max(datetime.fromisoformat(event['event']), last_event)
                 
                 # get frequency event per month
                 time_interval_analysis = (last_event - first_event).days
@@ -1261,7 +1282,7 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
                     upper_bound = mean + std
                     lower_bound = mean - std
 
-                    if mean > mean_threshold and lower_bound > lb_threshold:
+                    if mean > mean_threshold and lower_bound > lb_threshold and mean * std_multiplier > std:
 
                         if best_coins_volatility:
                             if volatility not in volatility_list:
@@ -1339,8 +1360,8 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
     
     
     t3 = time()
-    delta_t_2 = round_(t3 - t2,2)
-    print(f'Data Preparation completed in {delta_t_2} seconds')
+    #delta_t_2 = round_(t3 - t2,2)
+    #print(f'Data Preparation completed in {delta_t_2} seconds')
 
 
     return output, complete_info
@@ -1422,7 +1443,7 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
     fields = [vol_field, buy_vol_field, timeframe, buy_vol_value, vol_value]
 
     if os.path.exists(file_path):
-        print('File exists, Download from local...')
+        print(f'File exists, Download from loca: {file_path}')
         with open(file_path, 'r') as file:
             # Retrieve timeseries
             timeseries = json.load(file)
@@ -1693,8 +1714,80 @@ def plotTimeseries(timeseries, fields, check_past, plot):
                 # Display the graph
                 plt.show()
 
+def RiskManagement_lowest_level(tmp, timeseries_json, coin, start_timestamp, risk_key,
+                                 STEP_original, GOLDEN_ZONE_original, STEP_NOGOLDEN, timeframe, extratimeframe):
+    '''this is the lowest level in the Riskmanagemnt process'''
+    
+    STEP = copy(STEP_original)
+    GOLDEN_ZONE = copy(GOLDEN_ZONE_original)
+    #print(f'new event: {coin}; {start_timestamp}')
+    #coin_list.append(coin)
+
+    #STEP = 0.05
+    GOLDEN_ZONE_BOOL = False
+    #GOLDEN_ZONE = 0.3 #
+    GOLDEN_ZONE_LB = GOLDEN_ZONE - STEP
+    GOLDEN_ZONE_UB = GOLDEN_ZONE + STEP
+    LB_THRESHOLD = None
+    UB_THRESHOLD = None
+
+    iterator = timeseries_json[coin][start_timestamp]['data']
+    #initial_price = iterator[0]['price']
+    SKIP = True
+
+    # iterate through each obs
+    for obs, obs_i in zip(iterator, range(1, len(iterator) + 1)):
+        #print(GOLDEN_ZONE_BOOL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP)
+        if obs['_id'] == start_timestamp:
+            SKIP = False
+            initial_price = obs['price']
+            price_variation_1d = obs['price_%_1d']
+            price_variation_6h = obs['price_%_6h']
+            price_variation_3h = obs['price_%_3h']
+            price_variation_1h = obs['price_%_1h']
+        
+        if SKIP == False:
+            current_price = obs['price']
+            current_change = (current_price - initial_price) / initial_price
+
+            # if I'm already in GOLDEN ZONE, then just manage this scenario
+            if GOLDEN_ZONE_BOOL:
+                SELL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL = manageGoldenZoneChanges(current_change, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL)
+                if SELL:
+                    tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True,
+                                                        price_variation_1d, price_variation_6h, price_variation_3h, price_variation_1h)                        
+                    break
+
+            # check if price went above golden zone
+            if current_change > GOLDEN_ZONE:
+                SELL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL = manageGoldenZoneChanges(current_change, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL)
+
+            # check if minimum time window has passed
+            elif datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(start_timestamp) + timedelta(minutes=timeframe):
+                SELL, LB_THRESHOLD, UB_THRESHOLD = manageUsualPriceChanges(current_change, LB_THRESHOLD, UB_THRESHOLD, STEP_NOGOLDEN)
+                if SELL:
+                    tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True,
+                                                        price_variation_1d, price_variation_6h, price_variation_3h, price_variation_1h)
+                    break
+            
+            #print(int(timeframe * extratimeframe))
+            extra = int(timeframe * extratimeframe)
+            if datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(start_timestamp) + timedelta(minutes=timeframe) + timedelta(minutes= extra):
+                tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, False,
+                                                    price_variation_1d, price_variation_6h, price_variation_3h, price_variation_1h)
+                break
+                
+            elif obs_i == len(iterator):
+                tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, False,
+                                                    price_variation_1d, price_variation_6h, price_variation_3h, price_variation_1h)
+                
+    return tmp
+                                        
+
+                        
+
 def RiskManagement_multiprocessing(timeseries_json, arg_i, EXTRATIMEFRAMES, STEPS_NOGOLDEN, STEPS_GOLDEN,
-                                        GOLDEN_ZONES, timeframe, lock, results):
+                                        GOLDEN_ZONES, timeframe, lock, early_validation, results):
     '''
     This function is used by def "RiskManagement". The purpose is to analyze the best combinations of variables for handling the risk management
     Similar to "total_function_multiprocessing", a multiprocessing task gets carried out.
@@ -1728,61 +1821,12 @@ def RiskManagement_multiprocessing(timeseries_json, arg_i, EXTRATIMEFRAMES, STEP
                         # iterate through each event
                         #for start_timestamp in timestamp_to_analyze:
                         for start_timestamp in timestamp_list:
-                            STEP = copy(STEP_original)
-                            GOLDEN_ZONE = copy(GOLDEN_ZONE_original)
-                            #print(f'new event: {coin}; {start_timestamp}')
-                            #coin_list.append(coin)
-
-                            #STEP = 0.05
-                            GOLDEN_ZONE_BOOL = False
-                            #GOLDEN_ZONE = 0.3 #
-                            GOLDEN_ZONE_LB = GOLDEN_ZONE - STEP
-                            GOLDEN_ZONE_UB = GOLDEN_ZONE + STEP
-                            LB_THRESHOLD = None
-                            UB_THRESHOLD = None
-
-                            iterator = timeseries_json[coin][start_timestamp]['data']
-                            #initial_price = iterator[0]['price']
-                            SKIP = True
-
-                            # iterate through each obs
-                            for obs, obs_i in zip(iterator, range(1, len(iterator) + 1)):
-                                #print(GOLDEN_ZONE_BOOL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP)
-                                if obs['_id'] == start_timestamp:
-                                    SKIP = False
-                                    initial_price = obs['price']
-                                
-                                if SKIP == False:
-                                    current_price = obs['price']
-                                    current_change = (current_price - initial_price) / initial_price
-
-                                    # if I'm already in GOLDEN ZONE, then just manage this scenario
-                                    if GOLDEN_ZONE_BOOL:
-                                        SELL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL = manageGoldenZoneChanges(current_change, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL)
-                                        if SELL:
-                                            tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True)                        
-                                            break
-
-                                    # check if price went above golden zone
-                                    if current_change > GOLDEN_ZONE:
-                                        SELL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL = manageGoldenZoneChanges(current_change, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL)
-
-                                    # check if minimum time window has passed
-                                    elif datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(start_timestamp) + timedelta(minutes=timeframe):
-                                        SELL, LB_THRESHOLD, UB_THRESHOLD = manageUsualPriceChanges(current_change, LB_THRESHOLD, UB_THRESHOLD, STEP_NOGOLDEN)
-                                        if SELL:
-                                            tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True)
-                                            break
-                                    
-                                    #print(int(timeframe * extratimeframe))
-                                    extra = int(timeframe * extratimeframe)
-                                    if datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(start_timestamp) + timedelta(minutes=timeframe) + timedelta(minutes= extra):
-                                        tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, False)
-                                        break
-                                        
-                                    elif obs_i == len(iterator):
-                                        tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, False)
-
+                            if early_validation and datetime.fromisoformat(start_timestamp) > early_validation:
+                                continue
+                            else:
+                                # start the riskmanagement analysis for this event
+                                tmp = RiskManagement_lowest_level(tmp, timeseries_json, coin, start_timestamp, risk_key,
+                                 STEP_original, GOLDEN_ZONE_original, STEP_NOGOLDEN, timeframe, extratimeframe)
     with lock:
         resp = json.loads(results.value)
         for key in list(tmp.keys()):
@@ -1796,7 +1840,81 @@ def RiskManagement_multiprocessing(timeseries_json, arg_i, EXTRATIMEFRAMES, STEP
 
         results.value = json.dumps(resp)
 
-def RiskManagement(key, investment_per_event=100):
+def prepareOptimizedConfigurarionResults(results):
+
+    profit_list = {}
+    timestamp_exit_list = {}
+    buy_price_list = {}
+    exit_price_list = {}
+    coin_list = {}
+    early_sell = {}
+    price_1d_variation = {}
+    price_6h_variation = {}
+    price_3h_variation = {}
+    price_1h_variation = {}
+
+    for risk_key in list(results.keys()):
+        profit_list[risk_key] = []
+        timestamp_exit_list[risk_key] = []
+        buy_price_list[risk_key] = []
+        exit_price_list[risk_key] = []
+        coin_list[risk_key] = []
+        early_sell[risk_key] = []
+        price_1d_variation[risk_key] = []
+        price_6h_variation[risk_key] = []
+        price_3h_variation[risk_key] = []
+        price_1h_variation[risk_key] = []
+
+        for start_timestamp in results[risk_key]:            
+            profit_list[risk_key].append(results[risk_key][start_timestamp][0])
+            timestamp_exit_list[risk_key].append(results[risk_key][start_timestamp][1])
+            buy_price_list[risk_key].append(results[risk_key][start_timestamp][2])
+            exit_price_list[risk_key].append(results[risk_key][start_timestamp][3])
+            coin_list[risk_key].append(results[risk_key][start_timestamp][4])
+            early_sell[risk_key].append(results[risk_key][start_timestamp][5])
+            price_1d_variation[risk_key].append(results[risk_key][start_timestamp][6])
+            price_6h_variation[risk_key].append(results[risk_key][start_timestamp][7])
+            price_3h_variation[risk_key].append(results[risk_key][start_timestamp][8])
+            price_1h_variation[risk_key].append(results[risk_key][start_timestamp][9])
+
+    best_risk_key = ''
+    best_profit = - 10
+
+    risk_key_df = []
+    profit_mean_list_df = []
+    profit_std_list_df = []
+
+    risk_configuration_list = []
+    for risk_key in profit_list:
+        profit = np.mean(profit_list[risk_key])
+        std = np.std(profit_list[risk_key])
+
+        risk_key_df.append(risk_key)
+        profit_mean_list_df.append(profit)
+        profit_std_list_df.append(std)
+
+        n_events = len(profit_list[risk_key])
+        profit_print = round_(profit*100,2)
+
+        #print(f'{risk_key}: Mean is {mean_print} % for {n_events} events')
+        if profit > best_profit:
+            best_profit = profit
+            best_std = std
+            best_risk_key = risk_key
+            best_profit_print = round_(best_profit*100,2)
+            best_std_print = round_(best_std*100,2)
+    
+    optimized_riskconfiguration_results = {'events': list(results[best_risk_key].keys()), 'gain': profit_list[best_risk_key], 'buy_price': buy_price_list[best_risk_key],
+                         'exit_price': exit_price_list[best_risk_key],  'timestamp_exit': timestamp_exit_list[best_risk_key],
+                           'coin': coin_list[best_risk_key], 'early_sell': early_sell[best_risk_key],
+                            'price_%_1d': price_1d_variation[risk_key], 'price_%_6h': price_6h_variation[risk_key],
+                            'price_%_3h': price_3h_variation[risk_key], 'price_%_1h': price_1h_variation[risk_key]}
+    
+    return optimized_riskconfiguration_results, (n_events, best_profit, best_risk_key, best_profit_print, risk_key_df, profit_mean_list_df, profit_std_list_df, best_std_print)
+    
+
+
+def RiskManagement(key, early_validation, investment_per_event=100):
 
     EXTRATIMEFRAMES = [0]
     STEPS_NOGOLDEN = [0.01]
@@ -1830,74 +1948,29 @@ def RiskManagement(key, investment_per_event=100):
     lock = Manager().Lock()
     pool = Pool()
     pool.starmap(RiskManagement_multiprocessing, [(arg, arg_i, EXTRATIMEFRAMES, STEPS_NOGOLDEN, STEPS_GOLDEN,
-                                        GOLDEN_ZONES, timeframe, lock, results) for arg, arg_i in zip(data_arguments, range(1,len(data_arguments)+1))])
+                                        GOLDEN_ZONES, timeframe, lock, early_validation, results) for arg, arg_i in zip(data_arguments, range(1,len(data_arguments)+1))])
 
     pool.close()
     pool.join()
 
     # split data
     results = json.loads(results.value)
+    optimized_riskconfiguration_results, other_vars = prepareOptimizedConfigurarionResults(results)
 
-    profit_list = {}
-    timestamp_exit_list = {}
-    buy_price_list = {}
-    exit_price_list = {}
-    coin_list = {}
-    early_sell = {}
-
-    for risk_key in list(results.keys()):
-        profit_list[risk_key] = []
-        timestamp_exit_list[risk_key] = []
-        buy_price_list[risk_key] = []
-        exit_price_list[risk_key] = []
-        coin_list[risk_key] = []
-        early_sell[risk_key] = []
-
-        for start_timestamp in results[risk_key]:            
-            profit_list[risk_key].append(results[risk_key][start_timestamp][0])
-            timestamp_exit_list[risk_key].append(results[risk_key][start_timestamp][1])
-            buy_price_list[risk_key].append(results[risk_key][start_timestamp][2])
-            exit_price_list[risk_key].append(results[risk_key][start_timestamp][3])
-            coin_list[risk_key].append(results[risk_key][start_timestamp][4])
-            early_sell[risk_key].append(results[risk_key][start_timestamp][5])
-
-    best_risk_key = ''
-    best_profit = - 10
-
-    risk_key_df = []
-    profit_mean_list_df = []
-    profit_std_list_df = []
-
-    risk_configuration_list = []
-    for risk_key in profit_list:
-        profit = np.mean(profit_list[risk_key])
-        std = np.std(profit_list[risk_key])
-
-        risk_key_df.append(risk_key)
-        profit_mean_list_df.append(profit)
-        profit_std_list_df.append(std)
-
-        n_events = len(profit_list[risk_key])
-        profit_print = round_(profit*100,2)
-
-        #print(f'{risk_key}: Mean is {mean_print} % for {n_events} events')
-        if profit > best_profit:
-            best_profit = profit
-            best_std = std
-            best_risk_key = risk_key
-            best_profit_print = round_(best_profit*100,2)
-            best_std_print = round_(best_std*100,2)
+    n_events = other_vars[0]
+    best_profit = other_vars[1]
+    best_risk_key = other_vars[2]
+    best_profit_print = other_vars[3]
+    risk_key_df = other_vars[4]
+    profit_mean_list_df = other_vars[5]
+    profit_std_list_df = other_vars[6]
+    best_std_print = other_vars[7]
+    #n_events, best_profit, best_risk_key, best_profit_print, risk_key_df, profit_mean_list_df, profit_std_list_df  
     
-    df1 = pd.DataFrame({'risk_key': risk_key_df, 'mean': profit_mean_list_df, 'std': profit_std_list_df})
 
-    #INVESTMENT_PER_EVENT = 200
     profit = round_((investment_per_event * n_events) * (best_profit),2)
     print(f'{profit} euro of profit for an investment of {investment_per_event} euro per event (total of {n_events} events). {best_risk_key} with {best_profit_print} %')
-    
-    optimized_riskconfiguration_results = {'events': list(results[best_risk_key].keys()), 'gain': profit_list[best_risk_key], 'buy_price': buy_price_list[best_risk_key],
-                         'exit_price': exit_price_list[best_risk_key],  'timestamp_exit': timestamp_exit_list[best_risk_key],
-                           'coin': coin_list[best_risk_key], 'early_sell': early_sell[best_risk_key]}
-    
+    df1 = pd.DataFrame({'risk_key': risk_key_df, 'mean': profit_mean_list_df, 'std': profit_std_list_df})
     df2 = pd.DataFrame(optimized_riskconfiguration_results)
     
     # mean of all events per key
@@ -2101,7 +2174,7 @@ def get_substring_between(original_string, start_substring, end_substring):
     return original_string[start_index + len(start_substring):end_index]
 
 
-def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_gain_threshold):
+def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_gain_threshold, early_validation=False, std_multiplier=3, DISCOVER=False):
     '''
     This functions has the objective to define the best risk configuration for a selected number of keys.
     "download_show_output" function will provide the input
@@ -2122,13 +2195,14 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
         if volatility not in risk_configuration:
             risk_configuration[volatility] = {}
         
+        if DISCOVER:
         # get latest timeseries
-        retry = True        
-        # if response is not complete, retry with a new request
-        while retry:
-            retry = getTimeseries(info, key, check_past=1440, look_for_newdata=True, plot=False)
+            retry = True        
+            # if response is not complete, retry with a new request
+            while retry:
+                retry = getTimeseries(info, key, check_past=1440, look_for_newdata=True, plot=False)
 
-        df1, df2, risk, optimized_riskconfiguration_results = RiskManagement(key)
+        df1, df2, risk, optimized_riskconfiguration_results = RiskManagement(key, early_validation)
 
         best_risk_key = risk['best_risk_key']
         best_mean_print = risk['best_mean_print']
@@ -2143,6 +2217,7 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
         nogolden_step_str = get_substring_between(best_risk_key, "_step_no_golden:", "_extratime:")
         extratime = best_risk_key.split('_extratime:')[1]
         frequency = info[key]["frequency/month"]
+        n_events =  info[key]["events"]
 
         total_optimized_riskconfiguration_results[key] = optimized_riskconfiguration_results
 
@@ -2157,9 +2232,11 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
                     'optimized_gain': best_mean_print,
                     'optimized_std': best_std_print,
                     'frequency': frequency,
+                    'n_events' : n_events,
                     'mean_gain_all_configs': mean,
                     'median_gain_all_configs': median,
-                    'std_gain_all_configs': std
+                    'std_gain_all_configs': std,
+
                 }}
         
 
@@ -2171,6 +2248,7 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
     optimized_gain_list = []
     optimized_std_list = []
     frequency_list = []
+    n_events_list = []
     mean_gain_list = []
     median_gain_list = []
     std_gain_list = []
@@ -2196,16 +2274,18 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
             extra_timeframe_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['extra_timeframe'])
             optimized_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['optimized_gain'])
             optimized_std_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['optimized_std'])
-            frequency_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['frequency'])
             mean_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['mean_gain_all_configs'])
             median_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['median_gain_all_configs'])
             std_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['std_gain_all_configs'])
+            frequency_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['frequency'])
+            n_events_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['n_events'])
 
 
     average_gain_percentage = sum(np.array(optimized_gain_list) * (np.array(frequency_list)/sum(frequency_list))) / 100
     df_dict = {"keys": key_list, "golden_zone": golden_zone_list, 'step_golden': step_golden_list, 'step_nogolden': step_nogolden_list,
                 'extra_timeframe': extra_timeframe_list, 'optimized_gain': optimized_gain_list, 'optimized_std': optimized_std_list,
-                  'frequency': frequency_list, 'mean_gain': mean_gain_list, 'median_gain': median_gain_list, 'std_gain': std_gain_list}
+                  'mean_gain': mean_gain_list, 'median_gain': median_gain_list, 'std_gain': std_gain_list,
+                  'frequency': frequency_list, 'n_events': n_events_list}
     
 
     
@@ -2213,13 +2293,14 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
                                     'Dataframe': df_dict, 'RiskManagement': risk_configuration, 'Gain': {'average_per_event': round_(average_gain_percentage,2), 'n_events_per_month': sum(frequency_list)}}
 
     # SAVE FILE
-    file_path_riskmanagement = ROOT_PATH + "/riskmanagement_json/riskmanagement.json"
-    with open(file_path_riskmanagement, 'w') as file:
-        json.dump(risk_management_config_json, file)
+    if early_validation == False:
+        file_path_riskmanagement = ROOT_PATH + "/riskmanagement_json/riskmanagement.json"
+        with open(file_path_riskmanagement, 'w') as file:
+            json.dump(risk_management_config_json, file)
 
-    file_path_optimized_results = ROOT_PATH + "/optimized_results/optimized_results.json"
-    with open(file_path_optimized_results, 'w') as file:
-        json.dump(total_optimized_riskconfiguration_results, file)
+        file_path_optimized_results = ROOT_PATH + "/optimized_results/optimized_results.json"
+        with open(file_path_optimized_results, 'w') as file:
+            json.dump(total_optimized_riskconfiguration_results, file)
 
     # BACKUP RISKMANAGEMENT CONFIGURATION
     random_id = str(randint(1,1000))
@@ -2229,10 +2310,30 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
     year = str(now.year)
     minimum_event_number = str(risk_configuration_dict['minimum_event_number'])
     mean_threshold = str(risk_configuration_dict['mean_threshold'])
-    dst = f"{ROOT_PATH}/riskmanagement_backup/riskmanagement-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-{random_id}.json"
-    shutil.copyfile(file_path_riskmanagement, dst)
-    dst = f"{ROOT_PATH}/optimized_results_backup/optimized_results-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-{random_id}.json"
-    shutil.copyfile(file_path_optimized_results, dst)
+
+    if early_validation == False:
+        dst_backup = f"{ROOT_PATH}/riskmanagement_backup/riskmanagement-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-{random_id}.json"
+        dst_optimized = f"{ROOT_PATH}/optimized_results_backup/optimized_results-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-{random_id}.json"
+        shutil.copyfile(file_path_riskmanagement, dst_backup)
+        shutil.copyfile(file_path_optimized_results, dst_optimized)
+    else:
+        early_validation = early_validation + timedelta(days=3)
+        year = str(early_validation.year)
+        month = str(early_validation.month)
+        day = str(early_validation.day)
+        std_multiplier = str(std_multiplier)
+
+        dst_backup = f"{ROOT_PATH}/riskmanagement_backup/riskmanagement-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-earlyvalidation-{std_multiplier}stdmultiplier-{random_id}.json"
+        dst_optimized = f"{ROOT_PATH}/optimized_results_backup/optimized_results-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-earlyvalidation-{std_multiplier}stdmultiplier-{random_id}.json"
+        print(f'Early Validation On: analize the post performance of this path: {dst_backup}')
+
+        with open(dst_backup, 'w') as file:
+            json.dump(risk_management_config_json, file)
+
+        with open(dst_optimized, 'w') as file:
+            json.dump(total_optimized_riskconfiguration_results, file)
+
+    
     t2 = time()
     time_spent = t2 - t1
     print(f'{time_spent} seconds spent to run wrap_analyze_events')
@@ -2242,7 +2343,7 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
     # CREATE PANDAS DATAFRAME
     df = pd.DataFrame(df_dict)
     df = df.sort_values("optimized_gain", ascending=False)
-    return df
+    return df, dst_backup
 
 
 def load_riskconfiguration(another_riskconfiguration=None):
@@ -2310,15 +2411,15 @@ def send_riskconfiguration():
 
 def send_userconfiguration(request):
 
-    #url = 'https://algocrypto.eu/analysis/user-configuration'
-    url = 'http://localhost/analysis/user-configuration'
+    url = 'https://algocrypto.eu/analysis/user-configuration'
+    #url = 'http://localhost/analysis/user-configuration'
 
     response = requests.post(url, json = request)
     print('Status Code is : ', response.status_code)
     response = json.loads(response.text)
     return response
 
-def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True):
+def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOVER=False, event_investment_amount=100):
     '''
     This function has the goal to anaylze the post performance of an event. 
     The post performance is referred to 2 types: 
@@ -2368,47 +2469,134 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True):
 
     riskmanagement = riskmanagement_dict['RiskManagement']
 
+    print('Loading analysis.json for both scenarios: OPTIMIZED or not')
+    analysis_json_path = ROOT_PATH + "/analysis_json/analysis.json"
+    if os.path.exists(analysis_json_path):
+        with open(analysis_json_path, 'r') as file:
+            analysis_json_dict = json.load(file)
+            analysis_json = analysis_json_dict['data']
+
+
     # load optimized results
     if OPTIMIZED:
+        print('OPTIMIZED ANALYSIS')
         path_split = riskmanagement_path.split('riskmanagement')
         corresponding_optimized_results_suffix = path_split[-1]
-        analysis_json_path = ROOT_PATH + "/optimized_results_backup/optimized_results" + corresponding_optimized_results_suffix
-        analysis_json = {}
-        if os.path.exists(analysis_json_path):
-            with open(analysis_json_path, 'r') as file:
+        optimized_results_json_path = ROOT_PATH + "/optimized_results_backup/optimized_results" + corresponding_optimized_results_suffix
+
+        
+        if os.path.exists(optimized_results_json_path):
+            # retrieve optimized_results_dict
+            with open(optimized_results_json_path, 'r') as file:
                 optimized_results_dict = json.load(file)
+            
+            info = {}
+            for key in analysis_json:
+                if key in optimized_results_dict:
+                    info[key] = analysis_json[key]
+            del analysis_json
+
+            
+            analysis_json = {}
+
+            print(info.keys())
+            # UPDATE OPTIMIZED_RESULTS_DICT
+
+            # Loading Data
+            print('Loading data from analysis.json')
+
+            for event_key in optimized_results_dict:
+                new_optimized_results = {event_key: {}}
+                vol, vol_value, buy_vol, buy_vol_value, timeframe = getsubstring_fromkey(event_key)
+                timeframe = int(timeframe)
+                volatility = event_key.split('vlty:')[1]
+
+                if event_key in riskmanagement[volatility]:
+                    # retrieve riskMangement_features (GOLDEN_ZONE, STEP, ecc...)
+
+                    
+                    GOLDEN_ZONE_original = float(riskmanagement[volatility][event_key]['riskmanagement_conf']['golden_zone'])
+                    STEP_original = float(riskmanagement[volatility][event_key]['riskmanagement_conf']['step_golden'])
+                    STEP_NOGOLDEN = float(riskmanagement[volatility][event_key]['riskmanagement_conf']['step_nogolden'])
+                    extratimeframe = float(riskmanagement[volatility][event_key]['riskmanagement_conf']['extra_timeframe'])
+
+                    # update timeseries.json
+                    if DISCOVER:
+                        print(f'Downloading timeseries for {event_key} from server')
+                        retry = getTimeseries(info, event_key, check_past=1440, look_for_newdata=True, plot=False)
+                    # load timeseries.json
+                    event_key_path = event_key.replace(':', '_')
+                    event_key_path = event_key_path.replace('/', '_')
+                    
+                    #print(f'Reading timeseries for {event_key} from local')
+                    timeseries_json_path = ROOT_PATH + "/timeseries_json/" + event_key_path + '.json'
+                    with open(timeseries_json_path, 'r') as file:
+                        timeseries_json = json.load(file)
+
+                    #print('Check if there is new events to analyze')
+                    # check if new event has occurred
+                    for coin in timeseries_json:
+                        for start_timestamp in timeseries_json[coin]:
+                            # let's check if event of timeseries json is new in optimized_results
+                            if start_timestamp not in optimized_results_dict[event_key]['events']:
+
+                                #analyze the event with the current strategy
+                                new_optimized_results = RiskManagement_lowest_level(new_optimized_results, timeseries_json, coin, start_timestamp, event_key,
+                                    STEP_original, GOLDEN_ZONE_original, STEP_NOGOLDEN, timeframe, extratimeframe)
+                    
+                    if len(new_optimized_results[event_key]) > 0:
+                        print('Updating optimized_results_configuration. def prepareOptimizedConfigurarionResults')
+                        print(event_key)
+                        new_optimized_riskconfiguration_results, other_vars = prepareOptimizedConfigurarionResults(new_optimized_results)
+                        print(new_optimized_riskconfiguration_results)
+                        optimized_results_dict[event_key]['gain'] += new_optimized_riskconfiguration_results['gain']
+                        optimized_results_dict[event_key]['events'] += new_optimized_riskconfiguration_results['events']
+                        optimized_results_dict[event_key]['buy_price'] += new_optimized_riskconfiguration_results['buy_price']
+                        optimized_results_dict[event_key]['exit_price'] += new_optimized_riskconfiguration_results['exit_price']
+                        optimized_results_dict[event_key]['timestamp_exit'] += new_optimized_riskconfiguration_results['timestamp_exit']
+                        optimized_results_dict[event_key]['coin'] += new_optimized_riskconfiguration_results['coin']
+                        optimized_results_dict[event_key]['early_sell'] += new_optimized_riskconfiguration_results['early_sell']
+                        optimized_results_dict[event_key]['price_%_1d'] += new_optimized_riskconfiguration_results['price_%_1d']
+                        optimized_results_dict[event_key]['price_%_6h'] += new_optimized_riskconfiguration_results['price_%_6h']
+                        optimized_results_dict[event_key]['price_%_3h'] += new_optimized_riskconfiguration_results['price_%_3h']
+                        optimized_results_dict[event_key]['price_%_1h'] += new_optimized_riskconfiguration_results['price_%_1h']
+
+                    else:
+                        print(f'No need to update optimized_results for {event_key}')
 
                 # let's reproduce analysis_json with the same structure starting from optimized_results.json
-                for event_key in optimized_results_dict:
-                    if event_key not in analysis_json:
-                        analysis_json[event_key] = {'info': {}}
+                if event_key not in analysis_json:
+                    analysis_json[event_key] = {'info': {}}
 
-                    for iterator in range(len(optimized_results_dict[event_key]['events'])):
-                        doc_to_add = {'event': optimized_results_dict[event_key]['events'][iterator],
-                                      'mean': optimized_results_dict[event_key]['gain'][iterator],
-                                      'std': 0}
-                        
-                        coin = optimized_results_dict[event_key]['coin'][iterator]
-                        if coin not in analysis_json[event_key]['info']:
-                            analysis_json[event_key]['info'][coin] = [doc_to_add]
-                        else:
-                            analysis_json[event_key]['info'][coin].append(doc_to_add)
+                for iterator in range(len(optimized_results_dict[event_key]['events'])):
+                    doc_to_add = {'event': optimized_results_dict[event_key]['events'][iterator],
+                                    'mean': optimized_results_dict[event_key]['gain'][iterator],
+                                    'buy_price': optimized_results_dict[event_key]['buy_price'][iterator],
+                                    'exit_price': optimized_results_dict[event_key]['exit_price'][iterator],
+                                    'timestamp_exit': optimized_results_dict[event_key]['timestamp_exit'][iterator],
+                                    'price_%_1d': optimized_results_dict[event_key]['price_%_1d'][iterator],
+                                    'price_%_6h': optimized_results_dict[event_key]['price_%_6h'][iterator],
+                                    'price_%_3h': optimized_results_dict[event_key]['price_%_3h'][iterator],
+                                    'price_%_1h': optimized_results_dict[event_key]['price_%_1h'][iterator],
+                                    'std': 0}
+                    
+                    coin = optimized_results_dict[event_key]['coin'][iterator]
+                    if coin not in analysis_json[event_key]['info']:
+                        analysis_json[event_key]['info'][coin] = [doc_to_add]
+                    else:
+                        analysis_json[event_key]['info'][coin].append(doc_to_add)
+
+            # Update optimized_risk.json
+            with open(optimized_results_json_path, 'w') as outfile:
+                json.dump(optimized_results_dict, outfile)
+            print(f'Json File Updated: {optimized_results_json_path}')
                             
-            #print(f'{analysis_json_path} is loaded')
         else:
             print(f'{analysis_json_path} does not exist')
             pass
     # load analysis_json
     else:
-        analysis_json_path = ROOT_PATH + "/analysis_json/analysis.json"
-        if os.path.exists(analysis_json_path):
-            with open(analysis_json_path, 'r') as file:
-                analysis_json_dict = json.load(file)
-                analysis_json = analysis_json_dict['data']
-            #print(f'{analysis_json_path} is loaded')
-        else:
-            print(f'{analysis_json_path} does not exist')
-            pass
+        print('NOT OPTIMIZED ANALYSIS')
 
     
     
@@ -2426,30 +2614,34 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True):
 
     for volatility in riskmanagement:
         for event_key in riskmanagement[volatility]:
-            for coin in analysis_json[event_key]['info']:
-                for event in analysis_json[event_key]['info'][coin]:
-                    # initialize series for single event_key
-                    if event_key not in timeseries_info:
-                        timeseries_info[event_key] = []
-                    
-                    # append event for single event_key
-                    timeseries_info[event_key].append(event)
+            if event_key in analysis_json:
+                for coin in analysis_json[event_key]['info']:
+                    for event in analysis_json[event_key]['info'][coin]:
+                        # initialize series for single event_key
+                        if event_key not in timeseries_info:
+                            timeseries_info[event_key] = []
+                        
+                        # append event for single event_key
+                        event['event_key'] = event_key
+                        event['coin'] = coin
+                        timeseries_info[event_key].append(event)
 
-                    # append event for "total"
-                    timeseries_info['total'].append(event)
-                    event_key_list.append(event['event'])
-                    mean_list.append(event['mean'])
-                    std_list.append(event['std'])
-                    event['coin'] = coin
-                    for performance_scenario in PERFORMANCE_SCENARIOS:
-                        if event['mean'] >= PERFORMANCE_SCENARIOS[performance_scenario][0][0] and event['mean'] < PERFORMANCE_SCENARIOS[performance_scenario][0][1]:
-                            PERFORMANCE_SCENARIOS[performance_scenario][1] += 1
-                            continue
+                        # append event for "total"
+                        timeseries_info['total'].append(event)
+                        # event_key_list.append(event['event'])
+                        # mean_list.append(event['mean'])
+                        # std_list.append(event['std'])
 
-                    if event['mean'] > 0:
-                        positive_outcome += 1
-                    else:
-                        negative_outcome += 1
+                        
+                        for performance_scenario in PERFORMANCE_SCENARIOS:
+                            if event['mean'] >= PERFORMANCE_SCENARIOS[performance_scenario][0][0] and event['mean'] < PERFORMANCE_SCENARIOS[performance_scenario][0][1]:
+                                PERFORMANCE_SCENARIOS[performance_scenario][1] += 1
+                                continue
+
+                        if event['mean'] > 0:
+                            positive_outcome += 1
+                        else:
+                            negative_outcome += 1
 
     del analysis_json, riskmanagement
 
@@ -2458,7 +2650,7 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True):
         timeseries_info[event_key].sort(key=lambda x: x['event'], reverse=False)
     
     starting_balance_account = 1000
-    event_investment_amount = 65
+    #event_investment_amount = 65
     biggest_drop = 0
 
     
@@ -2473,11 +2665,21 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True):
         std_list = []
         coin_list = []
         post_mean_list = []
+        event_key_list = []
         post_performance_timeseries = []
         balance_account = []
         stop = False
         start_analysis_i = len(timeseries_info[event_key]) - 1
-        
+
+        if OPTIMIZED:
+            price_variation_1d_list = []
+            price_variation_6h_list = []
+            price_variation_3h_list = []
+            price_variation_1h_list = []
+            buy_price_list = []
+            exit_price_list = []
+            timestamp_exit_list = []
+            
 
 
         # compute each timeseries
@@ -2511,10 +2713,19 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True):
             mean_list.append(event['mean'])
             std_list.append(event['std'])
             coin_list.append(event['coin'])
-
+            event_key_list.append(event['event_key'])
             mean_timeseries.append(np.mean(mean_list))
             std_timeseries.append(np.mean(std_list))
             timestamp_timeseries.append(event['event'])
+
+            if OPTIMIZED:
+                price_variation_1d_list.append(event['price_%_1d'])
+                price_variation_6h_list.append(event['price_%_6h'])
+                price_variation_3h_list.append(event['price_%_3h'])
+                price_variation_1h_list.append(event['price_%_1h'])
+                buy_price_list.append(event['buy_price'])
+                exit_price_list.append(event['exit_price'])
+                timestamp_exit_list.append(event['timestamp_exit'])
 
         upper_bound = np.array(mean_timeseries) + np.array(std_timeseries)
         lower_bound = np.array(mean_timeseries) - np.array(std_timeseries)
@@ -2541,7 +2752,19 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True):
         ax.set_title(event_key)
         
         if event_key == 'total':
-            df = pd.DataFrame({'event': timestamp_timeseries, 'mean_series': mean_timeseries, 'mean_event': mean_list, 'balance': balance_account, 'coin': coin_list})
+            doc_df1 = {'event': timestamp_timeseries, 'mean_series': mean_timeseries, 'mean_event': mean_list, 'balance': balance_account, 'coin': coin_list, 'event_key': event_key_list}
+            if OPTIMIZED:
+                doc_df1['price_%_1d'] = price_variation_1d_list
+                doc_df1['price_%_6h'] = price_variation_6h_list
+                doc_df1['price_%_3h'] = price_variation_3h_list
+                doc_df1['price_%_1h'] = price_variation_1h_list
+                doc_df1['buy_price'] = buy_price_list
+                doc_df1['exit_price'] = exit_price_list
+                doc_df1['timestamp_exit'] = timestamp_exit_list
+
+            df1 = pd.DataFrame(doc_df1)
+
+                                
             total_performance = round_(np.mean(mean_list)*100,2)
             n_events_total_performance = len(mean_list)
             post_performance = round_(np.mean(post_mean_list)*100,2)
@@ -2566,7 +2789,7 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True):
 
     plt.show()
 
-    return df, biggest_drop, biggest_drop_date, positive_outcome, negative_outcome, PERFORMANCE_SCENARIOS
+    return df1, biggest_drop, biggest_drop_date, positive_outcome, negative_outcome, PERFORMANCE_SCENARIOS
     
 
 
