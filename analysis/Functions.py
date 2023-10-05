@@ -17,96 +17,20 @@ from random import randint
 import shutil
 import re
 
+from sklearn.svm import SVR  # Support Vector Regression
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+
+
+'''
+Functions.py define a set of functions that are used to analyze the strategy based on combinations of volumes and % Buyers/Sellers
+'''
 
 ROOT_PATH = os.getcwd()
 
 def round_(number, decimal):
     return float(format(number, f".{decimal}f"))
-
-def check_correlation(data, field_volume, field_price, coin = None, limit_volume=3):
-    '''
-    This function checks the correlation between 2 fields chosen
-    '''
-
-    list1 = []
-    list2 = []
-
-    # get the volume field based on the timeframe (e.g. 5m, 15m, ..., 6h)
-    timeframe = field_volume.split('_')[-1]
-    volume_field = 'vol_' + timeframe
-    minute_or_hours = timeframe[-1]
-    if minute_or_hours == 'm':
-        jump = int(timeframe[:-1])
-    else:
-        jump = int(timeframe[:-1]) * 60
-    
-    print(jump)
-
-    # analyze one coin if speicified
-    if coin != None:
-        for obs in data[coin]:
-            
-            if obs[field_volume] != None and obs[field_price] != None:
-                list1.append(obs[field_volume])
-                list2.append(obs[field_price])
-        
-        correlation, p_value = pearsonr(list1, list2)
-
-        print("Correlation:", correlation)
-        print("P-value:", p_value)
-
-    # analyze all coins in data
-    else:
-        correlations = []
-        pvalues = []
-        n_coins = 0
-        for coin in list(data.keys()):
-            del list1
-            del list2
-
-            list1 = []
-            list2 = []
-
-            # for obs_vol,obs_price in zip(data[coin][:-60], data[coin][60:]):
-            #     if obs_vol[field_volume] != None and obs_price[field_price] != None and obs_vol[volume_field] >= limit_volume:
-            
-            #         list1.append(obs_vol[field_volume])
-            #         list2.append(obs_price[field_price])
-
-            for obs in data[coin]:
-                if obs[field_volume] != None and obs[field_price] != None and obs[volume_field] >= limit_volume:
-                    list1.append(obs[field_volume])
-                    list2.append(obs[field_price])
-                
-            if len(list1) > 3:
-                n_coins += 1
-                correlation, p_value = pearsonr(list1, list2)
-
-                # get correlation and pvalue
-                if correlation != None and p_value != None and isinstance(correlation, np.float64):
-                    correlations.append(correlation)
-                    pvalues.append(p_value)
-                else:
-                    type_ = type(correlation)
-                    print(f'{coin}: pvalue={p_value}, correlation={correlation}, type={type_}')
-                    
-            # else:
-            #     print(coin)
-        
-        # get the average correlation for all the analyzed coins
-        print(len(correlations))
-        max_corr = max(correlations)
-        min_corr = min(correlations)
-        std_dev_corr = np.std(correlations)
-        print(f' {n_coins} have been analyzed')
-        print(f'Max corr: {max_corr}')
-        print(f'Min corr: {min_corr}')
-        print(f'Std corr: {std_dev_corr}')
-
-        print("Correlation:", np.mean(correlations))
-        print("P-value:", np.mean(pvalues))
-
-        return correlations, pvalues
 
 
 def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_buy_volume, event_volume, dynamic_benchmark_volume, end_interval_analysis):
@@ -2793,5 +2717,51 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
     
 
 
-            
+def PriceVariation_analysis(df, model_type='svc'):
+
+    # Identify Decision and Output variables
+    decision_variables = df[['price_%_1d', 'price_%_6h', 'price_%_3h', 'price_%_1h']]
+    output_variable = np.array(df['mean_event'])
+
+    # Filter out NaN values
+    X_withnan = np.array(decision_variables.to_numpy())
+    nan_mask = np.isnan(X_withnan)
+    nan_mask_y = []
+    for row in nan_mask:
+        if True in row:
+            nan_mask_y.append(True)
+        else:
+            nan_mask_y.append(False)
+
+
+    # Select X and y
+    X = X_withnan[~np.array(nan_mask_y)]
+    y = output_variable[~np.array(nan_mask_y)]  
+
+    # Start Training
+    random_state = randint(0,len(y))
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=random_state)
+
+    # Fit Linear Regression
+    if model_type == 'linear_regression':
+        print('Linear Regression Model')
+        model = LinearRegression()
+        model.fit(X_train, y_train)
+    elif model_type == 'svc':
+        print('SVC Model')
+        model = SVR(kernel='rbf')  # Puoi scegliere il kernel desiderato
+        model.fit(X_train, y_train)
+
+    # Addestra il modello
+
+    # Predict
+    y_pred = model.predict(X_test)
+    mse = mean_squared_error(y_test, y_pred)
+    print(f"Mean Squared Error: {mse}")
+
+    plt.scatter(y_test, y_pred)
+    plt.xlabel("Valori reali")
+    plt.ylabel("Valori previsti")
+    plt.title("Confronto tra valori reali e previsti")
+    plt.show()
 
