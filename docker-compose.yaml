@@ -186,4 +186,4 @@ services:
   
 networks:
   local-net:
-    driver: bridge
+    driver: host
