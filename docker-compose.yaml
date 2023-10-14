@@ -29,7 +29,8 @@ services:
       - MONGO_PORT=$MONGO_PORT
       - TZ=$TIME_ZONE
       - PRODUCTION=$PRODUCTION
-    network_mode: host
+    networks:
+      - crypto-net
 
   tracker:
     container_name: tracker-crypto
@@ -66,7 +67,8 @@ services:
       - MAX_EVENTS_SYNCED=$MAX_EVENTS_SYNCED
       - MAXIMUM_LOSS=$MAXIMUM_LOSS
       - SYS_ADMIN=$SYS_ADMIN
-    network_mode: host
+    networks:
+      - crypto-net
 
   trading:
     container_name: trading-crypto
@@ -94,7 +96,8 @@ services:
       - MONGO_DB_URL=$MONGO_DB_URL
       - MONGO_PORT=$MONGO_PORT
       - TZ=$TIME_ZONE
-    network_mode: host
+    networks:
+      - crypto-net
 
   mongo:
     container_name: mongo-crypto
@@ -126,7 +129,8 @@ services:
     
     volumes:
       - ./mongodb/db:/data/db
-    network_mode: host
+    networks:
+      - crypto-net
 
   mongo-express:
     image: mongo-express
@@ -150,8 +154,8 @@ services:
       #ME_CONFIG_MONGODB_URL: mongodb://root:password@mongo:27017/
     depends_on:
       - mongo
-    network_mode: host
-
+    networks:
+        - crypto-net
 
   nginx:
     build:
@@ -168,7 +172,8 @@ services:
       - ./nginx/conf/default:/etc/nginx/sites-available/default
       - ./certbot/www:/var/www/certbot/:ro
       - ./certbot/conf/:/etc/nginx/ssl/:ro
-    network_mode: host
+    networks:
+      - crypto-net
 
 
   certbot:
@@ -178,3 +183,7 @@ services:
       - ./certbot/logs:/var/log/
       - ./certbot/conf/:/etc/letsencrypt/:rw
 
+  
+networks:
+  crypto-net:
+    driver: host
