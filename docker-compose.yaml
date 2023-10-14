@@ -186,4 +186,4 @@ services:
   
 networks:
   crypto-net:
-    driver: host
+    driver: bridge
