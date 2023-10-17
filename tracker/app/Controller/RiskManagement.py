@@ -31,6 +31,7 @@ class RiskManagement:
         self.GOLDEN_ZONE_UB = self.GOLDEN_ZONE + self.STEP
         self.LB_THRESHOLD = None
         self.UB_THRESHOLD = None
+        self.timeframe = timeframe
         # after this datetime, the transaction can be closed according to next_target and stop loss
         self.ending_timewindow = datetime.fromisoformat(id) + timedelta(minutes=int(timeframe))
         # at this datetime, the transaction will be closed in case it was not already completed
@@ -43,9 +44,13 @@ class RiskManagement:
 
         if self.GOLDEN_ZONE_BOOL:
             self.manageGoldenZoneChanges()
+            if now > self.close_timewindow:
+                self.SELL = True
 
         elif self.profit > self.GOLDEN_ZONE:
             self.manageGoldenZoneChanges()
+            if now > self.close_timewindow:
+                self.SELL = True
 
         elif now > self.close_timewindow:
             self.SELL = True
