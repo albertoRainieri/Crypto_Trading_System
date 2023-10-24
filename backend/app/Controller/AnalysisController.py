@@ -159,7 +159,7 @@ class AnalysisController:
                             response[risk_key][coin][start_timestamp][timeframe] = None
                     t2 = time()
                     time_spent = round_(t2-t1, 2)
-                    print(f'Time Spent: {time_spent}')
+                    #print(f'Time Spent: {time_spent}')
         return response
     
 
