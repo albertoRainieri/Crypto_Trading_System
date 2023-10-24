@@ -128,7 +128,7 @@ class AnalysisController:
 
         list_timeframes = {'price_%_1h': 60, 'price_%_3h': 180,
                            'price_%_6h': 360, 'price_%_1d': 1440,
-                           'price_%_2d': 1440*2, 'price_%_1h': 1440*3} #minutes
+                           'price_%_2d': 1440*2, 'price_%_3d': 1440*3} #minutes
 
 
         response = {}
