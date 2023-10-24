@@ -10,6 +10,7 @@ from constants.constants import *
 import json
 from datetime import datetime, timedelta
 import numpy as np
+from time import time
 
 
 class AnalysisController:
@@ -115,6 +116,51 @@ class AnalysisController:
         
         json_string = jsonable_encoder(dict_)
         return JSONResponse(content=json_string)
+
+    def get_price_changes(request):
+        '''
+        this route outputs the price changes from the past until now. 
+        The time intervals considered are those in the variable "list_timeframes"
+        '''
+
+        db = DatabaseConnection()
+        db_tracker = db.get_db(DATABASE_TRACKER)
+
+        list_timeframes = {'price_%_1h': 60, 'price_%_3h': 180,
+                           'price_%_6h': 360, 'price_%_1d': 1440,
+                           'price_%_2d': 1440*2, 'price_%_1h': 1440*3} #minutes
+
+
+        response = {}
+        for risk_key in request:
+            if risk_key not in response:
+                response[risk_key] = {}
+            for coin in request[risk_key]:
+                if coin not in response[risk_key]:
+                    response[risk_key][coin] = {}
+                for start_timestamp in request[risk_key][coin]:
+                    # get price at the event timestamp
+                    obj = list(db_tracker[coin].find({"_id": start_timestamp},{'_id': 0, 'price': 1}))
+                    price_start_timestamp = obj[0]['price']
+                    response[risk_key][coin][start_timestamp] = {}
+                    t1 = time()
+                    # get the prices in the past according to "list_timeframes"
+                    for timeframe in list_timeframes:
+                        x_time_ago = datetime.fromisoformat(start_timestamp) - timedelta(minutes=list_timeframes[timeframe])
+                        timestamp_start = (x_time_ago - timedelta(minutes=10)).isoformat()
+                        timestamp_end = (x_time_ago + timedelta(minutes=10)).isoformat()
+                        docs = list(db_tracker[coin].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}},{'_id': 0, 'price': 1}))
+                        price_list = [obj['price'] for obj in docs]
+
+                        # finally compute the price change with respect to the price at event start
+                        if len(docs) > 0:
+                            response[risk_key][coin][start_timestamp][timeframe] = round_((np.mean(price_list) - price_start_timestamp) / price_start_timestamp,4)
+                        else:
+                            response[risk_key][coin][start_timestamp][timeframe] = None
+                    t2 = time()
+                    time_spent = round_(t2-t1, 2)
+                    print(f'Time Spent: {time_spent}')
+        return response
     
 
     def getTimeseries(request):

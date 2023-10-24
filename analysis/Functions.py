@@ -16,7 +16,7 @@ from copy import copy
 from random import randint
 import shutil
 import re
-from Helpers import round_, get_volatility, data_preparation, retrieve_datetime_for_load_data, updateData_for_load_data, get_date_key, load_data, get_benchmark_info, get_dynamic_volume_avg, get_substring_between, load_analysis_json_info, updateAnalysisJson, pooled_standard_deviation, getsubstring_fromkey
+from Helpers import round_, get_volatility, data_preparation, retrieve_datetime_for_load_data, updateData_for_load_data, get_date_key, load_data, get_benchmark_info, get_dynamic_volume_avg, get_substring_between, load_analysis_json_info, updateAnalysisJson, pooled_standard_deviation, getsubstring_fromkey, sort_files_in_json_dir
 from sklearn.svm import SVR  # Support Vector Regression
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
@@ -802,6 +802,44 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
 
     return output, complete_info
 
+def plot_live_timeseries(risk_management_path, filter_live: bool = False, filter_best: float = False):
+    '''
+    This function plots the timeseries from a riskmanagement configuration and filters only the events older than the creation of the riskmanagement itself
+    '''
+    if filter_live:
+        risk_management_path_split = risk_management_path.split('-')
+        year = int(risk_management_path_split[1])
+        month = int(risk_management_path_split[2])
+        day = int(risk_management_path_split[3])
+        start_plot_datetime = datetime(year=year, month=month, day=day)
+    else:
+        start_plot_datetime = False
+
+    with open(risk_management_path, 'r') as file:
+        # Retrieve timeseries
+        risk_management_configuration = json.load(file)
+    
+    list_of_keys = risk_management_configuration['Dataframe']['keys']
+
+    for key in list_of_keys:
+        print("#######################")
+        print('Plotting :', key)
+        print("#######################")
+        print('')
+
+        key_json = key.replace(':', '_')
+        key_json = key_json.replace('/', '_')
+        path = ROOT_PATH + "/timeseries_json/"
+        file_path = path + key_json + '.json'
+        vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
+        fields = [vol_field, buy_vol_field, timeframe, buy_vol_value, vol_value]
+
+        with open(file_path, 'r') as file:
+            # Retrieve timeseries
+            timeseries = json.load(file)
+
+        
+        plotTimeseries(timeseries, fields, check_past=1440, plot=True, filter_start=start_plot_datetime, filter_best=filter_best)
 
 
 def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=False):
@@ -926,7 +964,7 @@ def get_event_info(observations, timestamp_start, vol_field, buy_vol_field):
     print('something went wrong "get_position_from_list_of_objects"')
     return None
 
-def plotTimeseries(timeseries, fields, check_past, plot):
+def plotTimeseries(timeseries, fields, check_past, plot, filter_start=False, filter_best=False):
 
     vol_field = fields[0]
     buy_vol_field = fields[1]
@@ -939,6 +977,11 @@ def plotTimeseries(timeseries, fields, check_past, plot):
         #print(coin)
         # iterate through each event of the coin
         for timestamp_start in list(timeseries[coin].keys()):
+            
+            # skip if you want to plot only live timeseries
+            if filter_start and datetime.fromisoformat(timestamp_start) < filter_start:
+                continue
+
             #print(timestamp_start)
             timeframe = timeseries[coin][timestamp_start]['statistics']['timeframe']
             timestamp_end = datetime.fromisoformat(timestamp_start) + timedelta(minutes=timeframe)
@@ -968,6 +1011,7 @@ def plotTimeseries(timeseries, fields, check_past, plot):
             min_price = (datetime.fromisoformat(timestamp_start), current_price)
 
             if check_past != False:
+                skip_timeseries = False
                 #print('1')
                 start_price = current_price
                 one_day_before_price = timeseries[coin][timestamp_start]['data'][0]['price']
@@ -1000,8 +1044,11 @@ def plotTimeseries(timeseries, fields, check_past, plot):
 
                     if final_price_price_flag and datetime.fromisoformat(obs['_id']) - datetime.fromisoformat(timestamp_start) > timedelta(minutes=timeframe):
                         final_performance_timeseries = round_((obs['price'] - start_price) / start_price,2)
+                        # skip timeseries if you want to filter only the best performance
+                        if filter_best and max_change < filter_best:
+                            skip_timeseries = True
                         final_price_price_flag = False
-                    
+                                            
                     
                     #print('3')
                     datetime_list.append(datetime.fromisoformat(obs['_id']))
@@ -1036,6 +1083,8 @@ def plotTimeseries(timeseries, fields, check_past, plot):
                         min_price = (datetime.fromisoformat(obs['_id']), obs['price'])
                         min_change = round_(((min_price[1] - start_price) / start_price)*100,2)
             
+            if skip_timeseries:
+                continue
             if plot:
                 print(f'Max price occurred at {max_price[0]}: {max_price[1]} ({max_change})')
                 print(f'Min price occurred at {min_price[0]}: {min_price[1]} ({min_change})')
@@ -1228,34 +1277,56 @@ def prepareOptimizedConfigurarionResults(results):
     exit_price_list = {}
     coin_list = {}
     early_sell = {}
-    price_1d_variation = {}
-    price_6h_variation = {}
-    price_3h_variation = {}
-    price_1h_variation = {}
+    price_variation_obj = {}
+    request = {}
 
     for risk_key in list(results.keys()):
+
+        if risk_key not in request:
+            request[risk_key] = {}
+
+        request = {}
         profit_list[risk_key] = []
         timestamp_exit_list[risk_key] = []
         buy_price_list[risk_key] = []
         exit_price_list[risk_key] = []
         coin_list[risk_key] = []
         early_sell[risk_key] = []
-        price_1d_variation[risk_key] = []
-        price_6h_variation[risk_key] = []
-        price_3h_variation[risk_key] = []
-        price_1h_variation[risk_key] = []
+        price_variation_obj[risk_key] = {'price_%_1h': [],'price_%_3h': [], 'price_%_6h': [],
+                                         'price_%_1d': [], 'price_%_2d': [], 'price_%_3d': [],  }
 
-        for start_timestamp in results[risk_key]:            
+        for start_timestamp in results[risk_key]:
+            coin = results[risk_key][start_timestamp][4]      
+
             profit_list[risk_key].append(results[risk_key][start_timestamp][0])
             timestamp_exit_list[risk_key].append(results[risk_key][start_timestamp][1])
             buy_price_list[risk_key].append(results[risk_key][start_timestamp][2])
             exit_price_list[risk_key].append(results[risk_key][start_timestamp][3])
-            coin_list[risk_key].append(results[risk_key][start_timestamp][4])
+            coin_list[risk_key].append(coin)
             early_sell[risk_key].append(results[risk_key][start_timestamp][5])
-            price_1d_variation[risk_key].append(results[risk_key][start_timestamp][6])
-            price_6h_variation[risk_key].append(results[risk_key][start_timestamp][7])
-            price_3h_variation[risk_key].append(results[risk_key][start_timestamp][8])
-            price_1h_variation[risk_key].append(results[risk_key][start_timestamp][9])
+
+            # prepping request for price changes
+            if coin not in request[risk_key]:
+                request[risk_key][coin] = []
+            request[risk_key][coin].append(start_timestamp)
+
+            # initialize price_variation_obj with None
+            for price_variation in price_variation[risk_key]:
+                price_variation_obj[risk_key][price_variation].append(None)
+
+            # preparing for getting for 2day and 3day price change
+            
+    #Finally make the request to the server for getting the price changes for each event.
+    # Then, define price_variation_obj
+    response = requests.post(url='http://algocrypto.com/analysis/get-pricechanges', json=request)
+    for risk_key in response:
+        for coin in response[risk_key]:
+            for start_timestamp in response[risk_key][coin]:
+                position = timestamp_exit_list[risk_key].index(start_timestamp)
+                for price_variation in  response[risk_key][coin][start_timestamp]:
+                    price_variation_obj[risk_key][price_variation][position] = response[risk_key][coin][start_timestamp][price_variation]
+            
+
 
     best_risk_key = ''
     best_profit = - 10
@@ -1287,8 +1358,9 @@ def prepareOptimizedConfigurarionResults(results):
     optimized_riskconfiguration_results = {'events': list(results[best_risk_key].keys()), 'gain': profit_list[best_risk_key], 'buy_price': buy_price_list[best_risk_key],
                          'exit_price': exit_price_list[best_risk_key],  'timestamp_exit': timestamp_exit_list[best_risk_key],
                            'coin': coin_list[best_risk_key], 'early_sell': early_sell[best_risk_key],
-                            'price_%_1d': price_1d_variation[risk_key], 'price_%_6h': price_6h_variation[risk_key],
-                            'price_%_3h': price_3h_variation[risk_key], 'price_%_1h': price_1h_variation[risk_key]}
+                           'price_%_3d': price_variation_obj[risk_key]['price_%_3d'], 'price_%_2d': price_variation_obj[risk_key]['price_%_2d'],
+                            'price_%_1d': price_variation_obj[risk_key]['price_%_1d'], 'price_%_6h': price_variation_obj[risk_key]['price_%_6h'],
+                            'price_%_3h': price_variation_obj[risk_key]['price_%_3h'], 'price_%_1h': price_variation_obj[risk_key]['price_%_1h']}
     
     return optimized_riskconfiguration_results, (n_events, best_profit, best_risk_key, best_profit_print, risk_key_df, profit_mean_list_df, profit_std_list_df, best_std_print)
     
@@ -1600,7 +1672,6 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
                     'mean_gain_all_configs': mean,
                     'median_gain_all_configs': median,
                     'std_gain_all_configs': std,
-
                 }}
         
 
@@ -2193,10 +2264,12 @@ def PriceVariation_analysis(df, model_type='svc'):
 
     # Predict
     y_pred = model.predict(X_test)
+    x_line = np.linspace(min(y_test), max(y_test), 100)
     mse = mean_squared_error(y_test, y_pred)
     print(f"Mean Squared Error: {mse}")
 
     plt.scatter(y_test, y_pred)
+    plt.plot(x_line, x_line, 'r--', label="x = y", linewidth=2)  # 'r--' creates a red dashed line
     plt.xlabel("Valori reali")
     plt.ylabel("Valori previsti")
     plt.title("Confronto tra valori reali e previsti")

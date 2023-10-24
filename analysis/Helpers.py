@@ -31,8 +31,14 @@ def get_volatility(dynamic_benchmark_info_coin, full_timestamp):
     correct_full_datetime = datetime.fromisoformat(full_timestamp) - timedelta(days=1)
     correct_full_timestamp = correct_full_datetime.isoformat()
     short_timestamp = correct_full_timestamp.split('T')[0]
+    while short_timestamp not in dynamic_benchmark_info_coin:
+        short_timestamp = ((correct_full_datetime - timedelta(days=1)).isoformat()).split('T')[0]
+        correct_full_datetime = correct_full_datetime - timedelta(days=1)
+        #print(short_timestamp)
+
     volatility =  int(dynamic_benchmark_info_coin[short_timestamp])
     return volatility
+
 
 def data_preparation(data, n_processes = 8):
     '''
@@ -534,3 +540,78 @@ def getsubstring_fromkey(key):
         timeframe = timeframe + key[idx]
 
     return vol, vol_value, buy_vol, buy_vol_value, timeframe
+
+
+def sort_files_in_json_dir():
+    # Directory containing the files
+    directory_path = "/Users/albertorainieri/Projects/Personal/analysis/json/"
+
+    # Define a regex pattern to extract the date
+    date_pattern = r"data-(\d{2})-(\d{2})-(\d{4})-(\d{2})-(\d{2}).json"
+
+    # List all files in the specified directory
+    file_list = os.listdir(directory_path)
+
+    # Create a list of tuples containing the file name and the extracted date
+    file_date_tuples = []
+    for file in file_list:
+        match = re.search(date_pattern, file)
+        if match:
+            day, month, year, hour, minute = match.groups()
+            file_date = (file, datetime(year=int(year), month=int(month), day=int(day), hour=int(hour), minute=int(minute)))
+            file_date_tuples.append(file_date)
+
+    # Sort the list of tuples based on the date
+    sorted_file_date_tuples = sorted(file_date_tuples, key=lambda x: x[1], reverse=True)
+
+    # Extract the sorted file names
+    sorted_file_name_tuple = [file_date[0] for file_date in sorted_file_date_tuples]
+
+    return sorted_file_name_tuple
+
+def update_optimized_results(optimized_results_path):
+
+    f = open(optimized_results_path, "r")
+    optimized_results_obj = json.loads(f.read())
+
+    request = {}
+
+    for risk_key in optimized_results_obj:
+        #initialize risk
+        if risk_key not in request:
+            request[risk_key] = {}
+        # iterate trough list of key "events" and take position "i" for getting "coin"
+        for event, i in zip(optimized_results_obj[risk_key]['events'], range(len(optimized_results_obj[risk_key]['events']))):
+            coin = optimized_results_obj[risk_key]['coin'][i]
+            # initialize coin
+            if coin not in request[risk_key]:
+                request[risk_key][coin] = []
+            # append start_timestamp
+            request[risk_key][coin].append(event)
+    
+
+    url = "http://localhost/analysis/get-pricechanges"
+    response = requests.post(url=url, json = request)
+    pricechanges = response.text
+    print(pricechanges)
+    return
+
+    for risk_key in optimized_results_obj:
+        #initialize 2d and 3d ago
+        if 'price_%_2d' not in optimized_results_obj[risk_key]:
+            optimized_results_obj[risk_key]['price_%_2d'] = [None] * len(optimized_results_obj[risk_key]['events'])
+            optimized_results_obj[risk_key]['price_%_3d'] = [None] * len(optimized_results_obj[risk_key]['events'])
+
+        for event in optimized_results_obj[risk_key]['events']:
+            position = optimized_results_obj[risk_key]['events'].index(event)
+            print(pricechanges[risk_key][coin])
+            # update
+            optimized_results_obj[risk_key]['price_%_1h'][position] = pricechanges[risk_key][coin][event]['price_%_1h']
+            optimized_results_obj[risk_key]['price_%_3h'][position] = pricechanges[risk_key][coin][event]['price_%_3h']
+            optimized_results_obj[risk_key]['price_%_6h'][position] = pricechanges[risk_key][coin][event]['price_%_6h']
+            optimized_results_obj[risk_key]['price_%_1d'][position] = pricechanges[risk_key][coin][event]['price_%_1d']
+            optimized_results_obj[risk_key]['price_%_2d'][position] = pricechanges[risk_key][coin][event]['price_%_2d']
+            optimized_results_obj[risk_key]['price_%_3d'][position] = pricechanges[risk_key][coin][event]['price_%_3d']
+
+
+    return optimized_results_obj

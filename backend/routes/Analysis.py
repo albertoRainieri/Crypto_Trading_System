@@ -37,3 +37,7 @@ async def riskmanagement_configuration(obj: dict = Body(...)):#, request: Reques
 @router.post("/user-configuration")
 async def user_configuration(obj: dict = Body(...)):#, request: Request = Depends(Authorization.get_current_active_user)):
     return AnalysisController.user_configuration(obj)
+
+@router.post("/get-pricechanges")
+async def get_price_changes(obj: dict = Body(...)):#, request: Request = Depends(Authorization.get_current_active_user)):
+    return AnalysisController.get_price_changes(obj)
