@@ -154,7 +154,7 @@ class AnalysisController:
 
                         # finally compute the price change with respect to the price at event start
                         if len(docs) > 0:
-                            response[risk_key][coin][start_timestamp][timeframe] = round_((np.mean(price_list) - price_start_timestamp) / price_start_timestamp,4)
+                            response[risk_key][coin][start_timestamp][timeframe] = round_((price_start_timestamp - np.mean(price_list)) / np.mean(price_list),4)
                         else:
                             response[risk_key][coin][start_timestamp][timeframe] = None
                     t2 = time()
