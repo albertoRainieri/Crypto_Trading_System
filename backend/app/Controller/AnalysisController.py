@@ -1,7 +1,7 @@
 import os,sys
 sys.path.insert(0,'../..')
 from database.DatabaseConnection import DatabaseConnection
-from app.Helpers.Helpers import round_, timer_func
+from app.Helpers.Helpers import round_, timer_func, getsubstring_fromkey
 import requests
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
@@ -119,47 +119,74 @@ class AnalysisController:
 
     def get_price_changes(request):
         '''
-        this route outputs the price changes from the past until now. 
+        this route outputs the price changes, volume and buy_volumes from the past until now. 
         The time intervals considered are those in the variable "list_timeframes"
         '''
 
         db = DatabaseConnection()
         db_tracker = db.get_db(DATABASE_TRACKER)
 
-        list_timeframes = {'price_%_1h': 60, 'price_%_3h': 180,
-                           'price_%_6h': 360, 'price_%_1d': 1440,
-                           'price_%_2d': 1440*2, 'price_%_3d': 1440*3} #minutes
+        # define the db columns and their corresponding time frames
+        list_timeframes = {'info_1h': 60, 'info_3h': 180,
+                           'info_6h': 360, 'info_12h': 720,
+                           'info_1d': 1440, 'info_2d': 1440*2,
+                           'info_3d': 1440*3,'info_7d': 1440*7} #minutes
 
 
         response = {}
         for risk_key in request:
             if risk_key not in response:
                 response[risk_key] = {}
+
+            # get vol and buy_vol field (db columns)
+            vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(risk_key)
+
             for coin in request[risk_key]:
                 if coin not in response[risk_key]:
                     response[risk_key][coin] = {}
                 for start_timestamp in request[risk_key][coin]:
-                    # get price at the event timestamp
+                    # get price, vol and buy_vol at the event timestamp
                     obj = list(db_tracker[coin].find({"_id": start_timestamp},{'_id': 0, 'price': 1}))
                     price_start_timestamp = obj[0]['price']
                     response[risk_key][coin][start_timestamp] = {}
-                    t1 = time()
-                    # get the prices in the past according to "list_timeframes"
+                    
+                    # get the prices, vol, and buy_vol in the past according to "list_timeframes"
                     for timeframe in list_timeframes:
+
+                        # set timestamp start and timestamp end for db query
                         x_time_ago = datetime.fromisoformat(start_timestamp) - timedelta(minutes=list_timeframes[timeframe])
                         timestamp_start = (x_time_ago - timedelta(minutes=10)).isoformat()
                         timestamp_end = (x_time_ago + timedelta(minutes=10)).isoformat()
-                        docs = list(db_tracker[coin].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}},{'_id': 0, 'price': 1}))
-                        price_list = [obj['price'] for obj in docs]
+                        
+                        # query the db
+                        docs = list(db_tracker[coin].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}},{'_id': 0, 'price': 1, vol_field: 1, buy_vol_field: 1}))
+                        
+                        # get price, vol and buy_vol from "docs" only if they are not None
+                        price_list = [obj['price'] for obj in docs if 'price' in obj and obj['price'] != None]
+                        vol_list = [obj[vol_field] for obj in docs if vol_field in obj and obj[vol_field] != None]
+                        buy_vol_list = [obj[buy_vol_field] for obj in docs if buy_vol_field in obj and obj[buy_vol_field] != None]
 
-                        # finally compute the price change with respect to the price at event start
+                        # finally compute the price change with respect to the price at event start. Compute also the mean for volume and buy_volume
                         if len(docs) > 0:
-                            response[risk_key][coin][start_timestamp][timeframe] = round_((price_start_timestamp - np.mean(price_list)) / np.mean(price_list),4)
+                            if len(price_list) > 0:
+                                price_change = round_((price_start_timestamp - np.mean(price_list)) / np.mean(price_list),4)
+                            else:
+                                price_change = None
+
+                            if len(vol_list) > 0:
+                                vol_change = round_(np.mean(vol_list),4)
+                            else:
+                                vol_change = None
+
+                            if len(buy_vol_list) > 0:
+                                buy_vol_change = round_(np.mean(buy_vol_list),4)
+                            else:
+                                buy_vol_change = None
+
+                            response[risk_key][coin][start_timestamp][timeframe] = (price_change, vol_change, buy_vol_change)
                         else:
-                            response[risk_key][coin][start_timestamp][timeframe] = None
-                    t2 = time()
-                    time_spent = round_(t2-t1, 2)
-                    #print(f'Time Spent: {time_spent}')
+                            response[risk_key][coin][start_timestamp][timeframe] = (None, None, None)
+
         return response
     
 
