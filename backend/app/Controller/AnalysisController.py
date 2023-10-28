@@ -181,9 +181,9 @@ class AnalysisController:
         # IMPORTANT:
         # KEYS MUST MATCH THOS OF "list_timeframes"
         rules_for_nan = {'info_1h': [0.5, 1.5, 2, 2.5], 'info_3h': [2,4,5], #hours
-                           'info_6h': [5,7,4,8,9,10], 'info_12h': [11,13,12,14,15], #hours
-                           'info_1d': [0.5, 1.5, 2], 'info_2d': [1.5, 2.5, 1, 3], # days
-                           'info_3d': [2.5, 3.5, 4, 4.5, 5],'info_7d': [6,8,5,9]} #days
+                           'info_6h': [5,7,4,8,9,10], 'info_12h': [11,13,10,14,15,16], #hours
+                           'info_1d': [0.85, 1.15, 0.7, 1.3, 1.5, 1.7, 2], 'info_2d': [1.85, 2.15, 1.7, 2.3, 1.5, 2.5, 2.75, 3], # days
+                           'info_3d': [2.85, 3.15, 2.7, 3.3, 2.5, 3.5, 3.75, 2.25, 4, 4.5, 5],'info_7d': [6.5 ,7.5, 6, 7, 5, 9]} #days
 
 
         response = {}
