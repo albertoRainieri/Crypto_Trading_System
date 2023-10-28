@@ -576,42 +576,62 @@ def update_optimized_results(optimized_results_path):
 
     request = {}
 
-    for risk_key in optimized_results_obj:
+    for event_key in optimized_results_obj:
         #initialize risk
-        if risk_key not in request:
-            request[risk_key] = {}
+        if event_key not in request:
+            request[event_key] = {}
         # iterate trough list of key "events" and take position "i" for getting "coin"
-        for event, i in zip(optimized_results_obj[risk_key]['events'], range(len(optimized_results_obj[risk_key]['events']))):
-            coin = optimized_results_obj[risk_key]['coin'][i]
+        for event, i in zip(optimized_results_obj[event_key]['events'], range(len(optimized_results_obj[event_key]['events']))):
+            coin = optimized_results_obj[event_key]['coin'][i]
             # initialize coin
-            if coin not in request[risk_key]:
-                request[risk_key][coin] = []
+            if coin not in request[event_key]:
+                request[event_key][coin] = []
             # append start_timestamp
-            request[risk_key][coin].append(event)
+            request[event_key][coin].append(event)
     
 
-    url = "http://localhost/analysis/get-pricechanges"
+    url = "https://algocrypto.eu/analysis/get-pricechanges"
     response = requests.post(url=url, json = request)
-    pricechanges = response.text
+    pricechanges = json.loads(response.text)
     print(pricechanges)
-    return
 
-    for risk_key in optimized_results_obj:
-        #initialize 2d and 3d ago
-        if 'price_%_2d' not in optimized_results_obj[risk_key]:
-            optimized_results_obj[risk_key]['price_%_2d'] = [None] * len(optimized_results_obj[risk_key]['events'])
-            optimized_results_obj[risk_key]['price_%_3d'] = [None] * len(optimized_results_obj[risk_key]['events'])
+    # get info keys defined in "list_timeframe" in the route get-pricechanges
+    random_event_key = list(pricechanges.keys())[0]
+    random_coin = list(pricechanges[random_event_key].keys())[0]
+    random_start_timestamp = list(pricechanges[random_event_key][random_coin].keys())[0]
+    info_keys = list(pricechanges[random_event_key][random_coin][random_start_timestamp].keys())
 
-        for event in optimized_results_obj[risk_key]['events']:
-            position = optimized_results_obj[risk_key]['events'].index(event)
-            print(pricechanges[risk_key][coin])
-            # update
-            optimized_results_obj[risk_key]['price_%_1h'][position] = pricechanges[risk_key][coin][event]['price_%_1h']
-            optimized_results_obj[risk_key]['price_%_3h'][position] = pricechanges[risk_key][coin][event]['price_%_3h']
-            optimized_results_obj[risk_key]['price_%_6h'][position] = pricechanges[risk_key][coin][event]['price_%_6h']
-            optimized_results_obj[risk_key]['price_%_1d'][position] = pricechanges[risk_key][coin][event]['price_%_1d']
-            optimized_results_obj[risk_key]['price_%_2d'][position] = pricechanges[risk_key][coin][event]['price_%_2d']
-            optimized_results_obj[risk_key]['price_%_3d'][position] = pricechanges[risk_key][coin][event]['price_%_3d']
+    for event_key in optimized_results_obj:
+        #initialize all info keys (price, vol and buy)
 
+        for info_key in info_keys:
+            timeframe = info_key.split('_')[-1] # example: "1h" or "3h" or ... "7d"
+            price_key = 'price_%_' + timeframe
+            vol_key = 'vol_' + timeframe
+            buy_vol_key = 'buy_' + timeframe
+
+            optimized_results_obj[event_key][price_key] = [None] * len(optimized_results_obj[event_key]['events'])
+            optimized_results_obj[event_key][vol_key] = [None] * len(optimized_results_obj[event_key]['events'])
+            optimized_results_obj[event_key][buy_vol_key] = [None] * len(optimized_results_obj[event_key]['events'])
+
+        # iterate through each event, take position and coin        
+        for event in optimized_results_obj[event_key]['events']:
+            position = optimized_results_obj[event_key]['events'].index(event)
+            coin = optimized_results_obj[event_key]['coin'][position]
+
+            # finally fill the value for each info_key of each event
+            for info_key in info_keys:
+                timeframe = info_key.split('_')[-1] # example: "1h" or "3h" or ... "7d"
+                price_key = 'price_%_' + timeframe
+                vol_key = 'vol_' + timeframe
+                buy_vol_key = 'buy_' + timeframe
+
+                optimized_results_obj[event_key][price_key][position] = pricechanges[event_key][coin][event][info_key][0]
+                optimized_results_obj[event_key][vol_key][position] = pricechanges[event_key][coin][event][info_key][1]
+                optimized_results_obj[event_key][buy_vol_key][position] = pricechanges[event_key][coin][event][info_key][2]
+
+    
+    with open(optimized_results_path, 'w') as outfile:
+            json.dump(optimized_results_obj, outfile)
 
     return optimized_results_obj

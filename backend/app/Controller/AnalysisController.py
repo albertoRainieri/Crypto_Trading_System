@@ -116,6 +116,41 @@ class AnalysisController:
         
         json_string = jsonable_encoder(dict_)
         return JSONResponse(content=json_string)
+    
+    def try_different_timeframe(start_timestamp, timeframe, rules_for_nan, db_tracker, coin, vol_field, buy_vol_field):
+        '''
+        this function is used exclusively by "get_price_changes" to limit the search of NaN values.
+        Indeed this function will search for the next better available data
+        '''
+        # check if timeframe is reference to days or hours
+        if timeframe[0] == 'd':
+            isDayReference = True
+        else:
+            isDayReference = False
+        
+        for different_timeframe in rules_for_nan[timeframe]:
+            # define minutes
+            if isDayReference:
+                minutes = different_timeframe * 1440 # days * minutes in 1 day
+            else:
+                minutes = different_timeframe * 60 # hours * minutes in 1 hour
+            
+            # set timestamp start and timestamp end for db query
+            x_time_ago = datetime.fromisoformat(start_timestamp) - timedelta(minutes=minutes)
+            timestamp_start = (x_time_ago - timedelta(minutes=10)).isoformat()
+            timestamp_end = (x_time_ago + timedelta(minutes=10)).isoformat()
+            
+            # query the db
+            docs = list(db_tracker[coin].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}},{'_id': 0, 'price': 1, vol_field: 1, buy_vol_field: 1}))
+            price_list = [obj['price'] for obj in docs if 'price' in obj and obj['price'] != None]
+            vol_list = [obj[vol_field] for obj in docs if vol_field in obj and obj[vol_field] != None]
+            buy_vol_list = [obj[buy_vol_field] for obj in docs if buy_vol_field in obj and obj[buy_vol_field] != None]
+
+            # if found an available timeframe, stop the loop and return the docs
+            if len(price_list) != 0 and len(vol_list) != 0 and len(buy_vol_list) != 0:
+                return docs
+        
+        return docs
 
     def get_price_changes(request):
         '''
@@ -131,6 +166,15 @@ class AnalysisController:
                            'info_6h': 360, 'info_12h': 720,
                            'info_1d': 1440, 'info_2d': 1440*2,
                            'info_3d': 1440*3,'info_7d': 1440*7} #minutes
+        
+        # define the rules, through which the nan values are replaced with values found with different timeframe.
+        # for example if "info_7d" is missing in db, then the next search will be of 6 days, if still it is nan values, then the search of 8 days will be performed and so on according to [6,8,5,9]
+        # IMPORTANT:
+        # KEYS MUST MATCH THOS OF "list_timeframes"
+        rules_for_nan = {'info_1h': [0.5, 1.5, 2, 2.5], 'info_3h': [2,4,5], #hours
+                           'info_6h': [5,7,4,8,9,10], 'info_12h': [11,13,12,14,15], #hours
+                           'info_1d': [0.5, 1.5, 2], 'info_2d': [1.5, 2.5, 1, 3], # days
+                           'info_3d': [2.5, 3.5, 4, 4.5, 5],'info_7d': [6,8,5,9]} #days
 
 
         response = {}
@@ -165,6 +209,13 @@ class AnalysisController:
                         price_list = [obj['price'] for obj in docs if 'price' in obj and obj['price'] != None]
                         vol_list = [obj[vol_field] for obj in docs if vol_field in obj and obj[vol_field] != None]
                         buy_vol_list = [obj[buy_vol_field] for obj in docs if buy_vol_field in obj and obj[buy_vol_field] != None]
+
+                        # if nan values are found, try different timeframes as per "rules_for_nan"
+                        if len(price_list) == 0 and len(vol_list) == 0 and len(buy_vol_list) == 0:
+                            docs = AnalysisController.try_different_timeframe(start_timestamp, timeframe, rules_for_nan, db_tracker, coin, vol_field, buy_vol_field)
+                            price_list = [obj['price'] for obj in docs if 'price' in obj and obj['price'] != None]
+                            vol_list = [obj[vol_field] for obj in docs if vol_field in obj and obj[vol_field] != None]
+                            buy_vol_list = [obj[buy_vol_field] for obj in docs if buy_vol_field in obj and obj[buy_vol_field] != None]
 
                         # finally compute the price change with respect to the price at event start. Compute also the mean for volume and buy_volume
                         if len(docs) > 0:

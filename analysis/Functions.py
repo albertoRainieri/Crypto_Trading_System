@@ -21,6 +21,14 @@ from sklearn.svm import SVR  # Support Vector Regression
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
+import xgboost as xgb
+from xgboost import XGBClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import confusion_matrix
+
+
+
 
 
 '''
@@ -1148,7 +1156,10 @@ def plotTimeseries(timeseries, fields, check_past, plot, filter_start=False, fil
 
 def RiskManagement_lowest_level(tmp, timeseries_json, coin, start_timestamp, risk_key,
                                  STEP_original, GOLDEN_ZONE_original, STEP_NOGOLDEN, timeframe, extratimeframe):
-    '''this is the lowest level in the Riskmanagemnt process'''
+    '''
+    this is the lowest level in the Riskmanagemnt process
+    It is called by "RiskManagement_multiprocessing"
+    '''
     
     STEP = copy(STEP_original)
     GOLDEN_ZONE = copy(GOLDEN_ZONE_original)
@@ -1173,13 +1184,14 @@ def RiskManagement_lowest_level(tmp, timeseries_json, coin, start_timestamp, ris
         if obs['_id'] == start_timestamp:
             SKIP = False
             initial_price = obs['price']
-            price_variation_1d = obs['price_%_1d']
-            price_variation_6h = obs['price_%_6h']
-            price_variation_3h = obs['price_%_3h']
-            price_variation_1h = obs['price_%_1h']
+            max_price = obs['price']
+            min_price = obs['price']
         
         if SKIP == False:
             current_price = obs['price']
+            max_price = max(obs['price'], max_price)
+            min_price = min(obs['price'], min_price)
+            
             current_change = (current_price - initial_price) / initial_price
 
             # if I'm already in GOLDEN ZONE, then just manage this scenario
@@ -1187,7 +1199,7 @@ def RiskManagement_lowest_level(tmp, timeseries_json, coin, start_timestamp, ris
                 SELL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL = manageGoldenZoneChanges(current_change, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL)
                 if SELL:
                     tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True,
-                                                        price_variation_1d, price_variation_6h, price_variation_3h, price_variation_1h)                        
+                                                        max_price, min_price)                        
                     break
 
             # check if price went above golden zone
@@ -1199,19 +1211,19 @@ def RiskManagement_lowest_level(tmp, timeseries_json, coin, start_timestamp, ris
                 SELL, LB_THRESHOLD, UB_THRESHOLD = manageUsualPriceChanges(current_change, LB_THRESHOLD, UB_THRESHOLD, STEP_NOGOLDEN)
                 if SELL:
                     tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True,
-                                                        price_variation_1d, price_variation_6h, price_variation_3h, price_variation_1h)
+                                                        max_price, min_price)
                     break
             
             #print(int(timeframe * extratimeframe))
             extra = int(timeframe * extratimeframe)
             if datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(start_timestamp) + timedelta(minutes=timeframe) + timedelta(minutes= extra):
                 tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, False,
-                                                    price_variation_1d, price_variation_6h, price_variation_3h, price_variation_1h)
+                                                    max_price, min_price)
                 break
                 
             elif obs_i == len(iterator):
                 tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, False,
-                                                    price_variation_1d, price_variation_6h, price_variation_3h, price_variation_1h)
+                                                    max_price, min_price)
                 
     return tmp
                                         
@@ -1269,65 +1281,51 @@ def RiskManagement_multiprocessing(timeseries_json, arg_i, EXTRATIMEFRAMES, STEP
 
         results.value = json.dumps(resp)
 
-def prepareOptimizedConfigurarionResults(results):
+def prepareOptimizedConfigurarionResults(results, event_key):
+    '''
+    This function takes as input the results of the RiskManagement process and prepares the output
+    for the optimized results in the "optimized_results_backup" directory
+    '''
 
+    # initialize variables
     profit_list = {}
     timestamp_exit_list = {}
     buy_price_list = {}
     exit_price_list = {}
     coin_list = {}
     early_sell = {}
-    price_variation_obj = {}
-    request = {}
+    max_price_list = {}
+    min_price_list = {}
+    start_timestamp_list = {}
 
+    # risk key is defined as
+    # risk_key = 'risk_golden_zone:' + str(GOLDEN_ZONE_original) + '_step:' + str(STEP_original) + '_step_no_golden:' + str(STEP_NOGOLDEN) + '_extratime:' + str(round_(extratimeframe,2))
+    # it is not the event_key
     for risk_key in list(results.keys()):
-
-        if risk_key not in request:
-            request[risk_key] = {}
-
-        request = {}
         profit_list[risk_key] = []
         timestamp_exit_list[risk_key] = []
         buy_price_list[risk_key] = []
         exit_price_list[risk_key] = []
         coin_list[risk_key] = []
         early_sell[risk_key] = []
-        price_variation_obj[risk_key] = {'price_%_1h': [],'price_%_3h': [], 'price_%_6h': [],
-                                         'price_%_1d': [], 'price_%_2d': [], 'price_%_3d': [],  }
+        max_price_list[risk_key] = []
+        min_price_list[risk_key] = []
+        start_timestamp_list[risk_key] = []
 
         for start_timestamp in results[risk_key]:
-            coin = results[risk_key][start_timestamp][4]      
-
+            coin = results[risk_key][start_timestamp][4]
             profit_list[risk_key].append(results[risk_key][start_timestamp][0])
             timestamp_exit_list[risk_key].append(results[risk_key][start_timestamp][1])
             buy_price_list[risk_key].append(results[risk_key][start_timestamp][2])
             exit_price_list[risk_key].append(results[risk_key][start_timestamp][3])
             coin_list[risk_key].append(coin)
             early_sell[risk_key].append(results[risk_key][start_timestamp][5])
-
-            # prepping request for price changes
-            if coin not in request[risk_key]:
-                request[risk_key][coin] = []
-            request[risk_key][coin].append(start_timestamp)
-
-            # initialize price_variation_obj with None
-            for price_variation in price_variation[risk_key]:
-                price_variation_obj[risk_key][price_variation].append(None)
-
-            # preparing for getting for 2day and 3day price change
+            max_price_list[risk_key].append(results[risk_key][start_timestamp][6])
+            min_price_list[risk_key].append(results[risk_key][start_timestamp][7])
             
-    #Finally make the request to the server for getting the price changes for each event.
-    # Then, define price_variation_obj
-    response = requests.post(url='http://algocrypto.com/analysis/get-pricechanges', json=request)
-    for risk_key in response:
-        for coin in response[risk_key]:
-            for start_timestamp in response[risk_key][coin]:
-                position = timestamp_exit_list[risk_key].index(start_timestamp)
-                for price_variation in  response[risk_key][coin][start_timestamp]:
-                    price_variation_obj[risk_key][price_variation][position] = response[risk_key][coin][start_timestamp][price_variation]
-            
+            start_timestamp_list[risk_key].append(start_timestamp)
 
-
+    # choose the best risk key
     best_risk_key = ''
     best_profit = - 10
 
@@ -1347,7 +1345,6 @@ def prepareOptimizedConfigurarionResults(results):
         n_events = len(profit_list[risk_key])
         profit_print = round_(profit*100,2)
 
-        #print(f'{risk_key}: Mean is {mean_print} % for {n_events} events')
         if profit > best_profit:
             best_profit = profit
             best_std = std
@@ -1355,17 +1352,71 @@ def prepareOptimizedConfigurarionResults(results):
             best_profit_print = round_(best_profit*100,2)
             best_std_print = round_(best_std*100,2)
     
+    #Finally make the request to the server for getting the price changes, volumes, buy_volumes history for each event.
+    # Then, define info_obj
+    # prepping request for price changes, we need event_key, coin and timestamp
+    request = {event_key: {}}
+    for coin, start_timestamp in zip(coin_list[best_risk_key], start_timestamp_list[best_risk_key]):
+        if coin not in request[event_key]:
+            request[event_key][coin] = []
+        request[event_key][coin].append(start_timestamp)
+
+    # make request to the server
+    response = requests.post(url='https://algocrypto.eu/analysis/get-pricechanges', json=request)
+    response = json.loads(response.text)
+
+    # assuming the info keys are equal for all events, get list of keys (timeframes) in this way
+    random_coin = list(response[event_key].keys())[0]
+    random_start_timestamp = list(response[event_key][random_coin].keys())[0]
+    info_keys = list(response[event_key][random_coin][random_start_timestamp].keys()) # info key example: [info_1h, info_3h, ..., info_7d]
+    
+    # initialize info_obj by creating a list of None values for each price_key, vol_key and buyvol_key
+    # price_key, vol_key and buyvol_key are extraced from "info_keys"
+    info_obj = {}
+    for info_key in info_keys:
+        timeframe = info_key.split('_')[-1] # example: "1h" or "3h" or ... "7d"
+        price_key = 'price_%_' + timeframe
+        vol_key = 'vol_' + timeframe
+        buy_vol_key = 'buy_' + timeframe
+        info_obj[price_key] = [None] * len(start_timestamp_list[best_risk_key])
+        info_obj[vol_key] = [None] * len(start_timestamp_list[best_risk_key])
+        info_obj[buy_vol_key] = [None] * len(start_timestamp_list[best_risk_key])
+
+    # fill "info_obj" (price changes, vol, buy_vol) according to the position of "start_timestamp_list" of the best resk key
+    for coin in response[event_key]:
+        for start_timestamp in response[event_key][coin]:
+            position = start_timestamp_list[best_risk_key].index(start_timestamp)
+            for info_key in info_keys:
+                timeframe = info_key.split('_')[-1]
+                price_key = 'price_%_' + timeframe
+                vol_key = 'vol_' + timeframe
+                buy_vol_key = 'buy_' + timeframe
+
+                # example of response[event_key][coin][start_timestamp][info_key] --> (0.02, 1.5, 0.5)
+                # the first element is the price change with respect to "timeframe" ago
+                # the second element is the volume registered "timeframe" ago
+                # the third element is the buy_volume registered "timeframe" ago
+
+                info_obj[price_key][position] = response[event_key][coin][start_timestamp][info_key][0]
+                info_obj[vol_key][position] = response[event_key][coin][start_timestamp][info_key][1]
+                info_obj[buy_vol_key][position] = response[event_key][coin][start_timestamp][info_key][2]
+    
     optimized_riskconfiguration_results = {'events': list(results[best_risk_key].keys()), 'gain': profit_list[best_risk_key], 'buy_price': buy_price_list[best_risk_key],
                          'exit_price': exit_price_list[best_risk_key],  'timestamp_exit': timestamp_exit_list[best_risk_key],
-                           'coin': coin_list[best_risk_key], 'early_sell': early_sell[best_risk_key],
-                           'price_%_3d': price_variation_obj[risk_key]['price_%_3d'], 'price_%_2d': price_variation_obj[risk_key]['price_%_2d'],
-                            'price_%_1d': price_variation_obj[risk_key]['price_%_1d'], 'price_%_6h': price_variation_obj[risk_key]['price_%_6h'],
-                            'price_%_3h': price_variation_obj[risk_key]['price_%_3h'], 'price_%_1h': price_variation_obj[risk_key]['price_%_1h']}
+                           'coin': coin_list[best_risk_key], 'early_sell': early_sell[best_risk_key], 'max_price': max_price_list[best_risk_key], 'min_price': min_price_list[best_risk_key]}
+    
+    # update optimized_riskconfiguration_results with the lists of "info_obj"
+    for info_key in info_obj:
+        optimized_riskconfiguration_results[info_key] = info_obj[info_key]
     
     return optimized_riskconfiguration_results, (n_events, best_profit, best_risk_key, best_profit_print, risk_key_df, profit_mean_list_df, profit_std_list_df, best_std_print)
     
 def RiskManagement(key, early_validation, investment_per_event=100):
 
+    '''
+    This function is called by RiskConfiguration.
+    This function focuses on one key event and prepares for multiprocessing
+    '''
     EXTRATIMEFRAMES = [0]
     STEPS_NOGOLDEN = [0.01]
     STEPS_GOLDEN = [0.05, 0.075, 0.1, 0.15, 0.2, 0.25, 0.3]
@@ -1405,7 +1456,9 @@ def RiskManagement(key, early_validation, investment_per_event=100):
 
     # split data
     results = json.loads(results.value)
-    optimized_riskconfiguration_results, other_vars = prepareOptimizedConfigurarionResults(results)
+    optimized_riskconfiguration_results, other_vars = prepareOptimizedConfigurarionResults(results, key)
+    # with open('tmp.json', 'w') as outfile:
+    #     json.dump(optimized_riskconfiguration_results, outfile)
 
     n_events = other_vars[0]
     best_profit = other_vars[1]
@@ -1615,6 +1668,8 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
     This functions has the objective to define the best risk configuration for a selected number of keys.
     "download_show_output" function will provide the input
     the riskmanagement_configuration will be used during the live trading for optimization /risk management
+
+    this function is called by "earlyValidation"
     '''
     t1 = time()
     keys_list = list(info.keys())
@@ -1911,14 +1966,14 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
             analysis_json = analysis_json_dict['data']
 
 
-    # load optimized results
+    # Start OPTIMIZED ANALYSIS
     if OPTIMIZED:
         print('OPTIMIZED ANALYSIS')
         path_split = riskmanagement_path.split('riskmanagement')
         corresponding_optimized_results_suffix = path_split[-1]
         optimized_results_json_path = ROOT_PATH + "/optimized_results_backup/optimized_results" + corresponding_optimized_results_suffix
 
-        
+        # load optimized results
         if os.path.exists(optimized_results_json_path):
             # retrieve optimized_results_dict
             with open(optimized_results_json_path, 'r') as file:
@@ -1933,12 +1988,17 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
             
             analysis_json = {}
 
-            print(info.keys())
-            # UPDATE OPTIMIZED_RESULTS_DICT
-
             # Loading Data
             print('Loading data from analysis.json')
 
+            # get keys for price change, vol and buy_vol
+            random_key = list(optimized_results_dict.keys())[0]
+            price_keys = [key for key in list(optimized_results_dict[random_key].keys()) if 'price_%' in key]
+            vol_keys = [key for key in list(optimized_results_dict[random_key].keys()) if 'vol' in key]
+            buy_vol_keys = [key for key in list(optimized_results_dict[random_key].keys()) if 'buy' in key]
+            price_vol_buy_vol_keys = price_keys + vol_keys + buy_vol_keys
+
+            # iterate through each event key and update if needed
             for event_key in optimized_results_dict:
                 new_optimized_results = {event_key: {}}
                 vol, vol_value, buy_vol, buy_vol_value, timeframe = getsubstring_fromkey(event_key)
@@ -1981,20 +2041,13 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
                     if len(new_optimized_results[event_key]) > 0:
                         print('Updating optimized_results_configuration. def prepareOptimizedConfigurarionResults')
                         print(event_key)
-                        new_optimized_riskconfiguration_results, other_vars = prepareOptimizedConfigurarionResults(new_optimized_results)
-                        print(new_optimized_riskconfiguration_results)
-                        optimized_results_dict[event_key]['gain'] += new_optimized_riskconfiguration_results['gain']
-                        optimized_results_dict[event_key]['events'] += new_optimized_riskconfiguration_results['events']
-                        optimized_results_dict[event_key]['buy_price'] += new_optimized_riskconfiguration_results['buy_price']
-                        optimized_results_dict[event_key]['exit_price'] += new_optimized_riskconfiguration_results['exit_price']
-                        optimized_results_dict[event_key]['timestamp_exit'] += new_optimized_riskconfiguration_results['timestamp_exit']
-                        optimized_results_dict[event_key]['coin'] += new_optimized_riskconfiguration_results['coin']
-                        optimized_results_dict[event_key]['early_sell'] += new_optimized_riskconfiguration_results['early_sell']
-                        optimized_results_dict[event_key]['price_%_1d'] += new_optimized_riskconfiguration_results['price_%_1d']
-                        optimized_results_dict[event_key]['price_%_6h'] += new_optimized_riskconfiguration_results['price_%_6h']
-                        optimized_results_dict[event_key]['price_%_3h'] += new_optimized_riskconfiguration_results['price_%_3h']
-                        optimized_results_dict[event_key]['price_%_1h'] += new_optimized_riskconfiguration_results['price_%_1h']
+                        new_optimized_riskconfiguration_results, other_vars = prepareOptimizedConfigurarionResults(new_optimized_results, event_key)
+                        
+                        
 
+                        # update optimized_results_dict
+                        for info_key in new_optimized_riskconfiguration_results:
+                            optimized_results_dict[event_key][info_key] += new_optimized_riskconfiguration_results[info_key]
                     else:
                         print(f'No need to update optimized_results for {event_key}')
 
@@ -2007,12 +2060,13 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
                                     'mean': optimized_results_dict[event_key]['gain'][iterator],
                                     'buy_price': optimized_results_dict[event_key]['buy_price'][iterator],
                                     'exit_price': optimized_results_dict[event_key]['exit_price'][iterator],
+                                    'max_price': optimized_results_dict[event_key]['max_price'][iterator],
+                                    'min_price': optimized_results_dict[event_key]['min_price'][iterator],
                                     'timestamp_exit': optimized_results_dict[event_key]['timestamp_exit'][iterator],
-                                    'price_%_1d': optimized_results_dict[event_key]['price_%_1d'][iterator],
-                                    'price_%_6h': optimized_results_dict[event_key]['price_%_6h'][iterator],
-                                    'price_%_3h': optimized_results_dict[event_key]['price_%_3h'][iterator],
-                                    'price_%_1h': optimized_results_dict[event_key]['price_%_1h'][iterator],
                                     'std': 0}
+                    
+                    for price_vol_buy_vol_key in price_vol_buy_vol_keys:
+                        doc_to_add[price_vol_buy_vol_key] = optimized_results_dict[event_key][price_vol_buy_vol_key][iterator]
                     
                     coin = optimized_results_dict[event_key]['coin'][iterator]
                     if coin not in analysis_json[event_key]['info']:
@@ -2106,15 +2160,12 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
         start_analysis_i = len(timeseries_info[event_key]) - 1
 
         if OPTIMIZED:
-            price_variation_1d_list = []
-            price_variation_6h_list = []
-            price_variation_3h_list = []
-            price_variation_1h_list = []
             buy_price_list = []
             exit_price_list = []
             timestamp_exit_list = []
-            
-
+            max_price_list = []
+            min_price_list = []
+            info_obj = {}
 
         # compute each timeseries
         for event, i in zip(timeseries_info[event_key], range(len(timeseries_info[event_key]))):
@@ -2153,13 +2204,18 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
             timestamp_timeseries.append(event['event'])
 
             if OPTIMIZED:
-                price_variation_1d_list.append(event['price_%_1d'])
-                price_variation_6h_list.append(event['price_%_6h'])
-                price_variation_3h_list.append(event['price_%_3h'])
-                price_variation_1h_list.append(event['price_%_1h'])
+                # add all fields related to price_change, volume and buy_volume
+                for info_key in price_vol_buy_vol_keys:
+                    if info_key not in info_obj:
+                        info_obj[info_key] = []
+                    info_obj[info_key].append(event[info_key])
+                
+                # add the following fields
                 buy_price_list.append(event['buy_price'])
                 exit_price_list.append(event['exit_price'])
                 timestamp_exit_list.append(event['timestamp_exit'])
+                max_price_list.append(event['max_price'])
+                min_price_list.append(event['min_price'])
 
         upper_bound = np.array(mean_timeseries) + np.array(std_timeseries)
         lower_bound = np.array(mean_timeseries) - np.array(std_timeseries)
@@ -2188,16 +2244,20 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
         if event_key == 'total':
             doc_df1 = {'event': timestamp_timeseries, 'mean_series': mean_timeseries, 'mean_event': mean_list, 'balance': balance_account, 'coin': coin_list, 'event_key': event_key_list}
             if OPTIMIZED:
-                doc_df1['price_%_1d'] = price_variation_1d_list
-                doc_df1['price_%_6h'] = price_variation_6h_list
-                doc_df1['price_%_3h'] = price_variation_3h_list
-                doc_df1['price_%_1h'] = price_variation_1h_list
                 doc_df1['buy_price'] = buy_price_list
                 doc_df1['exit_price'] = exit_price_list
                 doc_df1['timestamp_exit'] = timestamp_exit_list
+                doc_df1['max_price'] = max_price_list
+                doc_df1['min_price'] = min_price_list
+
+                # add the fields related to price_changes, volumes and buy_volumes
+                for info_key in info_obj:
+                    doc_df1[info_key] = info_obj[info_key]
+                
+            with open('tmp.json', 'w') as outfile:
+                json.dump(doc_df1, outfile)
 
             df1 = pd.DataFrame(doc_df1)
-
                                 
             total_performance = round_(np.mean(mean_list)*100,2)
             n_events_total_performance = len(mean_list)
@@ -2228,7 +2288,7 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
 def PriceVariation_analysis(df, model_type='svc'):
 
     # Identify Decision and Output variables
-    decision_variables = df[['price_%_1d', 'price_%_6h', 'price_%_3h', 'price_%_1h']]
+    decision_variables = df[['price_%_3d', 'price_%_2d', 'price_%_1d', 'price_%_6h', 'price_%_3h', 'price_%_1h']]
     output_variable = np.array(df['mean_event'])
 
     # Filter out NaN values
@@ -2244,11 +2304,39 @@ def PriceVariation_analysis(df, model_type='svc'):
 
     # Select X and y
     X = X_withnan[~np.array(nan_mask_y)]
-    y = output_variable[~np.array(nan_mask_y)]  
+    y = output_variable[~np.array(nan_mask_y)]
+    
 
     # Start Training
     random_state = randint(0,len(y))
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=random_state)
+    X_train, X_test, y_train_real, y_test_real = train_test_split(X, y, test_size=0.2, random_state=random_state)
+
+    # print(y_train)
+    # print(y_test)
+
+    classifier = {'1': (-1,-0.4), '2': (-0.4,-0.2), '3': (-0.2,-0.1), '4': (-0.1,0),
+                  '5': (0,0.1), '6':(0.1,0.2), '7':(0.2,0.4), '8': (0.4,3)}
+    
+    y_train = []
+    y_test = []
+    
+    # encode y_test and y_train
+    for y, i in zip(y_train_real, range(len(y_train_real))):
+        for cl_key in classifier:
+            if y >= classifier[cl_key][0] and y < classifier[cl_key][1]:
+                y_train.append(int(cl_key))
+                break
+
+    for y, i in zip(y_test_real, range(len(y_test_real))):
+        for cl_key in classifier:
+            if y >= classifier[cl_key][0] and y < classifier[cl_key][1]:
+                y_test.append(int(cl_key))
+                break
+    
+    print(y_test)
+    le = LabelEncoder()
+    y_train = le.fit_transform(y_train)
+
 
     # Fit Linear Regression
     if model_type == 'linear_regression':
@@ -2259,11 +2347,26 @@ def PriceVariation_analysis(df, model_type='svc'):
         print('SVC Model')
         model = SVR(kernel='rbf')  # Puoi scegliere il kernel desiderato
         model.fit(X_train, y_train)
+    elif model_type == 'xgboost':
+        model = XGBClassifier(n_estimators=1000,
+                     max_depth=5,
+                     max_leaves=64,
+                     eta=0.1,
+                     reg_lambda=0,
+                     tree_method='hist',
+                     eval_metric='logloss',
+                     use_label_encoder=False,
+                     random_state=1000,
+                     n_jobs=-1)
 
-    # Addestra il modello
+        model.fit(X_train,y_train)
 
     # Predict
     y_pred = model.predict(X_test)
+    y_pred = le.inverse_transform(y_pred)
+
+    print(y_test)
+    print(y_pred)
     x_line = np.linspace(min(y_test), max(y_test), 100)
     mse = mean_squared_error(y_test, y_pred)
     print(f"Mean Squared Error: {mse}")
@@ -2274,4 +2377,9 @@ def PriceVariation_analysis(df, model_type='svc'):
     plt.ylabel("Valori previsti")
     plt.title("Confronto tra valori reali e previsti")
     plt.show()
+
+
+    cm = confusion_matrix(y_test, y_pred)
+    print(cm)
+    accuracy_score(y_test, y_pred)
 
