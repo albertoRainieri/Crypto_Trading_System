@@ -1364,6 +1364,21 @@ def prepareOptimizedConfigurarionResults(results, event_key):
     # make request to the server
     response = requests.post(url='https://algocrypto.eu/analysis/get-pricechanges', json=request)
     response = json.loads(response.text)
+    response = response['data']
+
+    # msg shows all nan values replaced with different timeframes
+    msg = response['msg']
+    if len(msg) > 0:
+        text = '\n'.join(msg)
+        # Specify the file path where you want to save the text
+        now_isoformat = datetime.now().isoformat().split('.')[0]
+        file_path = ROOT_PATH + "/logs/" + now_isoformat + '-nanreplaced.txt'
+        print('NaN values detected, check this path ', file_path)
+
+        # Open the file for writing
+        with open(file_path, "w") as file:
+            # Write the text to the file
+            file.write(text)
 
     # assuming the info keys are equal for all events, get list of keys (timeframes) in this way
     random_coin = list(response[event_key].keys())[0]

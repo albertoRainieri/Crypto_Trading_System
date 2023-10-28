@@ -117,7 +117,7 @@ class AnalysisController:
         json_string = jsonable_encoder(dict_)
         return JSONResponse(content=json_string)
     
-    def try_different_timeframe(start_timestamp, timeframe, rules_for_nan, db_tracker, coin, vol_field, buy_vol_field):
+    def try_different_timeframe(start_timestamp, timeframe, rules_for_nan, db_tracker, coin, vol_field, buy_vol_field, log_nan_replaced):
         '''
         this function is used exclusively by "get_price_changes" to limit the search of NaN values.
         Indeed this function will search for the next better available data
@@ -148,9 +148,18 @@ class AnalysisController:
 
             # if found an available timeframe, stop the loop and return the docs
             if len(price_list) != 0 and len(vol_list) != 0 and len(buy_vol_list) != 0:
-                return docs
+                if isDayReference:
+                    new_timeframe = 'info_' + str(different_timeframe) + 'd'
+                else:
+                    new_timeframe = 'info_' + str(different_timeframe) + 'h'
+
+                msg = f'-{start_timestamp} - {coin}: {timeframe} is replaced with {new_timeframe}'
+                log_nan_replaced += [msg]
+                return docs, log_nan_replaced
         
-        return docs
+        msg = f'-{start_timestamp} - {coin}: CANNOT REPLACE ALL NAN VALUES'
+        log_nan_replaced += [msg]
+        return docs, log_nan_replaced
 
     def get_price_changes(request):
         '''
@@ -178,6 +187,8 @@ class AnalysisController:
 
 
         response = {}
+        log_nan_replaced = []
+
         for risk_key in request:
             if risk_key not in response:
                 response[risk_key] = {}
@@ -212,7 +223,7 @@ class AnalysisController:
 
                         # if nan values are found, try different timeframes as per "rules_for_nan"
                         if len(price_list) == 0 and len(vol_list) == 0 and len(buy_vol_list) == 0:
-                            docs = AnalysisController.try_different_timeframe(start_timestamp, timeframe, rules_for_nan, db_tracker, coin, vol_field, buy_vol_field)
+                            docs, log_nan_replaced = AnalysisController.try_different_timeframe(start_timestamp, timeframe, rules_for_nan, db_tracker, coin, vol_field, buy_vol_field, log_nan_replaced)
                             price_list = [obj['price'] for obj in docs if 'price' in obj and obj['price'] != None]
                             vol_list = [obj[vol_field] for obj in docs if vol_field in obj and obj[vol_field] != None]
                             buy_vol_list = [obj[buy_vol_field] for obj in docs if buy_vol_field in obj and obj[buy_vol_field] != None]
@@ -238,7 +249,8 @@ class AnalysisController:
                         else:
                             response[risk_key][coin][start_timestamp][timeframe] = (None, None, None)
 
-        return response
+        final_response = {'data': response, 'msg': log_nan_replaced}
+        return final_response
     
 
     def getTimeseries(request):
