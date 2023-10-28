@@ -117,13 +117,13 @@ class AnalysisController:
         json_string = jsonable_encoder(dict_)
         return JSONResponse(content=json_string)
     
-    def try_different_timeframe(start_timestamp, timeframe, rules_for_nan, db_tracker, coin, vol_field, buy_vol_field, log_nan_replaced):
+    def try_different_timeframe(start_timestamp, timeframe, rules_for_nan, db_tracker, coin, vol_field, buy_vol_field, event_key, log_nan_replaced):
         '''
         this function is used exclusively by "get_price_changes" to limit the search of NaN values.
         Indeed this function will search for the next better available data
         '''
         # check if timeframe is reference to days or hours
-        if timeframe[0] == 'd':
+        if timeframe[-1] == 'd':
             isDayReference = True
         else:
             isDayReference = False
@@ -153,11 +153,11 @@ class AnalysisController:
                 else:
                     new_timeframe = 'info_' + str(different_timeframe) + 'h'
 
-                msg = f'-{start_timestamp} - {coin}: {timeframe} is replaced with {new_timeframe}'
+                msg = f'-{start_timestamp} - {coin}: {timeframe} is replaced with {new_timeframe} - {event_key}'
                 log_nan_replaced += [msg]
                 return docs, log_nan_replaced
         
-        msg = f'-{start_timestamp} - {coin}: CANNOT REPLACE ALL NAN VALUES'
+        msg = f'-{start_timestamp} - {coin}: CANNOT REPLACE ALL NAN VALUES - {event_key}'
         log_nan_replaced += [msg]
         return docs, log_nan_replaced
 
@@ -189,21 +189,21 @@ class AnalysisController:
         response = {}
         log_nan_replaced = []
 
-        for risk_key in request:
-            if risk_key not in response:
-                response[risk_key] = {}
+        for event_key in request:
+            if event_key not in response:
+                response[event_key] = {}
 
             # get vol and buy_vol field (db columns)
-            vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(risk_key)
+            vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(event_key)
 
-            for coin in request[risk_key]:
-                if coin not in response[risk_key]:
-                    response[risk_key][coin] = {}
-                for start_timestamp in request[risk_key][coin]:
+            for coin in request[event_key]:
+                if coin not in response[event_key]:
+                    response[event_key][coin] = {}
+                for start_timestamp in request[event_key][coin]:
                     # get price, vol and buy_vol at the event timestamp
                     obj = list(db_tracker[coin].find({"_id": start_timestamp},{'_id': 0, 'price': 1}))
                     price_start_timestamp = obj[0]['price']
-                    response[risk_key][coin][start_timestamp] = {}
+                    response[event_key][coin][start_timestamp] = {}
                     
                     # get the prices, vol, and buy_vol in the past according to "list_timeframes"
                     for timeframe in list_timeframes:
@@ -223,7 +223,7 @@ class AnalysisController:
 
                         # if nan values are found, try different timeframes as per "rules_for_nan"
                         if len(price_list) == 0 and len(vol_list) == 0 and len(buy_vol_list) == 0:
-                            docs, log_nan_replaced = AnalysisController.try_different_timeframe(start_timestamp, timeframe, rules_for_nan, db_tracker, coin, vol_field, buy_vol_field, log_nan_replaced)
+                            docs, log_nan_replaced = AnalysisController.try_different_timeframe(start_timestamp, timeframe, rules_for_nan, db_tracker, coin, vol_field, buy_vol_field, event_key,log_nan_replaced)
                             price_list = [obj['price'] for obj in docs if 'price' in obj and obj['price'] != None]
                             vol_list = [obj[vol_field] for obj in docs if vol_field in obj and obj[vol_field] != None]
                             buy_vol_list = [obj[buy_vol_field] for obj in docs if buy_vol_field in obj and obj[buy_vol_field] != None]
@@ -245,9 +245,9 @@ class AnalysisController:
                             else:
                                 buy_vol_change = None
 
-                            response[risk_key][coin][start_timestamp][timeframe] = (price_change, vol_change, buy_vol_change)
+                            response[event_key][coin][start_timestamp][timeframe] = (price_change, vol_change, buy_vol_change)
                         else:
-                            response[risk_key][coin][start_timestamp][timeframe] = (None, None, None)
+                            response[event_key][coin][start_timestamp][timeframe] = (None, None, None)
 
         final_response = {'data': response, 'msg': log_nan_replaced}
         return final_response
