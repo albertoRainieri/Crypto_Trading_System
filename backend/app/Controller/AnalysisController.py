@@ -210,8 +210,8 @@ class AnalysisController:
 
                         # set timestamp start and timestamp end for db query
                         x_time_ago = datetime.fromisoformat(start_timestamp) - timedelta(minutes=list_timeframes[timeframe])
-                        timestamp_start = (x_time_ago - timedelta(minutes=10)).isoformat()
-                        timestamp_end = (x_time_ago + timedelta(minutes=10)).isoformat()
+                        timestamp_start = (x_time_ago - timedelta(minutes=5)).isoformat()
+                        timestamp_end = (x_time_ago + timedelta(minutes=5)).isoformat()
                         
                         # query the db
                         docs = list(db_tracker[coin].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}},{'_id': 0, 'price': 1, vol_field: 1, buy_vol_field: 1}))
