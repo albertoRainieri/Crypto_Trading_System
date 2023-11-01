@@ -47,19 +47,23 @@ def getsubstring_fromkey(key):
     # get vol_value
     vol_value = key.split(vol + ':')[-1].split('/timeframe')[0]
 
-
-
-
     # get timeframe value
     # initializing substrings
     sub1 = "timeframe"
     sub2 = "/vlty"
     # getting index of substrings
     idx1 = key.index(sub1)
-    idx2 = key.index(sub2)
-    timeframe = ''
-    # getting elements in between
-    for idx in range(idx1 + len(sub1) + 1, idx2):
-        timeframe = timeframe + key[idx]
+
+    # in case keys are grouped by volatility
+    try:
+        idx2 = key.index(sub2)
+        timeframe = ''
+        # getting elements in between
+        for idx in range(idx1 + len(sub1) + 1, idx2):
+            timeframe = timeframe + key[idx]
+    # in case keys are NOT grouped by volatility
+    except:
+        timeframe = key.split('timeframe:')[-1]
+        timeframe = timeframe[:-1]
 
     return vol, vol_value, buy_vol, buy_vol_value, timeframe
