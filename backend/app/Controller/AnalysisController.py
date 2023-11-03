@@ -123,17 +123,22 @@ class AnalysisController:
         Indeed this function will search for the next better available data
         '''
         # check if timeframe is reference to days or hours
+        # 1== Day; 2==Hour, 3==minute
         if timeframe[-1] == 'd':
-            isDayReference = True
+            isDayHourMinute = 1
+        elif timeframe[-1] == 'h':
+            isDayHourMinute = 2
         else:
-            isDayReference = False
+            isDayHourMinute = 3
         
         for different_timeframe in rules_for_nan[timeframe]:
             # define minutes
-            if isDayReference:
+            if isDayHourMinute==1:
                 minutes = different_timeframe * 1440 # days * minutes in 1 day
-            else:
+            elif isDayHourMinute==2:
                 minutes = different_timeframe * 60 # hours * minutes in 1 hour
+            else:
+                minutes = different_timeframe #  minutes
             
             # set timestamp start and timestamp end for db query
             x_time_ago = datetime.fromisoformat(start_timestamp) - timedelta(minutes=minutes)
@@ -148,10 +153,12 @@ class AnalysisController:
 
             # if found an available timeframe, stop the loop and return the docs
             if len(price_list) != 0 and len(vol_list) != 0 and len(buy_vol_list) != 0:
-                if isDayReference:
+                if isDayHourMinute == 1:
                     new_timeframe = 'info_' + str(different_timeframe) + 'd'
-                else:
+                elif isDayHourMinute == 2:
                     new_timeframe = 'info_' + str(different_timeframe) + 'h'
+                else:
+                    new_timeframe = 'info_' + str(different_timeframe) + 'm'
 
                 msg = f'-{start_timestamp} - {coin}: {timeframe} is replaced with {new_timeframe} - {event_key}'
                 log_nan_replaced += [msg]
@@ -181,7 +188,7 @@ class AnalysisController:
         # for example if "info_7d" is missing in db, then the next search will be of 6 days, if still it is nan values, then the search of 8 days will be performed and so on according to [6,8,5,9]
         # IMPORTANT:
         # KEYS MUST MATCH THOS OF "list_timeframes"
-        rules_for_nan = {'info_5m': [], 'info_15m': [], 'info_30m': [],
+        rules_for_nan = {'info_5m': [7,8,9], 'info_15m': [13,17,11,19], 'info_30m': [28,32,26,34],
                          'info_1h': [0.5, 1.5, 2, 2.5], 'info_2h': [1.5, 2.5, 1, 3, 3.5], 'info_3h': [2,4,5], #hours
                            'info_6h': [5,7,4,8,9,10], 'info_12h': [11,13,10,14,15,16], 'info_18h': [17, 19, 16, 20, 16, 21], #hours
                            'info_1d': [0.85, 1.15, 0.7, 1.3, 1.5, 1.7, 2], 'info_2d': [1.85, 2.15, 1.7, 2.3, 1.5, 2.5, 2.75, 3],
