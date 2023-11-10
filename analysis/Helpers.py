@@ -16,8 +16,19 @@ from copy import copy
 from random import randint
 import shutil
 import re
+import xgboost as xgb
+from xgboost import XGBClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import confusion_matrix
+from typing import Literal
+from sklearn.preprocessing import StandardScaler
+from functools import reduce
+
+
 
 ROOT_PATH = os.getcwd()
+TargetVariable1 = Literal["mean", "max", "min"]
 
 
 def round_(number, decimal):
@@ -533,11 +544,18 @@ def getsubstring_fromkey(key):
     sub2 = "/vlty"
     # getting index of substrings
     idx1 = key.index(sub1)
-    idx2 = key.index(sub2)
-    timeframe = ''
-    # getting elements in between
-    for idx in range(idx1 + len(sub1) + 1, idx2):
-        timeframe = timeframe + key[idx]
+
+    # in case keys are grouped by volatility
+    try:
+        idx2 = key.index(sub2)
+        timeframe = ''
+        # getting elements in between
+        for idx in range(idx1 + len(sub1) + 1, idx2):
+            timeframe = timeframe + key[idx]
+    # in case keys are NOT grouped by volatility
+    except:
+        timeframe = key.split('timeframe:')[-1]
+        timeframe = timeframe[:-1]
 
     return vol, vol_value, buy_vol, buy_vol_value, timeframe
 
@@ -651,3 +669,269 @@ def update_optimized_results(optimized_results_path):
             json.dump(optimized_results_obj, outfile)
 
     return optimized_results_obj
+
+def load_data_for_supervised_analysis(complete_info=None, complete_info_path=None, search_parameters=None, target_variable: TargetVariable1 = 'mean'):
+    '''
+    This function analyzes with a supervised algorithm the output of "download_show_output". In particular the variable "info" or "complete_info" is taken as input.
+    The decision variables will be taken from the route /get-pricechanges which provides all info about (pricechanges, volumes and buy_volumes)
+    The target variables can be one of the following (mean, max, min) which are already present in "info"
+    the function will iterate through each event and get necessary information for building the matrix (decision variables + target) and start to anaylyze
+    '''
+    
+    if complete_info == None and complete_info_path == None:
+        msg = 'Provide at least one of the following: complete_info or complete_info_path'
+        return msg
+    if complete_info and complete_info_path:
+        msg = 'Both complete_info and complete_info path are not NULL. Only one can be NULL'
+        return msg
+    
+    
+    # DOWNLOAD DATA FOR SUPERVISED ANALYSIS
+    if complete_info:
+        assert search_parameters != None
+        print('New complete_info provided, grabbing all decision variables from server. You have 5 seconds to abort this action')
+        sleep(5)
+        request = {}
+        # First we need to prepare the request for retrieving the decision variables
+        for event_key in complete_info:
+            if event_key not in request:
+                request[event_key] = {}
+            # get info of 1 key
+            for coin in complete_info[event_key]['info']:
+                if coin not in request:
+                    request[event_key][coin] = []
+                for event in complete_info[event_key]['info'][coin]:
+                    request[event_key][coin].append(event['event'])
+    
+        url = "https://algocrypto.eu/analysis/get-pricechanges"
+        
+        response = requests.post(url=url, json = request)
+        print(response.status_code)
+        response = json.loads(response.text)
+        decision_variables = response['data']
+        msg = response['msg']
+
+        # msg shows all nan values replaced with different timeframes
+        if len(msg) > 0:
+            text = '\n'.join(msg)
+            # Specify the file path where you want to save the text
+            now_isoformat = datetime.now().isoformat().split('.')[0]
+            file_path = ROOT_PATH + "/logs/" + now_isoformat + '-nanreplaced.txt'
+            print('NaN values detected, check this path ', file_path)
+
+            # Open the file for writing
+            with open(file_path, "w") as file:
+                # Write the text to the file
+                file.write(text)
+
+        # get info keys defined in "list_timeframe" in the route get-pricechanges
+        random_event_key = list(decision_variables.keys())[0]
+        random_coin = list(decision_variables[random_event_key].keys())[0]
+        random_start_timestamp = list(decision_variables[random_event_key][random_coin].keys())[0]
+        decision_variable_keys = list(decision_variables[random_event_key][random_coin][random_start_timestamp].keys())
+
+
+        info = {}
+
+        for event_key in complete_info:
+            # INITIALIZE KEYS FOR EACH EVENT
+            if event_key not in info:
+                # add the keys relative to target variables
+                info[event_key] = {'event': [], 'coin': [], 'mean': [], 'std': [],
+                                    'max': [], 'min': [], 'volatility': []}
+                # add the keys relative to decision variables
+                for decision_variable_key in decision_variable_keys:
+                    timeframe = decision_variable_key.split('_')[-1] # example: "1h" or "3h" or ... "7d"
+                    price_key = 'price_%_' + timeframe
+                    vol_key = 'vol_' + timeframe
+                    buy_vol_key = 'buy_' + timeframe
+
+                    info[event_key][price_key] = []
+                    info[event_key][vol_key] = []
+                    info[event_key][buy_vol_key] = []
+            
+            for coin in complete_info[event_key]['info']:
+                # FILL VALUES FOR EACH EVENT
+                for event in complete_info[event_key]['info'][coin]:
+                    start_timestamp = event['event']
+                    for key in ['mean', 'std', 'max', 'min', 'volatility', 'event']:
+                        # append for each event the following: mean, std, max, min, volatility
+                        if key == 'max' or key == 'min':
+                            info[event_key][key].append(round_(event[key],4))
+                        else:
+                            info[event_key][key].append(event[key])
+                        
+                    # append coin
+                    info[event_key]['coin'].append(coin)
+                    
+                    for decision_variable_key in decision_variable_keys:
+                        # append for each event all the decision variables
+                        timeframe = decision_variable_key.split('_')[-1] # example: "1h" or "3h" or ... "7d"
+                        price_key = 'price_%_' + timeframe
+                        vol_key = 'vol_' + timeframe
+                        buy_vol_key = 'buy_' + timeframe
+
+                        info[event_key][price_key].append(decision_variables[event_key][coin][start_timestamp][decision_variable_key][0])
+                        info[event_key][vol_key].append(decision_variables[event_key][coin][start_timestamp][decision_variable_key][1])
+                        info[event_key][buy_vol_key].append(decision_variables[event_key][coin][start_timestamp][decision_variable_key][2])
+        
+        now = datetime.now()
+        year = str(now.year)
+        month = str(now.month)
+        day = str(now.day)
+        random_number = str(randint(0,1000))
+
+        # define the file path in which info will be saved
+        file_path = ROOT_PATH + f'/complete_info/info-{year}-{month}-{day}-'
+        for params in search_parameters:
+            valueParam = str(search_parameters[params])
+            file_path += f'{params}:{valueParam}-'
+        file_path += f'{random_number}.json'
+
+        with open(file_path, 'w') as file:
+            json.dump(info, file)
+
+    else:
+        print('complete_info_path PROVIDED. Loading data locally')
+        f = open(complete_info_path, "r")
+        info = json.loads(f.read())
+
+    
+    return info
+
+
+def train_model_xgb(X_train, X_test, y_train, y_test, classifier_strings, event_key):
+
+    # Encode Labels
+    le = LabelEncoder()
+    y_train = le.fit_transform(y_train)
+
+    #Initialize accuracy_score
+    best_acc_score = -10**9
+    params = {
+        'eta_list' : [0, 0.5, 1],
+        'gamma_list' : [0,1],
+        'max_depth_list' : [6],
+        'min_child_weight_list' : [1],
+        'max_delta_step_list' : [0],
+        'subsample_list' : [0.5, 1],
+        'sampling_method_list' : ['uniform'],
+        'lambda_list' : [0,1],
+        'alpha_list' : [0,1],
+        'tree_method_list' : ['auto', 'approx', 'hist'],
+        'n_estimators_list': [10,50],
+        'max_leaves_list': [8,16,32],
+        'eval_metric_list': ['logloss']
+    }
+
+
+    total_number_of_combinations = reduce(lambda x, y: x * y, [len(params[i]) for i in params])
+    print(f'Total Number of combinations: {total_number_of_combinations}')
+    i = 0
+    SKIP_10=False
+
+    for n_estimators in params['n_estimators_list']:
+        for eta in params['eta_list']:
+            for gamma in params['gamma_list']:
+                for max_leaves in params['max_leaves_list']:
+                    for max_depth in params['max_depth_list']:
+                        for min_child_weight in params['min_child_weight_list']:
+                            for max_delta_step in params['max_delta_step_list']:
+                                for subsample in params['subsample_list']:
+                                    for sampling_method in params['sampling_method_list']:
+                                        for lambda_ in params['lambda_list']:
+                                            for alpha in params['alpha_list']:
+                                                for eval_metric in params['eval_metric_list']:
+                                                    for tree_method in params['tree_method_list']:
+                                                        acc_score = 0
+                                                        i+=1
+                                                        if not SKIP_10:
+                                                            if i >= 0.1*total_number_of_combinations:
+                                                                print('10 percent of Data covered')
+                                                                SKIP_10 = True
+                                                        
+                                                        model = XGBClassifier(
+                                                                    n_estimators=n_estimators,
+                                                                    gamma=gamma,
+                                                                    max_depth=max_depth,
+                                                                    max_leaves=max_leaves,
+                                                                    min_child_weight=min_child_weight,
+                                                                    max_delta_step=max_delta_step,
+                                                                    eta=eta,
+                                                                    subsample=subsample,
+                                                                    reg_lambda=lambda_,
+                                                                    sampling_method=sampling_method,
+                                                                    tree_method=tree_method,
+                                                                    eval_metric=eval_metric,
+                                                                    use_label_encoder=False,
+                                                                    random_state=1000,
+                                                                    alpha=alpha,
+                                                                    n_jobs=-1)
+
+                                                        model.fit(X_train,y_train)
+
+                                                        # Predict
+                                                        y_pred = model.predict(X_test)
+                                                        y_pred = le.inverse_transform(y_pred)
+                                                        
+                                                        for a,b in zip(y_pred, y_test):
+                                                            if b == 0 and a == 0:
+                                                                acc_score += 2
+                                                            elif b == 0 and a == 2:
+                                                                acc_score -= 2
+
+                                                        if acc_score > best_acc_score:
+                                                            print('Found new Acc Score: ', acc_score)
+                                                            best_acc_score = acc_score
+                                                            cm = confusion_matrix(y_test, y_pred)
+                                                            df_cm = pd.DataFrame(cm, index = [i for i in classifier_strings], columns = [i for i in classifier_strings])
+
+    now = datetime.now()
+    year = str(now.year)
+    month = str(now.month)
+    day = str(now.day)
+    random_number = str(randint(0,1000))
+    event_key = event_key.replace(':', '_')
+    event_key = event_key.replace('/', '_')
+    file_path = f'{ROOT_PATH}/scores/{event_key}-{year}{month}{day}-{random_number}.json'
+    doc = {'score': int(best_acc_score), 'n_estimators': n_estimators, 'gamma': gamma, 'max_depth': max_depth,
+           'max_leaves': max_leaves, 'min_child_weight': min_child_weight, 'max_delta_step': max_delta_step,
+           'eta': eta, 'subsample': subsample, 'reg_lambda': lambda_, 'sampling_method': sampling_method,
+           'tree_method': tree_method, 'eval_metric': eval_metric, 'alpha': alpha}
+
+    with open(file_path, 'w') as outfile:
+            json.dump(doc, outfile)
+    print('BEST_ACC_SCORE: ', best_acc_score)
+    return df_cm
+
+def scale_filter_select_features(df, target_variable):
+    # Identify Decision and Output variables
+    all_columns = list(df.columns)
+    #selected_columns = [column for column in all_columns if 'price_%' in column or 'vol' in column or 'buy' in column]
+    selected_columns = [column for column in all_columns if 'price_%' in column or 'vol_' in column or 'buy_' in column]
+
+    decision_variables = df[selected_columns]
+    # Initialize the StandardScaler
+    scaler = StandardScaler()
+
+    # Fit the scaler on your data and transform the DataFrame
+    decision_variables = pd.DataFrame(scaler.fit_transform(decision_variables), columns=decision_variables.columns)
+
+    output_variable = np.array(df[target_variable])
+
+    # Filter out NaN values
+    X_withnan = np.array(decision_variables.to_numpy())
+    nan_mask = np.isnan(X_withnan)
+    nan_mask_y = []
+    for row in nan_mask:
+        if True in row:
+            nan_mask_y.append(True)
+        else:
+            nan_mask_y.append(False)
+
+
+    # Select X and y
+    X = X_withnan[~np.array(nan_mask_y)]
+    y = output_variable[~np.array(nan_mask_y)]
+
+    return X,y

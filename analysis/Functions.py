@@ -16,7 +16,9 @@ from copy import copy
 from random import randint
 import shutil
 import re
-from Helpers import round_, get_volatility, data_preparation, retrieve_datetime_for_load_data, updateData_for_load_data, get_date_key, load_data, get_benchmark_info, get_dynamic_volume_avg, get_substring_between, load_analysis_json_info, updateAnalysisJson, pooled_standard_deviation, getsubstring_fromkey, sort_files_in_json_dir
+from Helpers import round_, get_volatility, data_preparation, load_data, get_benchmark_info, get_dynamic_volume_avg
+from Helpers import get_substring_between, load_analysis_json_info, updateAnalysisJson, pooled_standard_deviation, getsubstring_fromkey
+from Helpers import load_data_for_supervised_analysis, train_model_xgb, scale_filter_select_features
 from sklearn.svm import SVR  # Support Vector Regression
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
@@ -26,9 +28,8 @@ from xgboost import XGBClassifier
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import confusion_matrix
-
-
-
+import seaborn as sn
+from typing import Literal
 
 
 '''
@@ -36,6 +37,8 @@ Functions.py define a set of functions that are used to analyze the strategy bas
 '''
 
 ROOT_PATH = os.getcwd()
+TargetVariable = Literal["mean_event", "max_price", "min_price"]
+TargetVariable1 = Literal["mean", "max", "min"]
 
 def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_buy_volume, event_volume, dynamic_benchmark_volume, end_interval_analysis):
     '''
@@ -74,6 +77,8 @@ def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_
                     # if vol is greater than limit and
                     # if datetime_obs does not fall in a previous analysis window. (i.e. datetime_obs is greater than the limit_window set)
                     if obs[buy_vol_field] >= event_buy_volume and obs[vol_field] > event_volume and datetime_obs > limit_window:
+                        if vol_field == 'vol_5m' and event_volume == 6:
+                            continue
                         #EVENT TRIGGERED
 
                         # get initial price of the coin at the triggered event
@@ -95,6 +100,9 @@ def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_
                         if coin not in complete_info[volatility]:
                             complete_info[volatility][coin] = []
 
+                        max_price_change = 0
+                        min_price_change = 0
+
                         # initialize "price_changes" to fetch all changes for THIS event
                         price_changes = []
 
@@ -104,8 +112,12 @@ def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_
                             # if actual observation has occurred in the last minute and 10 seconds from last observation, let's add the price "change" in "price_changes":
                             actual_datetime = datetime.fromisoformat(data[coin][index+obs_i]['_id'])
                             if actual_datetime - datetime.fromisoformat(data[coin][index+obs_i-1]['_id']) <= timedelta(minutes=10,seconds=10):
+                                
                                 change = (obs_event['price'] - initial_price)/initial_price
                                 if not np.isnan(change):
+                                    max_price_change = max(max_price_change, change)
+                                    min_price_change = min(min_price_change, change)
+
                                     price_changes.append(change)
                                     event_price_changes.append(change)
                                 else:
@@ -113,7 +125,8 @@ def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_
                                         nan[coin] = []
                                     nan[coin].append(timestamp_event_triggered)
 
-                        complete_info[volatility][coin].append({'event': timestamp_event_triggered, 'mean': round_(np.mean(event_price_changes),4), 'std': round(np.std(event_price_changes, ddof=1),4)})
+                        complete_info[volatility][coin].append({'event': timestamp_event_triggered, 'mean': round_(np.mean(event_price_changes),4), 'std': round(np.std(event_price_changes, ddof=1),4),
+                                                                'max': max_price_change, 'min': min_price_change})
             else:
                 # in case an observations of a coin goes beyond "end_interval_analysis", then I skip the whole analysis of the coin,
                 # since the obsevations are ordered chronologically
@@ -386,7 +399,7 @@ def wrap_analyze_events(data, list_buy_vol, list_vol, list_minutes, list_event_b
         print(f'{time_spent} seconds spent to run wrap_analyze_events')
     return resp
 
-def total_function_multiprocessing(list_buy_vol, list_vol, list_minutes, list_event_buy_volume, list_event_volume, n_processes, LOAD_DATA, INTEGRATION=False):
+def total_function_multiprocessing(list_buy_vol, list_vol, list_minutes, list_event_buy_volume, list_event_volume, n_processes, LOAD_DATA, analysis_timeframe, INTEGRATION=False):
     '''
     this function loads only the data not analyzed and starts "wrap_analyze_events_multiprocessing" function. Finally it saves the output a path dedicated
 
@@ -408,7 +421,7 @@ def total_function_multiprocessing(list_buy_vol, list_vol, list_minutes, list_ev
 
     #load analysis json info
     analysis_json_path = ROOT_PATH + '/analysis_json/analysis.json'
-    start_interval, end_interval = load_analysis_json_info(analysis_json_path)
+    start_interval, end_interval = load_analysis_json_info(analysis_json_path, analysis_timeframe=analysis_timeframe)
 
     # load data from local (json/) and store in "data" variable
     data = load_data(start_interval=datetime.fromisoformat(start_interval), end_interval=end_interval)
@@ -659,7 +672,8 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
     - set a minimum number of coins per key
     - set a minimum mean threshold for all events for a specific key
     - group all keys which share the same TRIGGER (e.g. "buy_vol_15m:0.75/vol_60m:20/timeframe:1440/") but have a different volatility ("vlty:<x>")
-    - represent only the best keys grouped by volatility. This is activated only if "group_coins=False". "best_coins_volatility" must be an integer in this case.
+    - represent only the best keys grouped by volatility if "group_coins=False" or the best keys grouped by "timeframe" if "group_coins=True"
+    - 
     - early_validation: [datetime] this analyses the keys until a certain point in time. Used to check how analysis behaves in the future
     '''
 
@@ -682,6 +696,7 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
     complete_info = {}
     volatility_list = {}
 
+    # group best keys by volatility == False
     if not group_coins:
         for key in list(shared_data.keys()):
             if key != 'coins' or key != 'events':
@@ -755,60 +770,120 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
 
             del output, complete_info
             return new_output, new_info
-                    
+        
+    # Group Event keys by volatility == True         
     else:
         for key in list(shared_data.keys()):
             # print(key)
             # print(shared_data[key].keys())
             if key != 'coins' or key != 'events':
                 vol, vol_value, buy_vol, buy_vol_value, timeframe = getsubstring_fromkey(key)
-                key_without_volatility = key.split('vlty:')[0]
+                key_split = key.split('/vlty:')
+                key_without_volatility = key_split[0]
                 n_events = 0
-                mean_list = []
-                std_list = []
-                n_coins = len(shared_data[key]['info'])
+                mean_by_coin_list = []
+                std_by_coin_list = []
+                list_coins = list(shared_data[key]['info'].keys())
 
                 for coin in shared_data[key]['info']:
                     n_events += len(shared_data[key]['info'][coin])
                     for event in shared_data[key]['info'][coin]:
-                        mean_list.append(event['mean'])
-                        std_list.append(event['std'])
+                        if early_validation and datetime.fromisoformat(event['event']) > early_validation: 
+                            continue
+                        else:
+                            mean_by_coin_list.append(event['mean'])
+                            std_by_coin_list.append(event['std'])
 
-                mean = round_(np.mean(np.array(mean_list))*100,2)
-                std = round_(pooled_standard_deviation(np.array(std_list), sample_size=int(timeframe))*100,2)
+                mean_by_coin = round_(np.mean(np.array(mean_by_coin_list))*100,2)
+                std_by_coin = round_(pooled_standard_deviation(np.array(std_by_coin_list), sample_size=int(timeframe))*100,2)
 
+                # Start filling output and complete_info
                 if key_without_volatility not in output:
-                    output[key_without_volatility] = {'mean': [mean], 'std': [std], 'n_coins': n_coins, 'n_events': n_events}
+                    # initialize output and complete_info
+                    output[key_without_volatility] = {'mean': [(mean_by_coin,len(list_coins))], 'std': [(std_by_coin,len(list_coins))], 'n_coins': list_coins, 'n_events': n_events}
+                    #update 'info' by adding "volatility" variable
+                    complete_info[key_without_volatility] = {'info': {}, 'n_coins': list_coins, 'events': n_events}
+                    for coin in shared_data[key]['info']:
+                        if coin not in complete_info[key_without_volatility]['info']:
+                            # initialize coin in complete_info
+                            complete_info[key_without_volatility]['info'][coin] = []
+                        for event in shared_data[key]['info'][coin]:
+                            # add volatility
+                            volatility = int(key.split('/vlty:')[1])
+                            event['volatility'] = volatility
+                            complete_info[key_without_volatility]['info'][coin].append(event)
+
                 else:
-                    output[key_without_volatility]['mean'].append(mean)
-                    output[key_without_volatility]['std'].append(std)
-                    output[key_without_volatility]['n_coins'] += n_coins
+                    # update output
+                    output[key_without_volatility]['mean'].append((mean_by_coin,len(list_coins)))
+                    output[key_without_volatility]['std'].append((std_by_coin,len(list_coins)))
+                    output[key_without_volatility]['n_coins'] += list_coins
                     output[key_without_volatility]['n_events'] += n_events
-        
+                    
+                    # update complete info
+                    complete_info[key_without_volatility]['n_coins'] += list_coins
+                    complete_info[key_without_volatility]['events'] += n_events
+                    for coin in shared_data[key]['info']:
+                        if coin not in complete_info[key_without_volatility]['info']:
+                            complete_info[key_without_volatility]['info'][coin] = []
+                        for event in shared_data[key]['info'][coin]:
+                            volatility = int(key.split('/vlty:')[1])
+                            event['volatility'] = volatility
+                            complete_info[key_without_volatility]['info'][coin].append(event)
+
         delete_keys = []
-        for key in output:
-            if output[key]['n_events'] >= minimum_event_number and round_(np.mean(output[key]['mean']),2) > mean_threshold:
-                output[key]['mean'] = round_(np.mean(output[key]['mean']),2)
-                
-                output[key]['std'] = round_(np.mean(output[key]['std']),2)
-            
-                output[key]['upper_bound'] = output[key]['mean'] + output[key]['std']
-                output[key]['lower_bound'] = output[key]['mean'] - output[key]['std']
+        # Filter best keys by performance
+        for key_without_volatility in output:
+            mean = sum([item[0]*item[1] for item in output[key_without_volatility]['mean']]) / sum([item[1] for item in output[key_without_volatility]['mean']] )
+            std = sum([item[0]*item[1] for item in output[key_without_volatility]['std']]) / sum([item[1] for item in output[key_without_volatility]['std']] )
+            if output[key_without_volatility]['n_events'] >= minimum_event_number and mean > mean_threshold and mean <= std_multiplier * std:
+                output[key_without_volatility]['mean'] = mean
+                output[key_without_volatility]['std'] = std
+                output[key_without_volatility]['upper_bound'] = output[key_without_volatility]['mean'] + output[key_without_volatility]['std']
+                output[key_without_volatility]['lower_bound'] = output[key_without_volatility]['mean'] - output[key_without_volatility]['std']
+                output[key_without_volatility]['n_coins'] = len(set(output[key_without_volatility]['n_coins']))
+                complete_info[key_without_volatility]['n_coins'] = len(set(complete_info[key_without_volatility]['n_coins']))
             else:
-                delete_keys.append(key)
+                delete_keys.append(key_without_volatility)
 
-        for key in delete_keys:
-            output.pop(key)
-        complete_info = None
+        for key_without_volatility in delete_keys:
+            output.pop(key_without_volatility)
+            complete_info.pop(key_without_volatility)
 
-    
-    
-    t3 = time()
-    #delta_t_2 = round_(t3 - t2,2)
-    #print(f'Data Preparation completed in {delta_t_2} seconds')
+        # Filter the best that share the same trigger (e.g. buy_vol_6h:0.75/vol_6h:10) but different timeframe
+        # in this case "best_coins_volatility" is intended for best coins by timeframe.
 
+        
+        if best_coins_volatility:
+            # ORDER BY PERFORMANCE
+            keys_filtered_by_timeframe = {}
+            for key_without_volatility in output:
+                key_without_timeframe = key_without_volatility.split('/timeframe')[0]
+                if key_without_timeframe not in keys_filtered_by_timeframe:
+                    keys_filtered_by_timeframe[key_without_timeframe] = []
+                keys_filtered_by_timeframe[key_without_timeframe].append({'key': key_without_volatility, 'mean': output[key_without_volatility]['mean']})
+            
+            # GET THE BEST KEYS
+            keys_to_keep = {}
+            for key_without_timeframe in keys_filtered_by_timeframe:
+                #print(volatility_list[volatility])
+                keys_filtered_by_timeframe[key_without_timeframe].sort(key=lambda x: x['mean'], reverse=True)
+                keys_filtered_by_timeframe[key_without_timeframe] = keys_filtered_by_timeframe[key_without_timeframe][:best_coins_volatility]
+                keys_to_keep[key_without_timeframe] = [x['key'] for x in keys_filtered_by_timeframe[key_without_timeframe]]
 
-    return output, complete_info
+            # UPDATE OUTPUT AND COMPLLETE INFO
+            new_output = {}
+            new_info = {}
+            for key_without_volatility in output:
+                key_without_timeframe = key_without_volatility.split('/timeframe')[0]
+                if key_without_volatility in keys_to_keep[key_without_timeframe]:
+                    new_output[key_without_volatility] = output[key_without_volatility]
+                    new_info[key_without_volatility] = complete_info[key_without_volatility]
+
+            del output, complete_info
+            return new_output, new_info
+            
+        
 
 def plot_live_timeseries(risk_management_path, filter_live: bool = False, filter_best: float = False):
     '''
@@ -1364,7 +1439,7 @@ def prepareOptimizedConfigurarionResults(results, event_key):
     # make request to the server
     response = requests.post(url='https://algocrypto.eu/analysis/get-pricechanges', json=request)
     response = json.loads(response.text)
-    response = response['data']
+    pricechanges = response['data']
 
     # msg shows all nan values replaced with different timeframes
     msg = response['msg']
@@ -1381,9 +1456,9 @@ def prepareOptimizedConfigurarionResults(results, event_key):
             file.write(text)
 
     # assuming the info keys are equal for all events, get list of keys (timeframes) in this way
-    random_coin = list(response[event_key].keys())[0]
-    random_start_timestamp = list(response[event_key][random_coin].keys())[0]
-    info_keys = list(response[event_key][random_coin][random_start_timestamp].keys()) # info key example: [info_1h, info_3h, ..., info_7d]
+    random_coin = list(pricechanges[event_key].keys())[0]
+    random_start_timestamp = list(pricechanges[event_key][random_coin].keys())[0]
+    info_keys = list(pricechanges[event_key][random_coin][random_start_timestamp].keys()) # info key example: [info_1h, info_3h, ..., info_7d]
     
     # initialize info_obj by creating a list of None values for each price_key, vol_key and buyvol_key
     # price_key, vol_key and buyvol_key are extraced from "info_keys"
@@ -1398,8 +1473,8 @@ def prepareOptimizedConfigurarionResults(results, event_key):
         info_obj[buy_vol_key] = [None] * len(start_timestamp_list[best_risk_key])
 
     # fill "info_obj" (price changes, vol, buy_vol) according to the position of "start_timestamp_list" of the best resk key
-    for coin in response[event_key]:
-        for start_timestamp in response[event_key][coin]:
+    for coin in pricechanges[event_key]:
+        for start_timestamp in pricechanges[event_key][coin]:
             position = start_timestamp_list[best_risk_key].index(start_timestamp)
             for info_key in info_keys:
                 timeframe = info_key.split('_')[-1]
@@ -1407,14 +1482,14 @@ def prepareOptimizedConfigurarionResults(results, event_key):
                 vol_key = 'vol_' + timeframe
                 buy_vol_key = 'buy_' + timeframe
 
-                # example of response[event_key][coin][start_timestamp][info_key] --> (0.02, 1.5, 0.5)
+                # example of pricechanges[event_key][coin][start_timestamp][info_key] --> (0.02, 1.5, 0.5)
                 # the first element is the price change with respect to "timeframe" ago
                 # the second element is the volume registered "timeframe" ago
                 # the third element is the buy_volume registered "timeframe" ago
 
-                info_obj[price_key][position] = response[event_key][coin][start_timestamp][info_key][0]
-                info_obj[vol_key][position] = response[event_key][coin][start_timestamp][info_key][1]
-                info_obj[buy_vol_key][position] = response[event_key][coin][start_timestamp][info_key][2]
+                info_obj[price_key][position] = pricechanges[event_key][coin][start_timestamp][info_key][0]
+                info_obj[vol_key][position] = pricechanges[event_key][coin][start_timestamp][info_key][1]
+                info_obj[buy_vol_key][position] = pricechanges[event_key][coin][start_timestamp][info_key][2]
     
     optimized_riskconfiguration_results = {'events': list(results[best_risk_key].keys()), 'gain': profit_list[best_risk_key], 'buy_price': buy_price_list[best_risk_key],
                          'exit_price': exit_price_list[best_risk_key],  'timestamp_exit': timestamp_exit_list[best_risk_key],
@@ -1619,7 +1694,7 @@ def infoTimeseries(info, key):
     ax.axhline(y=0, color='red', linestyle='--')
     return df
 
-def check_invevestment_amount(info, output, investment_amount = 100, riskmanagement_path=None):
+def check_investment_amount(info, output, investment_amount = 100, riskmanagement_path=None):
     '''
     This function helps to understand the account balance required for investing based on "investment_amount"
     '''
@@ -1696,10 +1771,15 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
     for key, key_i in zip(keys_list, range(1,len(keys_list)+1)):
         print(key)
         print(f'ITERATION {key_i} has started')
-        volatility = key.split('vlty:')[1]
-        # initialize key in risk_configuration
-        if volatility not in risk_configuration:
-            risk_configuration[volatility] = {}
+
+        if 'vlty' in key:
+            VOLATILITY_GROUP = True
+            volatility = key.split('vlty:')[1]
+            # initialize key in risk_configuration
+            if volatility not in risk_configuration:
+                risk_configuration[volatility] = {}
+        else:
+            VOLATILITY_GROUP = False
         
         if DISCOVER:
         # get latest timeseries
@@ -1708,8 +1788,8 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
             while retry:
                 retry = getTimeseries(info, key, check_past=1440, look_for_newdata=True, plot=False)
 
-        df1, df2, risk, optimized_riskconfiguration_results = RiskManagement(key, early_validation)
 
+        df1, df2, risk, optimized_riskconfiguration_results = RiskManagement(key, early_validation)
         best_risk_key = risk['best_risk_key']
         best_mean_print = risk['best_mean_print']
         best_std_print = risk['best_std_print']
@@ -1728,8 +1808,7 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
         total_optimized_riskconfiguration_results[key] = optimized_riskconfiguration_results
 
         # FILTER ONLY THE BEST KEY EVENTS
-        if best_mean_print >= optimized_gain_threshold and mean >= mean_gain_threshold:
-            risk_configuration[volatility][key] = {
+        obj = {
                 'riskmanagement_conf': {
                     'golden_zone': golden_zone_str,
                     'step_golden': golden_step_str,
@@ -1743,6 +1822,11 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
                     'median_gain_all_configs': median,
                     'std_gain_all_configs': std,
                 }}
+        if VOLATILITY_GROUP:
+            if best_mean_print >= optimized_gain_threshold and mean >= mean_gain_threshold:
+                risk_configuration[volatility][key] = obj
+            else:
+                risk_configuration[key] = obj
         
 
     key_list = []
@@ -1770,8 +1854,23 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
     }
 
      # PREPARE FILES FOR PANDAS AND FOR SAVING
-    for volatility in risk_configuration:
-        for key in risk_configuration[volatility]:
+    if VOLATILITY_GROUP:
+        for volatility in risk_configuration:
+            for key in risk_configuration[volatility]:
+                key_list.append(key)
+                golden_zone_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['golden_zone'])
+                step_golden_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['step_golden'])
+                step_nogolden_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['step_nogolden'])
+                extra_timeframe_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['extra_timeframe'])
+                optimized_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['optimized_gain'])
+                optimized_std_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['optimized_std'])
+                mean_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['mean_gain_all_configs'])
+                median_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['median_gain_all_configs'])
+                std_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['std_gain_all_configs'])
+                frequency_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['frequency'])
+                n_events_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['n_events'])
+    else:
+        for key in risk_configuration:
             key_list.append(key)
             golden_zone_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['golden_zone'])
             step_golden_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['step_golden'])
@@ -1784,7 +1883,7 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
             std_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['std_gain_all_configs'])
             frequency_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['frequency'])
             n_events_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['n_events'])
-
+            
 
     average_gain_percentage = sum(np.array(optimized_gain_list) * (np.array(frequency_list)/sum(frequency_list))) / 100
     df_dict = {"keys": key_list, "golden_zone": golden_zone_list, 'step_golden': step_golden_list, 'step_nogolden': step_nogolden_list,
@@ -2300,11 +2399,22 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
 
     return df1, biggest_drop, biggest_drop_date, positive_outcome, negative_outcome, PERFORMANCE_SCENARIOS
     
-def PriceVariation_analysis(df, model_type='svc'):
+def PriceVariation_analysis(df, model_type='svc', target_variable: TargetVariable = 'mean_event', test_size=0.2):
 
     # Identify Decision and Output variables
-    decision_variables = df[['price_%_3d', 'price_%_2d', 'price_%_1d', 'price_%_6h', 'price_%_3h', 'price_%_1h']]
-    output_variable = np.array(df['mean_event'])
+    all_columns = list(df.columns)
+    #selected_columns = [column for column in all_columns if 'price_%' in column or 'vol' in column or 'buy' in column]
+    selected_columns = [column for column in all_columns if 'price_%' in column or 'vol' in column or 'buy' in column]
+    decision_variables = df[selected_columns]
+
+    # define decision variable, only 'mean_event' is normalized, max_price and min_price need to be normalized
+    if target_variable != 'mean_event':
+        output_variable = np.array((df[TargetVariable] - df['buy_price']) / df['buy_price'])
+    else:
+        output_variable = np.array(df[TargetVariable])
+
+    #output_variable = np.array(df[target_variable])
+    #print(len(output_variable))
 
     # Filter out NaN values
     X_withnan = np.array(decision_variables.to_numpy())
@@ -2324,13 +2434,20 @@ def PriceVariation_analysis(df, model_type='svc'):
 
     # Start Training
     random_state = randint(0,len(y))
-    X_train, X_test, y_train_real, y_test_real = train_test_split(X, y, test_size=0.2, random_state=random_state)
+    X_train, X_test, y_train_real, y_test_real = train_test_split(X, y, test_size=test_size, random_state=random_state)
 
     # print(y_train)
     # print(y_test)
 
-    classifier = {'1': (-1,-0.4), '2': (-0.4,-0.2), '3': (-0.2,-0.1), '4': (-0.1,0),
-                  '5': (0,0.1), '6':(0.1,0.2), '7':(0.2,0.4), '8': (0.4,3)}
+    if target_variable == 'mean_event':
+        classifier = {'1': (-1,-0.2), '2': (-0.2,0), '3':(0,0.2), '4': (0.2,3)}
+        classifier_strings = [str(classifier[cls][0]) + '<x<' + str(classifier[cls][1]) for cls in classifier]
+    elif target_variable == 'max_price':
+        classifier = {'1': (0,0.05), '2':(0.05,0.2), '3': (0.2,3)}
+        classifier_strings = [str(classifier[cls][0]) + '<x<' + str(classifier[cls][1]) for cls in classifier]
+    elif target_variable == 'min_price':
+        classifier = {'1': (-1,-0.2), '2': (-0.2,-0.05), '3':(-0.05,0.0001)}
+        classifier_strings = [str(classifier[cls][0]) + '<x<' + str(classifier[cls][1]) for cls in classifier]
     
     y_train = []
     y_test = []
@@ -2348,7 +2465,6 @@ def PriceVariation_analysis(df, model_type='svc'):
                 y_test.append(int(cl_key))
                 break
     
-    print(y_test)
     le = LabelEncoder()
     y_train = le.fit_transform(y_train)
 
@@ -2363,7 +2479,7 @@ def PriceVariation_analysis(df, model_type='svc'):
         model = SVR(kernel='rbf')  # Puoi scegliere il kernel desiderato
         model.fit(X_train, y_train)
     elif model_type == 'xgboost':
-        model = XGBClassifier(n_estimators=1000,
+        model = XGBClassifier(n_estimators=50,
                      max_depth=5,
                      max_leaves=64,
                      eta=0.1,
@@ -2380,21 +2496,84 @@ def PriceVariation_analysis(df, model_type='svc'):
     y_pred = model.predict(X_test)
     y_pred = le.inverse_transform(y_pred)
 
-    print(y_test)
-    print(y_pred)
-    x_line = np.linspace(min(y_test), max(y_test), 100)
-    mse = mean_squared_error(y_test, y_pred)
-    print(f"Mean Squared Error: {mse}")
-
-    plt.scatter(y_test, y_pred)
-    plt.plot(x_line, x_line, 'r--', label="x = y", linewidth=2)  # 'r--' creates a red dashed line
-    plt.xlabel("Valori reali")
-    plt.ylabel("Valori previsti")
-    plt.title("Confronto tra valori reali e previsti")
-    plt.show()
-
+    # x_line = np.linspace(min(y_test), max(y_test), 100)
+    # mse = mean_squared_error(y_test, y_pred)
+    # print(f"Mean Squared Error: {mse}")
+    # plt.scatter(y_test, y_pred)
+    # plt.plot(x_line, x_line, 'r--', label="x = y", linewidth=2)  # 'r--' creates a red dashed line
+    # plt.xlabel("Valori reali")
+    # plt.ylabel("Valori previsti")
+    # plt.title("Confronto tra valori reali e previsti")
+    # plt.show()
 
     cm = confusion_matrix(y_test, y_pred)
-    print(cm)
-    accuracy_score(y_test, y_pred)
+    df_cm = pd.DataFrame(cm, index = [i for i in classifier_strings], columns = [i for i in classifier_strings])
 
+
+    ax= plt.subplot()
+    sn.heatmap(df_cm, annot=True, fmt='g', ax=ax);  #annot=True to annotate cells, ftm='g' to disable scientific notation
+    # labels, title and ticks
+    ax.set_xlabel('Predicted labels');ax.set_ylabel('True labels')
+    ax.set_title(f'Confusion Matrix for {target_variable}')
+    #accuracy_score(y_test, y_pred)
+
+def supervised_analysis(complete_info=None, complete_info_path=None, search_parameters=None, target_variable: TargetVariable1 = 'mean', test_size=0.2):
+    '''
+    This function analyzes with a supervised algorithm the output of "download_show_output". In particular the variable "info" or "complete_info" is taken as input.
+    The decision variables will be taken from the route /get-pricechanges which provides all info about (pricechanges, volumes and buy_volumes)
+    The target variables can be one of the following (mean, max, min) which are already present in "info"
+    the function will iterate through each event and get necessary information for building the matrix (decision variables + target) and start to anaylyze
+    '''
+    
+    info = load_data_for_supervised_analysis(complete_info=complete_info, complete_info_path=complete_info_path,
+                                       search_parameters=search_parameters, target_variable = target_variable)
+
+    #return info
+    #################################################################
+
+    # SUPERVISION ANALYSIS START
+    for event_key in info:
+        df = pd.DataFrame(info[event_key])
+
+        X,y = scale_filter_select_features(df, target_variable)
+
+
+        X_train, X_test, y_train_real, y_test_real = train_test_split(X, y, test_size=test_size, random_state=0)
+
+        if target_variable == 'mean':
+            classifier = {'1': (-1,0), '2':(0,3)}
+            classifier_strings = [str(classifier[cls][0]) + '<x<' + str(classifier[cls][1]) for cls in classifier]
+        elif target_variable == 'max':
+            classifier = {'1': (0,0.05), '2':(0.05,0.2), '3': (0.2,3)}
+            classifier_strings = [str(classifier[cls][0]) + '<x<' + str(classifier[cls][1]) for cls in classifier]
+        elif target_variable == 'min':
+            classifier = {'1': (-1,-0.2), '2': (-0.2,-0.05), '3':(-0.05,0.0001)}
+            classifier_strings = [str(classifier[cls][0]) + '<x<' + str(classifier[cls][1]) for cls in classifier]
+        
+        y_train = []
+        y_test = []
+        
+        # encode y_test and y_train
+        for y, i in zip(y_train_real, range(len(y_train_real))):
+            for cl_key in classifier:
+                if y >= classifier[cl_key][0] and y < classifier[cl_key][1]:
+                    y_train.append(int(cl_key))
+                    break
+
+        for y, i in zip(y_test_real, range(len(y_test_real))):
+            for cl_key in classifier:
+                if y >= classifier[cl_key][0] and y < classifier[cl_key][1]:
+                    y_test.append(int(cl_key))
+                    break
+        
+        df_cm = train_model_xgb(X_train, X_test, y_train, y_test, classifier_strings, event_key)
+
+        ax= plt.subplot()
+        sn.heatmap(df_cm, annot=True, fmt='g', ax=ax);  #annot=True to annotate cells, ftm='g' to disable scientific notation
+        ax.set_xlabel('Predicted labels');ax.set_ylabel('True labels')
+        ax.set_title(f'Confusion Matrix for {target_variable} - {event_key}')
+        plt.show()
+
+
+
+            
