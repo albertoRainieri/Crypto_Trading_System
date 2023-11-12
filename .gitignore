@@ -18,9 +18,14 @@ analysis/timeseries_json_old
 analysis/riskmanagement_json
 analysis/riskmanagement_backup/
 analysis/optimized_results/
+analysis/optimized_results_backup/
+analysis/complete_info
+analysis/optimized_results_backup_copy
+analysis/scores
 analysis/.*
 analysis/__*
 analysis/old/
+analysis/logs
 #backend/test
 tracker/logs
 tracker/test

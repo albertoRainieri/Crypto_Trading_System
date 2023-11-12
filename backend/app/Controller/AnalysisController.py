@@ -274,17 +274,17 @@ class AnalysisController:
         #let's define a limit number of events for each coin. This is to avoid responses too heavy.
         timeframe = request['timeframe']
         if timeframe > 4000:
+            n_event_limit = 2
+            n_coin_limit = 20
+        elif timeframe > 1000:
             n_event_limit = 3
             n_coin_limit = 30
-        elif timeframe > 1000:
-            n_event_limit = 6
-            n_coin_limit = 70
         elif timeframe > 300:
-            n_event_limit = 15
-            n_coin_limit = 100
+            n_event_limit = 6
+            n_coin_limit = 60
         else:
-            n_event_limit = 100
-            n_coin_limit = 200
+            n_event_limit = 8
+            n_coin_limit = 80
 
         db = DatabaseConnection()
         db_tracker = db.get_db(DATABASE_TRACKER)
@@ -335,8 +335,10 @@ class AnalysisController:
                         # let's get the iso format timestamps for querying mongodb
                         timestamp_start = datetime_start.isoformat()
                         timestamp_end = datetime_end.isoformat()
-                        
-                        docs = list(db_tracker[coin].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}}))
+
+                        filter = {'vol_1m':1, 'buy_vol_1m':1, 'vol_5m':1, 'buy_vol_5m':1, 'vol_15m':1, 'buy_vol_15m':1, 'vol_30m':1, 'buy_vol_30m':1, 'vol_60m':1, 'buy_vol_60m':1,
+                                  'vol_3h':1, 'buy_vol_3h':1, 'vol_6h':1, 'buy_vol_6h':1, 'vol_24h':1, 'buy_vol_24':1}
+                        docs = list(db_tracker[coin].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}}, filter))
                         
                         if coin not in response['data']:
                             response['data'][coin] = {}
