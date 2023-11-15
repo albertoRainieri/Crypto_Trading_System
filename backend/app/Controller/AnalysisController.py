@@ -336,8 +336,15 @@ class AnalysisController:
                         timestamp_start = datetime_start.isoformat()
                         timestamp_end = datetime_end.isoformat()
 
-                        filter_query = {'price': 1, 'vol_1m':1, 'buy_vol_1m':1, 'vol_5m':1, 'buy_vol_5m':1, 'vol_15m':1, 'buy_vol_15m':1, 'vol_30m':1, 'buy_vol_30m':1, 'vol_60m':1, 'buy_vol_60m':1,
-                                  'vol_3h':1, 'buy_vol_3h':1, 'vol_6h':1, 'buy_vol_6h':1, 'vol_24h':1, 'buy_vol_24h':1}
+                        filter_query = {'_id': 1, 'price': 1, 'price_%_1d': 0, 'price_%_6h': 0, 'price_%_3h': 0, 'price_%_1h': 0,
+                                         'vol_1m': 1, 'buy_vol_1m': 1, 'buy_trd_1m': 0,
+                                           'vol_5m': 1, 'vol_5m_std': 0, 'buy_vol_5m': 1, 'buy_trd_5m': 0,
+                                             'vol_15m': 1, 'vol_15m_std': 0, 'buy_vol_15m': 1, 'buy_trd_15m': 0,
+                                               'vol_30m': 1, 'vol_30m_std': 0, 'buy_vol_30m': 1, 'buy_trd_30m': 0,
+                                                 'vol_60m': 1, 'vol_60m_std': 0, 'buy_vol_60m': 1, 'buy_trd_60m': 0,
+                                                   'vol_3h': 1, 'vol_3h_std': 0, 'buy_vol_3h': 1, 'buy_trd_3h': 0,
+                                                     'vol_6h': 1, 'vol_6h_std': 0, 'buy_vol_6h': 1, 'buy_trd_6h': 0,
+                                                       'vol_24h': 1, 'vol_24h_std': 0, 'buy_vol_24h': 1, 'buy_trd_24h': 0}
                         
                         docs = list(db_tracker[coin].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}}, filter_query))
                         
