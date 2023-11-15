@@ -337,7 +337,7 @@ class AnalysisController:
                         timestamp_end = datetime_end.isoformat()
 
                         filter = {'price': 1, 'vol_1m':1, 'buy_vol_1m':1, 'vol_5m':1, 'buy_vol_5m':1, 'vol_15m':1, 'buy_vol_15m':1, 'vol_30m':1, 'buy_vol_30m':1, 'vol_60m':1, 'buy_vol_60m':1,
-                                  'vol_3h':1, 'buy_vol_3h':1, 'vol_6h':1, 'buy_vol_6h':1, 'vol_24h':1, 'buy_vol_24':1}
+                                  'vol_3h':1, 'buy_vol_3h':1, 'vol_6h':1, 'buy_vol_6h':1, 'vol_24h':1, 'buy_vol_24h':1}
                         docs = list(db_tracker[coin].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}}, filter))
                         
                         if coin not in response['data']:
