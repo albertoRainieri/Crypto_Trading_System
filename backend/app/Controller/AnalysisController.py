@@ -28,9 +28,20 @@ class AnalysisController:
 
         dict_ = {}
 
+        filter_query = {'_id': 1, 'price': 1,
+                        'vol_1m': 1, 'buy_vol_1m': 1,
+                        'vol_5m': 1, 'buy_vol_5m': 1,
+                            'vol_15m': 1, 'buy_vol_15m': 1,
+                            'vol_30m': 1, 'buy_vol_30m': 1,
+                                'vol_60m': 1, 'buy_vol_60m': 1,
+                                'vol_3h': 1, 'buy_vol_3h': 1,
+                                    'vol_6h': 1, 'buy_vol_6h': 1,
+                                    'vol_24h': 1, 'buy_vol_24h': 1}
+                        
+
 
         for instrument_name in coins_list:
-            docs = list(db_market[instrument_name].find({"_id": {"$gte": datetime_start, "$lt": datetime_end}}))
+            docs = list(db_market[instrument_name].find({"_id": {"$gte": datetime_start, "$lt": datetime_end}}, filter_query))
             dict_[instrument_name] = docs
         
         json_string = jsonable_encoder(dict_)
