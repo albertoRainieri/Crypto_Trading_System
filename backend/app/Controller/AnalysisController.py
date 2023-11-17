@@ -336,7 +336,7 @@ class AnalysisController:
                         timestamp_start = datetime_start.isoformat()
                         timestamp_end = datetime_end.isoformat()
 
-                        filter_query = {'_id': 1, 'price': 1, 'price_%_1d': 0, 'price_%_6h': 0, 'price_%_3h': 0, 'price_%_1h': 0,
+                        filter_query = {'_id': 1, 'price': 1, #'price_%_1d': 0, 'price_%_6h': 0, 'price_%_3h': 0, 'price_%_1h': 0,
                                          'vol_1m': 1, 'buy_vol_1m': 1, 'buy_trd_1m': 0,
                                            'vol_5m': 1, 'vol_5m_std': 0, 'buy_vol_5m': 1, 'buy_trd_5m': 0,
                                              'vol_15m': 1, 'vol_15m_std': 0, 'buy_vol_15m': 1, 'buy_trd_15m': 0,
