@@ -17,7 +17,7 @@ from random import randint
 import shutil
 import re
 from Helpers import round_, get_volatility, data_preparation, load_data, get_benchmark_info, get_dynamic_volume_avg
-from Helpers import get_substring_between, load_analysis_json_info, updateAnalysisJson, pooled_standard_deviation, getsubstring_fromkey
+from Helpers import get_substring_between, load_analysis_json_info, updateAnalysisJson, pooled_standard_deviation, getsubstring_fromkey, load_timeseries
 from Helpers import load_data_for_supervised_analysis, train_model_xgb, scale_filter_select_features
 from sklearn.svm import SVR  # Support Vector Regression
 from sklearn.model_selection import train_test_split
@@ -77,7 +77,10 @@ def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_
                     # if vol is greater than limit and
                     # if datetime_obs does not fall in a previous analysis window. (i.e. datetime_obs is greater than the limit_window set)
                     if obs[buy_vol_field] >= event_buy_volume and obs[vol_field] > event_volume and datetime_obs > limit_window:
-                        if vol_field == 'vol_5m' and event_volume == 6:
+                        
+                        if vol_field == 'vol_5m' and event_volume == 6 and buy_vol_field == 'buy_vol_5m' and event_buy_volume < 0.85:
+                             continue
+                        if event_buy_volume >= 0.9 and vol_field != 'vol_5m':
                             continue
                         #EVENT TRIGGERED
 
@@ -421,7 +424,7 @@ def total_function_multiprocessing(list_buy_vol, list_vol, list_minutes, list_ev
 
     #load analysis json info
     analysis_json_path = ROOT_PATH + '/analysis_json/analysis.json'
-    start_interval, end_interval = load_analysis_json_info(analysis_json_path, analysis_timeframe=analysis_timeframe)
+    start_interval, end_interval = load_analysis_json_info(analysis_json_path, analysis_timeframe=analysis_timeframe, INTEGRATION=INTEGRATION)
 
     # load data from local (json/) and store in "data" variable
     data = load_data(start_interval=datetime.fromisoformat(start_interval), end_interval=end_interval)
@@ -773,6 +776,8 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
         
     # Group Event keys by volatility == True         
     else:
+        first_event = {}
+        last_event = {}
         for key in list(shared_data.keys()):
             # print(key)
             # print(shared_data[key].keys())
@@ -784,6 +789,13 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
                 mean_by_coin_list = []
                 std_by_coin_list = []
                 list_coins = list(shared_data[key]['info'].keys())
+                # I want to get earliest and latest event
+                # intitialize first_event and last_event
+
+                if key_without_volatility not in first_event:
+                    random_coin = list(shared_data[key]['info'].keys())[0]
+                    first_event[key_without_volatility] = datetime.fromisoformat(shared_data[key]['info'][random_coin][0]['event'])
+                    last_event[key_without_volatility] =  datetime(1970,1,1)
 
                 for coin in shared_data[key]['info']:
                     n_events += len(shared_data[key]['info'][coin])
@@ -793,56 +805,70 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
                         else:
                             mean_by_coin_list.append(event['mean'])
                             std_by_coin_list.append(event['std'])
+                            first_event[key_without_volatility] = min(datetime.fromisoformat(event['event']), first_event[key_without_volatility])
+                            last_event[key_without_volatility] = max(datetime.fromisoformat(event['event']), last_event[key_without_volatility])
 
-                mean_by_coin = round_(np.mean(np.array(mean_by_coin_list))*100,2)
-                std_by_coin = round_(pooled_standard_deviation(np.array(std_by_coin_list), sample_size=int(timeframe))*100,2)
+                if len(mean_by_coin_list) > 0:
+                    mean_by_coin = round_(np.mean(np.array(mean_by_coin_list))*100,2)
+                    std_by_coin = round_(pooled_standard_deviation(np.array(std_by_coin_list), sample_size=int(timeframe))*100,2)
 
-                # Start filling output and complete_info
-                if key_without_volatility not in output:
-                    # initialize output and complete_info
-                    output[key_without_volatility] = {'mean': [(mean_by_coin,len(list_coins))], 'std': [(std_by_coin,len(list_coins))], 'n_coins': list_coins, 'n_events': n_events}
-                    #update 'info' by adding "volatility" variable
-                    complete_info[key_without_volatility] = {'info': {}, 'n_coins': list_coins, 'events': n_events}
-                    for coin in shared_data[key]['info']:
-                        if coin not in complete_info[key_without_volatility]['info']:
-                            # initialize coin in complete_info
-                            complete_info[key_without_volatility]['info'][coin] = []
-                        for event in shared_data[key]['info'][coin]:
-                            # add volatility
-                            volatility = int(key.split('/vlty:')[1])
-                            event['volatility'] = volatility
-                            complete_info[key_without_volatility]['info'][coin].append(event)
+                    # Start filling output and complete_info
+                    if key_without_volatility not in output:
+                        # initialize output and complete_info
+                        output[key_without_volatility] = {'mean': [(mean_by_coin,len(list_coins))], 'std': [(std_by_coin,len(list_coins))], 'n_coins': list_coins, 'n_events': n_events}
+                        #update 'info' by adding "volatility" variable
+                        complete_info[key_without_volatility] = {'info': {}, 'n_coins': list_coins, 'events': n_events}
+                        for coin in shared_data[key]['info']:
+                            if coin not in complete_info[key_without_volatility]['info']:
+                                # initialize coin in complete_info
+                                complete_info[key_without_volatility]['info'][coin] = []
+                            for event in shared_data[key]['info'][coin]:
+                                # add volatility
+                                volatility = int(key.split('/vlty:')[1])
+                                event['volatility'] = volatility
+                                complete_info[key_without_volatility]['info'][coin].append(event)
 
+                    else:
+                        # update output
+                        output[key_without_volatility]['mean'].append((mean_by_coin,len(list_coins)))
+                        output[key_without_volatility]['std'].append((std_by_coin,len(list_coins)))
+                        output[key_without_volatility]['n_coins'] += list_coins
+                        output[key_without_volatility]['n_events'] += n_events
+                        
+                        # update complete info
+                        complete_info[key_without_volatility]['n_coins'] += list_coins
+                        complete_info[key_without_volatility]['events'] += n_events
+                        for coin in shared_data[key]['info']:
+                            if coin not in complete_info[key_without_volatility]['info']:
+                                complete_info[key_without_volatility]['info'][coin] = []
+                            for event in shared_data[key]['info'][coin]:
+                                volatility = int(key.split('/vlty:')[1])
+                                event['volatility'] = volatility
+                                complete_info[key_without_volatility]['info'][coin].append(event)
                 else:
-                    # update output
-                    output[key_without_volatility]['mean'].append((mean_by_coin,len(list_coins)))
-                    output[key_without_volatility]['std'].append((std_by_coin,len(list_coins)))
-                    output[key_without_volatility]['n_coins'] += list_coins
-                    output[key_without_volatility]['n_events'] += n_events
-                    
-                    # update complete info
-                    complete_info[key_without_volatility]['n_coins'] += list_coins
-                    complete_info[key_without_volatility]['events'] += n_events
-                    for coin in shared_data[key]['info']:
-                        if coin not in complete_info[key_without_volatility]['info']:
-                            complete_info[key_without_volatility]['info'][coin] = []
-                        for event in shared_data[key]['info'][coin]:
-                            volatility = int(key.split('/vlty:')[1])
-                            event['volatility'] = volatility
-                            complete_info[key_without_volatility]['info'][coin].append(event)
+                    continue
 
         delete_keys = []
         # Filter best keys by performance
         for key_without_volatility in output:
             mean = sum([item[0]*item[1] for item in output[key_without_volatility]['mean']]) / sum([item[1] for item in output[key_without_volatility]['mean']] )
             std = sum([item[0]*item[1] for item in output[key_without_volatility]['std']]) / sum([item[1] for item in output[key_without_volatility]['std']] )
+
+            # get frequency event per month
+            time_interval_analysis = (last_event[key_without_volatility] - first_event[key_without_volatility]).days
+            n_events = output[key_without_volatility]['n_events']
+            if time_interval_analysis != 0:
+                event_frequency_month = round_((n_events / time_interval_analysis) * 30,2)
+
             if output[key_without_volatility]['n_events'] >= minimum_event_number and mean > mean_threshold and mean <= std_multiplier * std:
                 output[key_without_volatility]['mean'] = mean
                 output[key_without_volatility]['std'] = std
                 output[key_without_volatility]['upper_bound'] = output[key_without_volatility]['mean'] + output[key_without_volatility]['std']
                 output[key_without_volatility]['lower_bound'] = output[key_without_volatility]['mean'] - output[key_without_volatility]['std']
                 output[key_without_volatility]['n_coins'] = len(set(output[key_without_volatility]['n_coins']))
+                output[key_without_volatility]['frequency/month'] = event_frequency_month
                 complete_info[key_without_volatility]['n_coins'] = len(set(complete_info[key_without_volatility]['n_coins']))
+                complete_info[key_without_volatility]['frequency/month'] = event_frequency_month
             else:
                 delete_keys.append(key_without_volatility)
 
@@ -912,15 +938,11 @@ def plot_live_timeseries(risk_management_path, filter_live: bool = False, filter
 
         key_json = key.replace(':', '_')
         key_json = key_json.replace('/', '_')
-        path = ROOT_PATH + "/timeseries_json/"
-        file_path = path + key_json + '.json'
+
         vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
         fields = [vol_field, buy_vol_field, timeframe, buy_vol_value, vol_value]
 
-        with open(file_path, 'r') as file:
-            # Retrieve timeseries
-            timeseries = json.load(file)
-
+        timeseries = load_timeseries(key_json)
         
         plotTimeseries(timeseries, fields, check_past=1440, plot=True, filter_start=start_plot_datetime, filter_best=filter_best)
 
@@ -938,9 +960,38 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
     # load from local or from server
     key_json = key.replace(':', '_')
     key_json = key_json.replace('/', '_')
+    url = 'http://localhost/analysis/get-timeseries'
 
     path = ROOT_PATH + "/timeseries_json/"
-    file_path = path + key_json + '.json'
+
+    timeseries_list = os.listdir(path)
+    timeseries_key = []
+    for timeseries_path in timeseries_list:
+        if key_json in timeseries_path:
+            timeseries_key.append(path + timeseries_path)
+    
+    if len(timeseries_key) > 1:
+        # Extract PART numbers using regular expression
+        part_numbers = [re.search(r'PART(\d+)', file).group(1) for file in timeseries_key if re.search(r'PART(\d+)', file)]
+
+        # Find the file with the greatest PART number
+        if part_numbers:
+            max_part_number = max(map(int, part_numbers))
+            file_path = next(file for file in timeseries_key if f'PART{max_part_number}' in file)
+            print(f"The file with the greatest PART number is: {file_path}")
+            PATH_EXISTS = True
+        else:
+            print("No files with PART numbers found.")
+    
+    elif len(timeseries_key) == 1:
+        file_path = timeseries_key[0]
+        PATH_EXISTS = True
+    
+    elif len(timeseries_key) == 0:
+        file_path = path + key_json + '.json'
+        PATH_EXISTS = False
+        
+
 
     # get substrings (vol, buy_vol, timeframe) from key
     # vol, vol_value, buy_vol, buy_vol_value, timeframe
@@ -948,8 +999,8 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
 
     fields = [vol_field, buy_vol_field, timeframe, buy_vol_value, vol_value]
 
-    if os.path.exists(file_path):
-        print(f'File exists, Download from loca: {file_path}')
+    if PATH_EXISTS:
+        print(f'File exists, Download from local: {file_path}')
         with open(file_path, 'r') as file:
             # Retrieve timeseries
             timeseries = json.load(file)
@@ -968,11 +1019,13 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
             # define for each from which timestamp new events should be discovered
             for coin in timeseries:
                 #get most recent timestamp
-                most_recent_timestamp = list(timeseries[coin].keys())[-1]
-
+                timestamp_list = list(timeseries[coin].keys())
+                # Convert the ISO format timestamps to datetime objects
+                datetime_list = [datetime.fromisoformat(timestamp) for timestamp in timestamp_list]
+                # Find the most recent timestamp using the min function
+                most_recent_timestamp = max(datetime_list).isoformat()
                 request['last_timestamp'][coin] = most_recent_timestamp
 
-            url = 'https://algocrypto.eu/analysis/get-timeseries'
 
             # send request
             response = requests.post(url, json = request)
@@ -994,8 +1047,26 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
                     timeseries[coin][timestamp_start] = new_timeseries[coin][timestamp_start]
                     
             print(f'{n_events} new events for {key}')
-            with open(file_path, 'w') as file:
-                json.dump(timeseries, file)
+
+            # if file size is greater than 800MB, lets create a new one
+            if os.path.getsize(file_path) > 800000000:
+                # check if the current file part has already PART substring. 
+                # In this case thre is not, rename the path with PART substring
+                if '_PART' not in file_path:
+                    file_path1 = path + key_json + '_PART1' '.json'
+                    os.rename(file_path, file_path1)
+                    max_part_number = 1
+
+                # DEFINE THE NEW PATH JSON
+                new_part_number = max_part_number + 1
+                part_string = '_PART' + str(new_part_number)
+                new_file_path = path + key_json + part_string + '.json'
+                with open(new_file_path, 'w') as file:
+                    json.dump(new_timeseries, file)
+            else:
+                
+                with open(file_path, 'w') as file:
+                    json.dump(timeseries, file)
 
             del new_timeseries
             
@@ -1012,9 +1083,6 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
             pass
         else:
             request['check_past'] = check_past
-
-        #url = 'http://localhost/analysis/get-timeseries'
-        url = 'https://algocrypto.eu/analysis/get-timeseries'
 
         response = requests.post(url, json = request)
         print('Status Code is : ', response.status_code)
@@ -1516,17 +1584,10 @@ def RiskManagement(key, early_validation, investment_per_event=100):
     print(f'Number of combinations {n_combinations}')
 
     # get timeseries
-    timeseries_path = ROOT_PATH + "/timeseries_json/"
-    timeseries_file = key.replace(':', '_')
-    timeseries_file = timeseries_file.replace('/', '_')
-    timeseries_full_path = timeseries_path + timeseries_file + '.json'
-    if not os.path.exists(timeseries_full_path):
-        #response = getTimeseries(info, key, check_past=360, look_for_newdata=True)
-        print(f'KEY DOES NOT EXIST. Download timeseries {key} ')
-        return False, False, False, False
-
-    f = open(timeseries_full_path, "r")
-    timeseries_json = json.loads(f.read())
+    event_key_path = key.replace(':', '_')
+    event_key_path = event_key_path.replace('/', '_')
+    
+    timeseries_json = load_timeseries(event_key_path)
 
     # get timeframe
     vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
@@ -1822,10 +1883,9 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
                     'median_gain_all_configs': median,
                     'std_gain_all_configs': std,
                 }}
-        if VOLATILITY_GROUP:
-            if best_mean_print >= optimized_gain_threshold and mean >= mean_gain_threshold:
+        if VOLATILITY_GROUP and best_mean_print >= optimized_gain_threshold and mean >= mean_gain_threshold:
                 risk_configuration[volatility][key] = obj
-            else:
+        elif best_mean_print >= optimized_gain_threshold and mean >= mean_gain_threshold:
                 risk_configuration[key] = obj
         
 
@@ -1872,17 +1932,17 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
     else:
         for key in risk_configuration:
             key_list.append(key)
-            golden_zone_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['golden_zone'])
-            step_golden_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['step_golden'])
-            step_nogolden_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['step_nogolden'])
-            extra_timeframe_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['extra_timeframe'])
-            optimized_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['optimized_gain'])
-            optimized_std_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['optimized_std'])
-            mean_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['mean_gain_all_configs'])
-            median_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['median_gain_all_configs'])
-            std_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['std_gain_all_configs'])
-            frequency_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['frequency'])
-            n_events_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['n_events'])
+            golden_zone_list.append(risk_configuration[key]['riskmanagement_conf']['golden_zone'])
+            step_golden_list.append(risk_configuration[key]['riskmanagement_conf']['step_golden'])
+            step_nogolden_list.append(risk_configuration[key]['riskmanagement_conf']['step_nogolden'])
+            extra_timeframe_list.append(risk_configuration[key]['riskmanagement_conf']['extra_timeframe'])
+            optimized_gain_list.append(risk_configuration[key]['riskmanagement_conf']['optimized_gain'])
+            optimized_std_list.append(risk_configuration[key]['riskmanagement_conf']['optimized_std'])
+            mean_gain_list.append(risk_configuration[key]['riskmanagement_conf']['mean_gain_all_configs'])
+            median_gain_list.append(risk_configuration[key]['riskmanagement_conf']['median_gain_all_configs'])
+            std_gain_list.append(risk_configuration[key]['riskmanagement_conf']['std_gain_all_configs'])
+            frequency_list.append(risk_configuration[key]['riskmanagement_conf']['frequency'])
+            n_events_list.append(risk_configuration[key]['riskmanagement_conf']['n_events'])
             
 
     average_gain_percentage = sum(np.array(optimized_gain_list) * (np.array(frequency_list)/sum(frequency_list))) / 100
@@ -1916,8 +1976,8 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
     mean_threshold = str(risk_configuration_dict['mean_threshold'])
 
     if early_validation == False:
-        dst_backup = f"{ROOT_PATH}/riskmanagement_backup/riskmanagement-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-{random_id}.json"
-        dst_optimized = f"{ROOT_PATH}/optimized_results_backup/optimized_results-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-{random_id}.json"
+        dst_backup = f"{ROOT_PATH}/riskmanagement_backup/riskmanagement-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-Vol{str(VOLATILITY_GROUP)}-{random_id}.json"
+        dst_optimized = f"{ROOT_PATH}/optimized_results_backup/optimized_results-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-Vol{str(VOLATILITY_GROUP)}-{random_id}.json"
         shutil.copyfile(file_path_riskmanagement, dst_backup)
         shutil.copyfile(file_path_optimized_results, dst_optimized)
     else:
@@ -1927,8 +1987,8 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
         day = str(early_validation.day)
         std_multiplier = str(std_multiplier)
 
-        dst_backup = f"{ROOT_PATH}/riskmanagement_backup/riskmanagement-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-earlyvalidation-{std_multiplier}stdmultiplier-{random_id}.json"
-        dst_optimized = f"{ROOT_PATH}/optimized_results_backup/optimized_results-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-earlyvalidation-{std_multiplier}stdmultiplier-{random_id}.json"
+        dst_backup = f"{ROOT_PATH}/riskmanagement_backup/riskmanagement-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-earlyvalidation-{std_multiplier}stdmultiplier-Vol{str(VOLATILITY_GROUP)}-{random_id}.json"
+        dst_optimized = f"{ROOT_PATH}/optimized_results_backup/optimized_results-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-earlyvalidation-{std_multiplier}stdmultiplier-Vol{str(VOLATILITY_GROUP)}-{random_id}.json"
         print(f'Early Validation On: analize the post performance of this path: {dst_backup}')
 
         with open(dst_backup, 'w') as file:
@@ -2117,16 +2177,22 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
                 new_optimized_results = {event_key: {}}
                 vol, vol_value, buy_vol, buy_vol_value, timeframe = getsubstring_fromkey(event_key)
                 timeframe = int(timeframe)
-                volatility = event_key.split('vlty:')[1]
+                if 'vlty' in event_key:
+                    volatility = event_key.split('vlty:')[1]
+                    riskmanagement_general = riskmanagement[volatility]
+                    VOLATILITY_GROUP = False
+                else:
+                    riskmanagement_general = riskmanagement
+                    VOLATILITY_GROUP = True
 
-                if event_key in riskmanagement[volatility]:
+                if event_key in riskmanagement_general:
                     # retrieve riskMangement_features (GOLDEN_ZONE, STEP, ecc...)
 
                     
-                    GOLDEN_ZONE_original = float(riskmanagement[volatility][event_key]['riskmanagement_conf']['golden_zone'])
-                    STEP_original = float(riskmanagement[volatility][event_key]['riskmanagement_conf']['step_golden'])
-                    STEP_NOGOLDEN = float(riskmanagement[volatility][event_key]['riskmanagement_conf']['step_nogolden'])
-                    extratimeframe = float(riskmanagement[volatility][event_key]['riskmanagement_conf']['extra_timeframe'])
+                    GOLDEN_ZONE_original = float(riskmanagement_general[event_key]['riskmanagement_conf']['golden_zone'])
+                    STEP_original = float(riskmanagement_general[event_key]['riskmanagement_conf']['step_golden'])
+                    STEP_NOGOLDEN = float(riskmanagement_general[event_key]['riskmanagement_conf']['step_nogolden'])
+                    extratimeframe = float(riskmanagement_general[event_key]['riskmanagement_conf']['extra_timeframe'])
 
                     # update timeseries.json
                     if DISCOVER:
@@ -2136,10 +2202,8 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
                     event_key_path = event_key.replace(':', '_')
                     event_key_path = event_key_path.replace('/', '_')
                     
-                    #print(f'Reading timeseries for {event_key} from local')
-                    timeseries_json_path = ROOT_PATH + "/timeseries_json/" + event_key_path + '.json'
-                    with open(timeseries_json_path, 'r') as file:
-                        timeseries_json = json.load(file)
+                    # FIND THE THE TIMESERIES json. some Timeseries json might be divided in PART<n> if the file is too big
+                    timeseries_json = load_timeseries(event_key_path)
 
                     #print('Check if there is new events to analyze')
                     # check if new event has occurred
@@ -2214,8 +2278,8 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
     positive_outcome = 0
     negative_outcome = 0
 
-    for volatility in riskmanagement:
-        for event_key in riskmanagement[volatility]:
+    if VOLATILITY_GROUP:
+        for event_key in riskmanagement:
             if event_key in analysis_json:
                 for coin in analysis_json[event_key]['info']:
                     for event in analysis_json[event_key]['info'][coin]:
@@ -2244,6 +2308,37 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
                             positive_outcome += 1
                         else:
                             negative_outcome += 1
+    else: 
+        for volatility in riskmanagement:
+            for event_key in riskmanagement[volatility]:
+                if event_key in analysis_json:
+                    for coin in analysis_json[event_key]['info']:
+                        for event in analysis_json[event_key]['info'][coin]:
+                            # initialize series for single event_key
+                            if event_key not in timeseries_info:
+                                timeseries_info[event_key] = []
+                            
+                            # append event for single event_key
+                            event['event_key'] = event_key
+                            event['coin'] = coin
+                            timeseries_info[event_key].append(event)
+
+                            # append event for "total"
+                            timeseries_info['total'].append(event)
+                            # event_key_list.append(event['event'])
+                            # mean_list.append(event['mean'])
+                            # std_list.append(event['std'])
+
+                            
+                            for performance_scenario in PERFORMANCE_SCENARIOS:
+                                if event['mean'] >= PERFORMANCE_SCENARIOS[performance_scenario][0][0] and event['mean'] < PERFORMANCE_SCENARIOS[performance_scenario][0][1]:
+                                    PERFORMANCE_SCENARIOS[performance_scenario][1] += 1
+                                    continue
+
+                            if event['mean'] > 0:
+                                positive_outcome += 1
+                            else:
+                                negative_outcome += 1
 
     del analysis_json, riskmanagement
 

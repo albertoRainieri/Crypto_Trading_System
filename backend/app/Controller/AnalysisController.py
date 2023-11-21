@@ -288,14 +288,14 @@ class AnalysisController:
             n_event_limit = 2
             n_coin_limit = 20
         elif timeframe > 1000:
-            n_event_limit = 3
-            n_coin_limit = 30
+            n_event_limit = 5
+            n_coin_limit = 50
         elif timeframe > 300:
-            n_event_limit = 6
-            n_coin_limit = 60
+            n_event_limit = 10
+            n_coin_limit = 100
         else:
-            n_event_limit = 8
-            n_coin_limit = 80
+            n_event_limit = 15
+            n_coin_limit = 150
 
         db = DatabaseConnection()
         db_tracker = db.get_db(DATABASE_TRACKER)

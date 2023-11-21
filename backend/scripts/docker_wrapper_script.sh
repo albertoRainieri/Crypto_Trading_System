@@ -2,13 +2,20 @@
 
 # Start the first process
 /bin/bash /backend/scripts/fastapi_process.sh &
+echo $ANALYSIS
   
 # Start the second process
-/bin/bash /backend/scripts/wss_python_process.sh &
-sleep 10
+if [ $ANALYSIS ]
+then
+    echo 'hello'
+    /bin/bash /backend/scripts/analysis_mode.sh &
+else
+    /bin/bash /backend/scripts/wss_python_process.sh &
+    sleep 10
 
-# Start the third process
-/bin/bash /backend/scripts/wss_python_process_2.sh &
+    # Start the third process
+    /bin/bash /backend/scripts/wss_python_process_2.sh &
+fi
 
 
 # Wait for any process to exit

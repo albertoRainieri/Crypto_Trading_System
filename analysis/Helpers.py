@@ -670,6 +670,42 @@ def update_optimized_results(optimized_results_path):
 
     return optimized_results_obj
 
+def load_timeseries(event_key_path):
+    # FIND THE THE TIMESERIES json. some Timeseries json might be divided in PART<n> if the file is too big
+    path = ROOT_PATH + "/timeseries_json/"
+    timeseries_list = os.listdir(path)
+    timeseries_key = []
+    timeseries_json = {}
+    for timeseries_path in timeseries_list:
+        if event_key_path in timeseries_path:
+            timeseries_key.append(path + timeseries_path)
+    if len(timeseries_key) == 1:
+        print('There is only one JSON associated with with event key')
+        timeseries_json_path = timeseries_key[0]
+        with open(timeseries_json_path, 'r') as file:
+            timeseries_json = json.load(file)
+    elif len(timeseries_key) > 1:
+        len_timeseries_json = len(timeseries_key)
+        print(f'There are {len_timeseries_json} JSON associated with with event key')
+        # Order the list based on PART numbers in ascending order
+        ordered_files = sorted(timeseries_key, key=lambda x: int(re.search(r'PART(\d+)', x).group(1)) if re.search(r'PART(\d+)', x) else float('inf'))
+        for timeseries_path_PART in ordered_files:
+            with open(timeseries_path_PART, 'r') as file:
+                tmp_timeseries = json.load(file)
+            
+            for coin in tmp_timeseries:
+                if coin not in timeseries_json:
+                    timeseries_json[coin] = {}
+                for start_timestamp in tmp_timeseries[coin]:
+                    timeseries_json[coin][start_timestamp] = tmp_timeseries[coin][start_timestamp]
+            
+            del tmp_timeseries
+    else:
+        print('Timeseries Json does not exist. Add code in this section for downloading the timeseries from local server or Set DISCOVER to True')
+
+    return timeseries_json
+
+
 def load_data_for_supervised_analysis(complete_info=None, complete_info_path=None, search_parameters=None, target_variable: TargetVariable1 = 'mean'):
     '''
     This function analyzes with a supervised algorithm the output of "download_show_output". In particular the variable "info" or "complete_info" is taken as input.
@@ -935,3 +971,4 @@ def scale_filter_select_features(df, target_variable):
     y = output_variable[~np.array(nan_mask_y)]
 
     return X,y
+

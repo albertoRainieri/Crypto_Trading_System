@@ -9,9 +9,14 @@ class DatabaseConnection:
 
         self.username = os.getenv('MONGO_USERNAME')
         self.password = os.getenv('MONGO_PASSWORD')
-        self.db_url = os.getenv('MONGO_DB_URL')
+        self.analysis_mode = bool(os.getenv('MONGO_DB_ANALYSIS_URL'))
         self.db_name = os.getenv('MONGO_DB_NAME')
         self.port = os.getenv('MONGO_PORT')
+        
+        if self.analysis_mode:
+            self.db_url = os.getenv('MONGO_DB_ANALYSIS_URL')
+        else:
+            self.db_url = os.getenv('MONGO_DB_URL')
 
     def get_db(self, database='default'):
         try:
