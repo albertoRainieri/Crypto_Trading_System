@@ -23,19 +23,19 @@ class RiskManagement:
         self.current_minute = datetime.now().minute
         self.GOLDEN_ZONE = float(riskmanagement_configuration['riskmanagement_conf']['golden_zone'])
         self.GOLDEN_ZONE_BOOL = False
+        self.LOSS_ZONE_BOOL = False
         self.SELL = False
         self.STEP = float(riskmanagement_configuration['riskmanagement_conf']['step_golden'])
-        self.STEP_NOGOLDEN = float(riskmanagement_configuration['riskmanagement_conf']['step_nogolden'])
-        self.EXTRA_TIMEFRAME = float(riskmanagement_configuration['riskmanagement_conf']['extra_timeframe'])
+        self.LOSS_ZONE = float(riskmanagement_configuration['riskmanagement_conf']['loss_zone'])
+        self.LOSS_STEP = float(riskmanagement_configuration['riskmanagement_conf']['step_loss'])
+        self.MINIMUM = self.LOSS_ZONE
+        self.STOP_LOSS = self.LOSS_ZONE + self.LOSS_STEP
         self.GOLDEN_ZONE_LB = self.GOLDEN_ZONE - self.STEP
         self.GOLDEN_ZONE_UB = self.GOLDEN_ZONE + self.STEP
         self.LB_THRESHOLD = None
         self.UB_THRESHOLD = None
         self.timeframe = timeframe
-        # after this datetime, the transaction can be closed according to next_target and stop loss
-        self.ending_timewindow = datetime.fromisoformat(id) + timedelta(minutes=int(timeframe))
-        # at this datetime, the transaction will be closed in case it was not already completed
-        self.close_timewindow = self.ending_timewindow + timedelta(minutes=int(timeframe*self.EXTRA_TIMEFRAME))
+        self.close_timewindow = datetime.fromisoformat(id) + timedelta(minutes=int(timeframe))
 
 
     def updateProfit(self, bid_price, now):
@@ -47,8 +47,18 @@ class RiskManagement:
             if now > self.close_timewindow:
                 self.SELL = True
 
+        elif self.LOSS_ZONE_BOOL:
+            self.manageLossZoneChanges()
+            if now > self.close_timewindow:
+                self.SELL = True
+
         elif self.profit > self.GOLDEN_ZONE:
             self.manageGoldenZoneChanges()
+            if now > self.close_timewindow:
+                self.SELL = True
+
+        elif self.profit < self.LOSS_ZONE:
+            self.manageLossZoneChanges()
             if now > self.close_timewindow:
                 self.SELL = True
 
@@ -68,6 +78,18 @@ class RiskManagement:
 
         elif self.profit <= self.GOLDEN_ZONE_LB:
             self.SELL = True
+
+    def manageLossZoneChanges(self):
+        self.GOLDEN_ZONE_BOOL = True
+        self.SELL = False
+
+        if self.profit < self.MINIMUM:
+            self.MINIMUM = self.profit
+            self.STOP_LOSS = self.profit + self.LOSS_STEP
+        
+        elif self.profit > self.STOP_LOSS:
+            self.SELL = True
+        
         
     def manageUsualPriceChanges(self):
         self.SELL = False
