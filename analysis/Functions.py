@@ -40,6 +40,17 @@ ROOT_PATH = os.getcwd()
 TargetVariable = Literal["mean_event", "max_price", "min_price"]
 TargetVariable1 = Literal["mean", "max", "min"]
 
+def filter_out_events(vol_field, event_volume, buy_vol_field, event_buy_volume):
+    SKIP = False
+
+    if vol_field != 'vol_5m' and event_volume != 6  and event_buy_volume == 0.9:
+        SKIP = True
+    elif vol_field == 'vol_5m' and event_volume == 6  and event_buy_volume < 0.85:
+        SKIP = True
+
+    return SKIP
+
+
 def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_buy_volume, event_volume, dynamic_benchmark_volume, end_interval_analysis):
     '''
     This function analyzes what happens in terms of price changes after ONE specific event.
@@ -78,11 +89,8 @@ def analyze_events(data, buy_vol_field, vol_field, minutes_price_windows, event_
                     # if datetime_obs does not fall in a previous analysis window. (i.e. datetime_obs is greater than the limit_window set)
                     if obs[buy_vol_field] >= event_buy_volume and obs[vol_field] > event_volume and datetime_obs > limit_window:
                         
-                        if vol_field == 'vol_5m' and event_volume == 6 and buy_vol_field == 'buy_vol_5m' and event_buy_volume < 0.85:
-                             continue
-                        if event_buy_volume >= 0.9 and vol_field != 'vol_5m':
+                        if filter_out_events(vol_field, event_volume, buy_vol_field, event_buy_volume):
                             continue
-                        #EVENT TRIGGERED
 
                         # get initial price of the coin at the triggered event
                         initial_price = obs['price']
@@ -586,7 +594,7 @@ def earlyValidation(minimum_event_number_list, minimum_coin_number, mean_thresho
         print(f'started data fetching from analysis.json completed')
 
         print('Starting RiskManagement Configuration')
-        riskmanagement_conf = (minimum_event_number_list, minimum_coin_number, mean_threshold, lb_threshold, frequency_threshold, group_coins, best_coins_volatility)
+        riskmanagement_conf = (minimum_event_number_list, minimum_coin_number, mean_threshold, lb_threshold, frequency_threshold, group_coins, best_coins_volatility, std_multiplier, early_validation)
         none_df, riskmanagement_path = RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_gain_threshold, early_validation, std_multiplier, DISCOVER)
         print('RiskManagement Configuration Completed')
         DISCOVER=False
@@ -623,37 +631,62 @@ def nested_download_show_output(minimum_event_number_list, minimum_coin_number, 
     nested_info = []
     list_all_keys = []
     volatility_group = {}
+    novolatility_group = {}
 
 
     for minimum_event_number, i in zip(minimum_event_number_list, range(1,len(minimum_event_number_list)+1)):
         
         output, complete_info = download_show_output(minimum_event_number, minimum_coin_number, mean_threshold, lb_threshold, frequency_threshold, group_coins, best_coins_volatility, shared_data, early_validation, std_multiplier)
+        len_output = len(output)
+        print(f'There are {len_output} keys for mininum_event_number: {str(minimum_event_number)}')
         for key in output:
 
-            volatility = key.split('vlty:')[1]
-            if volatility not in volatility_group:
-                volatility_group[volatility] = {}
-            if str(minimum_event_number) not in volatility_group[volatility]:
-                volatility_group[volatility][str(minimum_event_number)] = []
-            
-            if key not in list_all_keys:
-                dict_key_event = output[key].copy()
-                dict_key_event['key'] = key
-                volatility_group[volatility][str(minimum_event_number)].append(dict_key_event)
-                list_all_keys.append(key)
+            if 'vlty' in key:
+                VOLATILITY_GROUP = True
+                volatility = key.split('vlty:')[1]
+                if volatility not in volatility_group:
+                    volatility_group[volatility] = {}
+                if str(minimum_event_number) not in volatility_group[volatility]:
+                    volatility_group[volatility][str(minimum_event_number)] = []
+                
+                if key not in list_all_keys:
+                    dict_key_event = output[key].copy()
+                    dict_key_event['key'] = key
+                    volatility_group[volatility][str(minimum_event_number)].append(dict_key_event)
+                    list_all_keys.append(key)
+            else:
+                VOLATILITY_GROUP = False
+                if str(minimum_event_number) not in novolatility_group:
+                    novolatility_group[str(minimum_event_number)] = []
+                if key not in list_all_keys:
+                    dict_key_event = output[key].copy()
+                    dict_key_event['key'] = key
+                    novolatility_group[str(minimum_event_number)].append(dict_key_event)
+                    list_all_keys.append(key)
             
         nested_info.append(complete_info)
         nested_output.append(output)
 
     winner_keys = []
-    for volatility in volatility_group:
-        for event_number in volatility_group[volatility]:
-            volatility_group[volatility][event_number].sort(key=lambda x: x['mean'], reverse=True)
-            if len(volatility_group[volatility][event_number]) > 0:
-                best_key = volatility_group[volatility][event_number][0]['key']
-                #print(f'best_key: {best_key} for {volatility} and {event_number}')
-                winner_keys.append(best_key)
-    
+    if VOLATILITY_GROUP:
+        for volatility in volatility_group:
+            for event_number in volatility_group[volatility]:
+                volatility_group[volatility][event_number].sort(key=lambda x: x['mean'], reverse=True)
+                if len(volatility_group[volatility][event_number]) > 0:
+                    best_key = volatility_group[volatility][event_number][0]['key']
+                    #print(f'best_key: {best_key} for {volatility} and {event_number}')
+                    winner_keys.append(best_key)
+    else:
+        # filter the first "filter_max_number_of_keys". This is valid only for Group_Coins=False (no volatility group)
+        filter_max_number_of_keys = 20 
+        for event_number in novolatility_group:
+            novolatility_group[event_number].sort(key=lambda x: x['mean'], reverse=True)
+            if len(novolatility_group[event_number]) > 0:
+                for i in range(min(filter_max_number_of_keys, len(novolatility_group[event_number]))):
+                    best_key = novolatility_group[event_number][i]['key']
+                    #print(f'best_key: {best_key} for {volatility} and {event_number}')
+                    winner_keys.append(best_key)
+
     final_nested_info = {}
     final_nested_output = {}
     for info, output in zip(nested_info, nested_output):
@@ -1298,7 +1331,7 @@ def plotTimeseries(timeseries, fields, check_past, plot, filter_start=False, fil
                 plt.show()
 
 def RiskManagement_lowest_level(tmp, timeseries_json, coin, start_timestamp, risk_key,
-                                 STEP_original, GOLDEN_ZONE_original, STEP_NOGOLDEN, timeframe, extratimeframe):
+                                 STEP_original, GOLDEN_ZONE_original, STEP_LOSS_original, timeframe, LOSS_ZONE_original):
     '''
     this is the lowest level in the Riskmanagemnt process
     It is called by "RiskManagement_multiprocessing"
@@ -1306,16 +1339,25 @@ def RiskManagement_lowest_level(tmp, timeseries_json, coin, start_timestamp, ris
     
     STEP = copy(STEP_original)
     GOLDEN_ZONE = copy(GOLDEN_ZONE_original)
-    #print(f'new event: {coin}; {start_timestamp}')
-    #coin_list.append(coin)
+    LOSS_STEP = copy(STEP_LOSS_original)
+    LOSS_ZONE = copy(LOSS_ZONE_original)
+    
+    #these are outdated parameters
+    # STEP_NOGOLDEN = 0.01
+    # extratimeframe = 0
 
     #STEP = 0.05
     GOLDEN_ZONE_BOOL = False
+    LOSS_ZONE_BOOL = False
     #GOLDEN_ZONE = 0.3 #
     GOLDEN_ZONE_LB = GOLDEN_ZONE - STEP
     GOLDEN_ZONE_UB = GOLDEN_ZONE + STEP
     LB_THRESHOLD = None
     UB_THRESHOLD = None
+
+    # INITIALIZE THESE PARAMETERS. these will be better defined in "manageLossZoneChanges"
+    STOP_LOSS = LOSS_ZONE + LOSS_STEP
+    MINIMUM = LOSS_ZONE
 
     iterator = timeseries_json[coin][start_timestamp]['data']
     #initial_price = iterator[0]['price']
@@ -1344,25 +1386,42 @@ def RiskManagement_lowest_level(tmp, timeseries_json, coin, start_timestamp, ris
                     tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True,
                                                         max_price, min_price)                        
                     break
+            
+            # if I'm already in LOSS ZONE, then just manage this scenario
+            elif LOSS_ZONE_BOOL:
+                SELL, LOSS_ZONE_BOOL, STOP_LOSS, MINIMUM = manageLossZoneChanges(current_change, LOSS_ZONE_BOOL, LOSS_ZONE, LOSS_STEP, MINIMUM, STOP_LOSS)
+                if SELL:
+                    tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True,
+                                                        max_price, min_price)                        
+                    break
 
             # check if price went above golden zone
             if current_change > GOLDEN_ZONE:
                 SELL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL = manageGoldenZoneChanges(current_change, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL)
+            
+            # check if price went below loss zone
+            elif current_change < LOSS_ZONE:
+                SELL, LOSS_ZONE_BOOL, STOP_LOSS, MINIMUM = manageLossZoneChanges(current_change, LOSS_ZONE_BOOL, LOSS_ZONE, LOSS_STEP, MINIMUM, STOP_LOSS)
+
 
             # check if minimum time window has passed
             elif datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(start_timestamp) + timedelta(minutes=timeframe):
-                SELL, LB_THRESHOLD, UB_THRESHOLD = manageUsualPriceChanges(current_change, LB_THRESHOLD, UB_THRESHOLD, STEP_NOGOLDEN)
-                if SELL:
-                    tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True,
-                                                        max_price, min_price)
-                    break
+                tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, False,
+                                                         max_price, min_price)
+                break
+
+                # SELL, LB_THRESHOLD, UB_THRESHOLD = manageUsualPriceChanges(current_change, LB_THRESHOLD, UB_THRESHOLD, STEP_NOGOLDEN)
+                # if SELL:
+                #     tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True,
+                #                                         max_price, min_price)
+                #     break
             
             #print(int(timeframe * extratimeframe))
-            extra = int(timeframe * extratimeframe)
-            if datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(start_timestamp) + timedelta(minutes=timeframe) + timedelta(minutes= extra):
-                tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, False,
-                                                    max_price, min_price)
-                break
+            # extra = int(timeframe * extratimeframe)
+            # if datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(start_timestamp) + timedelta(minutes=timeframe) + timedelta(minutes= extra):
+            #     tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, False,
+            #                                         max_price, min_price)
+            #     break
                 
             elif obs_i == len(iterator):
                 tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, False,
@@ -1370,7 +1429,7 @@ def RiskManagement_lowest_level(tmp, timeseries_json, coin, start_timestamp, ris
                 
     return tmp
                                         
-def RiskManagement_multiprocessing(timeseries_json, arg_i, EXTRATIMEFRAMES, STEPS_NOGOLDEN, STEPS_GOLDEN,
+def RiskManagement_multiprocessing(timeseries_json, arg_i, LOSS_ZONES, STEPS_LOSS, STEPS_GOLDEN,
                                         GOLDEN_ZONES, timeframe, lock, early_validation, results):
     '''
     This function is used by def "RiskManagement". The purpose is to analyze the best combinations of variables for handling the risk management
@@ -1378,12 +1437,13 @@ def RiskManagement_multiprocessing(timeseries_json, arg_i, EXTRATIMEFRAMES, STEP
     '''
     
     tmp = {}
-    for extratimeframe in EXTRATIMEFRAMES:
-        for STEP_NOGOLDEN in STEPS_NOGOLDEN:
+    for LOSS_ZONE_original in LOSS_ZONES:
+        for STEP_LOSS_original in STEPS_LOSS:
             for STEP_original in STEPS_GOLDEN:
                 for GOLDEN_ZONE_original in GOLDEN_ZONES:
 
-                    risk_key = 'risk_golden_zone:' + str(GOLDEN_ZONE_original) + '_step:' + str(STEP_original) + '_step_no_golden:' + str(STEP_NOGOLDEN) + '_extratime:' + str(round_(extratimeframe,2))
+                    #risk_key = 'risk_golden_zone:' + str(GOLDEN_ZONE_original) + '_step:' + str(STEP_original) + '_step_no_golden:' + str(STEP_NOGOLDEN) + '_extratime:' + str(round_(extratimeframe,2))
+                    risk_key = 'risk_golden_zone:' + str(GOLDEN_ZONE_original) + '_step:' + str(STEP_original) + '_loss_zone:' + str(LOSS_ZONE_original) + '_step_loss:' + str(STEP_LOSS_original)
                     tmp[risk_key] = {}
 
                     # iterate through each coin
@@ -1410,7 +1470,7 @@ def RiskManagement_multiprocessing(timeseries_json, arg_i, EXTRATIMEFRAMES, STEP
                             else:
                                 # start the riskmanagement analysis for this event
                                 tmp = RiskManagement_lowest_level(tmp, timeseries_json, coin, start_timestamp, risk_key,
-                                 STEP_original, GOLDEN_ZONE_original, STEP_NOGOLDEN, timeframe, extratimeframe)
+                                 STEP_original, GOLDEN_ZONE_original, STEP_LOSS_original, timeframe, LOSS_ZONE_original)
     with lock:
         resp = json.loads(results.value)
         for key in list(tmp.keys()):
@@ -1478,7 +1538,7 @@ def prepareOptimizedConfigurarionResults(results, event_key):
 
     risk_configuration_list = []
     for risk_key in profit_list:
-        profit = np.mean(profit_list[risk_key])
+        profit = np.mean(profit_list[risk_key]) # meean of all the events with a the strategy defined by risk_key
         std = np.std(profit_list[risk_key])
 
         risk_key_df.append(risk_key)
@@ -1575,12 +1635,12 @@ def RiskManagement(key, early_validation, investment_per_event=100):
     This function is called by RiskConfiguration.
     This function focuses on one key event and prepares for multiprocessing
     '''
-    EXTRATIMEFRAMES = [0]
-    STEPS_NOGOLDEN = [0.01]
-    STEPS_GOLDEN = [0.05, 0.075, 0.1, 0.15, 0.2, 0.25, 0.3]
-    GOLDEN_ZONES = [0.10, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
+    LOSS_ZONES = [-0.025, -0.05]
+    STEPS_LOSS = [0.025, 0.05, 0.1, 0.15]
+    STEPS_GOLDEN = [0, 0.025, 0.05, 0.1, 0.15, 0.2]
+    GOLDEN_ZONES = [0.05, 0.075, 0.10, 0.2, 0.3, 0.4, 0.6, 0.8]
     
-    n_combinations = len(EXTRATIMEFRAMES) * len(STEPS_NOGOLDEN) * len(STEPS_GOLDEN) * len(GOLDEN_ZONES)
+    n_combinations = len(LOSS_ZONES) * len(STEPS_LOSS) * len(STEPS_GOLDEN) * len(GOLDEN_ZONES)
     print(f'Number of combinations {n_combinations}')
 
     # get timeseries
@@ -1594,14 +1654,16 @@ def RiskManagement(key, early_validation, investment_per_event=100):
     timeframe = int(timeframe) - 0.2*int(timeframe)
 
     # MULTIPROCESSING
+    print('Dividing the dataset for multiprocessing')
     data_arguments = riskmanagement_data_preparation(timeseries_json, n_processes=8)
     manager = Manager()
     results = manager.Value(str, json.dumps({}))
     lock = Manager().Lock()
     pool = Pool()
-    pool.starmap(RiskManagement_multiprocessing, [(arg, arg_i, EXTRATIMEFRAMES, STEPS_NOGOLDEN, STEPS_GOLDEN,
+    print('Starting the multiprocessing Task for Risk Configuration')
+    pool.starmap(RiskManagement_multiprocessing, [(arg, arg_i, LOSS_ZONES, STEPS_LOSS, STEPS_GOLDEN,
                                         GOLDEN_ZONES, timeframe, lock, early_validation, results) for arg, arg_i in zip(data_arguments, range(1,len(data_arguments)+1))])
-
+    print('Multiprocessing Task is Completed')
     pool.close()
     pool.join()
 
@@ -1690,6 +1752,30 @@ def manageGoldenZoneChanges(current_change, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP
 
     return SELL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL
 
+def manageLossZoneChanges(current_change, LOSS_ZONE_BOOL, LOSS_ZONE, LOSS_STEP, MINIMUM, STOP_LOSS):
+    SELL = False
+    
+
+    # if I'm in loss Zone
+    if LOSS_ZONE_BOOL:
+        # check If I hit the STOP_LOSS, in this scenario current_change is usually lower than STOP_LOSS.
+        if current_change > STOP_LOSS:
+            SELL = True
+        # update MINIMUM and STOP LOSS if we have hit the deepest fall so far
+        elif current_change < MINIMUM:
+            MINIMUM = current_change
+            STOP_LOSS = current_change + LOSS_STEP
+
+    else:
+        # CHECK IF i'm entering the LOSS scenario
+        if current_change < LOSS_ZONE:
+            SELL = False
+            LOSS_ZONE_BOOL = True
+            STOP_LOSS = current_change + LOSS_STEP
+            MINIMUM = current_change
+
+    return SELL, LOSS_ZONE_BOOL, STOP_LOSS, MINIMUM
+
 def manageUsualPriceChanges(current_change, LB_THRESHOLD, UB_THRESHOLD, STEP):
     SELL = False
 
@@ -1755,6 +1841,58 @@ def infoTimeseries(info, key):
     ax.axhline(y=0, color='red', linestyle='--')
     return df
 
+def filter_existing_riskconfiguration(file_path, mean_gain_threshold):
+    '''
+    This function filters out from an existing risk configuration saved in riskmanagement_backup
+    the event_keys that have performed under "mean_gain_threshold"
+    It creates a new riskconfiguration modifying also the "mean_gain_threshold" mentioned in the path
+    '''
+    with open(file_path, 'r') as file:
+        riskmanagement_dict = json.load(file)
+
+    dataframe = riskmanagement_dict['Dataframe']
+    keep_or_discard = []
+    keys_to_delete = []
+    for i in range(len(dataframe['mean_gain'])):
+        if dataframe['mean_gain'][i] >= mean_gain_threshold:
+            keep_or_discard.append(True)
+        else:
+            keep_or_discard.append(False)
+            keys_to_delete.append(dataframe['keys'][i])
+    
+    keys_dataframe = list(riskmanagement_dict['Dataframe'].keys())
+
+    # update the dataframe
+    for key in keys_dataframe:
+        riskmanagement_dict['Dataframe'][key] = [elem for elem, keep in zip(dataframe[key],keep_or_discard) if keep]
+
+    for key_to_delete in keys_to_delete:
+        del riskmanagement_dict['RiskManagement'][key_to_delete]
+    
+    # define new path riskmanagmenet
+    mean_gain_threshold_str = str(mean_gain_threshold)
+    new_file_path = re.sub(r'(MeanThrsl)(\d+(\.\d+)?)', rf'\g<1>{mean_gain_threshold_str}', file_path)
+    
+    # define new path for optimized configuration and copy into a new file
+    path_split_old = file_path.split('riskmanagement')
+    corresponding_optimized_results_suffix_old = path_split_old[-1]
+    optimized_results_json_path_old = ROOT_PATH + "/optimized_results_backup/optimized_results" + corresponding_optimized_results_suffix_old
+
+    path_split_new = new_file_path.split('riskmanagement')
+    corresponding_optimized_results_suffix_new = path_split_new[-1]
+    optimized_results_json_path_new = ROOT_PATH + "/optimized_results_backup/optimized_results" + corresponding_optimized_results_suffix_new
+
+    with open(optimized_results_json_path_old, 'rb') as source_file, open(optimized_results_json_path_new, 'wb') as destination_file:
+        # Read the content of the source file
+        file_content = source_file.read()
+        
+        # Write the content to the destination file
+        destination_file.write(file_content)
+
+    with open(new_file_path, 'w') as json_file:
+        json.dump(riskmanagement_dict, json_file, indent=2)
+
+
 def check_investment_amount(info, output, investment_amount = 100, riskmanagement_path=None):
     '''
     This function helps to understand the account balance required for investing based on "investment_amount"
@@ -1769,16 +1907,38 @@ def check_investment_amount(info, output, investment_amount = 100, riskmanagemen
                 print(riskmanagement_integration)
         else:
             print(f'{riskmanagement_path} does not exist')
-        
+    
 
+    if not info:
+        minimum_event_number_list = riskmanagement_dict['Info']['minimum_event_number']
+        minimum_coin_number = riskmanagement_dict['Info']['minimum_coin_number']
+        mean_threshold = riskmanagement_dict['Info']['mean_threshold']
+        lb_threshold = riskmanagement_dict['Info']['lb_threshold']
+        frequency_threshold = riskmanagement_dict['Info']['frequency_threshold']
+        group_coins = riskmanagement_dict['Info']['group_coins']
+        best_coins_volatility = riskmanagement_dict['Info']['best_coins_volatility']
+        early_validation = riskmanagement_dict['Info']['early_validation']
+        std_multiplier = riskmanagement_dict['Info']['std_multiplier']
+
+        if early_validation != False:
+            print(f'This Risk Configuration has been defined, from a dataset loaded from May 2023 until {early_validation}')
+            early_validation = datetime.fromisoformat(early_validation)
+
+        output, info = nested_download_show_output(minimum_event_number_list=minimum_event_number_list, minimum_coin_number=minimum_coin_number,
+                                      mean_threshold=mean_threshold, lb_threshold=lb_threshold, frequency_threshold=frequency_threshold, group_coins=group_coins,
+                                      best_coins_volatility=best_coins_volatility, early_validation=early_validation, std_multiplier=std_multiplier)
+
+    number_of_winner_keys =0
+    number_of_keys_avoided = 0
     for key in output:
-        #print(key)
+        # #print(key)
         if riskmanagement_path:
             if key not in riskmanagement_integration:
-                print('KEY NOT PRESENT:', key)
+                number_of_keys_avoided += 1
                 continue
-            # else:
-            #     #print('PRESENT:', key)
+            else:
+                number_of_winner_keys += 1
+                #print(key)
 
         vol, vol_value, buy_vol, buy_vol_value, timeframe = getsubstring_fromkey(key)
         for coin in info[key]['info']:
@@ -1790,6 +1950,8 @@ def check_investment_amount(info, output, investment_amount = 100, riskmanagemen
                 investment_list_info.append(obj1)
                 investment_list_info.append(obj2)
     
+    print(f'There are {number_of_winner_keys} event_keys that are in the riskmanagement configuration')
+    print(f'There are {number_of_keys_avoided} event_keys that have been discarded in the riskmanagement configuration')
     investment_list_info.sort(key=lambda x: x['event'], reverse=False)
 
     datetime_list = []
@@ -1860,9 +2022,9 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
         median = statistica_all_configs['median']
 
         golden_zone_str = get_substring_between(best_risk_key, "risk_golden_zone:", "_step:")
-        golden_step_str = get_substring_between(best_risk_key, "_step:", "_step_no_golden:")
-        nogolden_step_str = get_substring_between(best_risk_key, "_step_no_golden:", "_extratime:")
-        extratime = best_risk_key.split('_extratime:')[1]
+        golden_step_str = get_substring_between(best_risk_key, "_step:", "_loss_zone:")
+        loss_zone_str = get_substring_between(best_risk_key, "_loss_zone:", "_step_loss:")
+        step_loss = best_risk_key.split('_step_loss:')[1]
         frequency = info[key]["frequency/month"]
         n_events =  info[key]["events"]
 
@@ -1873,8 +2035,8 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
                 'riskmanagement_conf': {
                     'golden_zone': golden_zone_str,
                     'step_golden': golden_step_str,
-                    'step_nogolden': nogolden_step_str,
-                    'extra_timeframe': extratime,
+                    'loss_zone': loss_zone_str,
+                    'step_loss': step_loss,
                     'optimized_gain': best_mean_print,
                     'optimized_std': best_std_print,
                     'frequency': frequency,
@@ -1892,8 +2054,8 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
     key_list = []
     golden_zone_list = []
     step_golden_list = []
-    step_nogolden_list = []
-    extra_timeframe_list = []
+    loss_zone_list = []
+    step_loss_list = []
     optimized_gain_list = []
     optimized_std_list = []
     frequency_list = []
@@ -1910,8 +2072,13 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
         "lb_threshold": riskmanagement_conf[3],
         "frequency_threshold": riskmanagement_conf[4],
         "group_coins": riskmanagement_conf[5],
-        "best_coins_volatility": riskmanagement_conf[6]
+        "best_coins_volatility": riskmanagement_conf[6],
+        "std_multiplier": riskmanagement_conf[7],
+        "early_validation": riskmanagement_conf[8]
     }
+
+    if riskmanagement_conf[8] != False:
+        risk_configuration_dict['early_validation'] = risk_configuration_dict['early_validation'].isoformat()
 
      # PREPARE FILES FOR PANDAS AND FOR SAVING
     if VOLATILITY_GROUP:
@@ -1920,8 +2087,8 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
                 key_list.append(key)
                 golden_zone_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['golden_zone'])
                 step_golden_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['step_golden'])
-                step_nogolden_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['step_nogolden'])
-                extra_timeframe_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['extra_timeframe'])
+                loss_zone_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['loss_zone'])
+                step_loss_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['step_loss'])
                 optimized_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['optimized_gain'])
                 optimized_std_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['optimized_std'])
                 mean_gain_list.append(risk_configuration[volatility][key]['riskmanagement_conf']['mean_gain_all_configs'])
@@ -1934,8 +2101,8 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
             key_list.append(key)
             golden_zone_list.append(risk_configuration[key]['riskmanagement_conf']['golden_zone'])
             step_golden_list.append(risk_configuration[key]['riskmanagement_conf']['step_golden'])
-            step_nogolden_list.append(risk_configuration[key]['riskmanagement_conf']['step_nogolden'])
-            extra_timeframe_list.append(risk_configuration[key]['riskmanagement_conf']['extra_timeframe'])
+            loss_zone_list.append(risk_configuration[key]['riskmanagement_conf']['loss_zone'])
+            step_loss_list.append(risk_configuration[key]['riskmanagement_conf']['step_loss'])
             optimized_gain_list.append(risk_configuration[key]['riskmanagement_conf']['optimized_gain'])
             optimized_std_list.append(risk_configuration[key]['riskmanagement_conf']['optimized_std'])
             mean_gain_list.append(risk_configuration[key]['riskmanagement_conf']['mean_gain_all_configs'])
@@ -1946,8 +2113,8 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
             
 
     average_gain_percentage = sum(np.array(optimized_gain_list) * (np.array(frequency_list)/sum(frequency_list))) / 100
-    df_dict = {"keys": key_list, "golden_zone": golden_zone_list, 'step_golden': step_golden_list, 'step_nogolden': step_nogolden_list,
-                'extra_timeframe': extra_timeframe_list, 'optimized_gain': optimized_gain_list, 'optimized_std': optimized_std_list,
+    df_dict = {"keys": key_list, "golden_zone": golden_zone_list, 'step_golden': step_golden_list, 'loss_zone': loss_zone_list,
+                'step_loss': step_loss_list, 'optimized_gain': optimized_gain_list, 'optimized_std': optimized_std_list,
                   'mean_gain': mean_gain_list, 'median_gain': median_gain_list, 'std_gain': std_gain_list,
                   'frequency': frequency_list, 'n_events': n_events_list}
     
@@ -1976,8 +2143,8 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
     mean_threshold = str(risk_configuration_dict['mean_threshold'])
 
     if early_validation == False:
-        dst_backup = f"{ROOT_PATH}/riskmanagement_backup/riskmanagement-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-Vol{str(VOLATILITY_GROUP)}-{random_id}.json"
-        dst_optimized = f"{ROOT_PATH}/optimized_results_backup/optimized_results-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-Vol{str(VOLATILITY_GROUP)}-{random_id}.json"
+        dst_backup = f"{ROOT_PATH}/riskmanagement_backup/riskmanagement-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-Vol{str(VOLATILITY_GROUP)}-MeanThrsl{mean_gain_threshold}-{random_id}.json"
+        dst_optimized = f"{ROOT_PATH}/optimized_results_backup/optimized_results-{year}-{month}-{day}-{minimum_event_number}-{mean_threshold}-Vol{str(VOLATILITY_GROUP)}-MeanThrsl{mean_gain_threshold}-{random_id}.json"
         shutil.copyfile(file_path_riskmanagement, dst_backup)
         shutil.copyfile(file_path_optimized_results, dst_optimized)
     else:
@@ -2191,8 +2358,8 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
                     
                     GOLDEN_ZONE_original = float(riskmanagement_general[event_key]['riskmanagement_conf']['golden_zone'])
                     STEP_original = float(riskmanagement_general[event_key]['riskmanagement_conf']['step_golden'])
-                    STEP_NOGOLDEN = float(riskmanagement_general[event_key]['riskmanagement_conf']['step_nogolden'])
-                    extratimeframe = float(riskmanagement_general[event_key]['riskmanagement_conf']['extra_timeframe'])
+                    LOSS_ZONE_original = float(riskmanagement_general[event_key]['riskmanagement_conf']['loss_zone'])
+                    STEP_LOSS_original = float(riskmanagement_general[event_key]['riskmanagement_conf']['step_loss'])
 
                     # update timeseries.json
                     if DISCOVER:
@@ -2214,7 +2381,7 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
 
                                 #analyze the event with the current strategy
                                 new_optimized_results = RiskManagement_lowest_level(new_optimized_results, timeseries_json, coin, start_timestamp, event_key,
-                                    STEP_original, GOLDEN_ZONE_original, STEP_NOGOLDEN, timeframe, extratimeframe)
+                                    STEP_original, GOLDEN_ZONE_original, STEP_LOSS_original, timeframe, LOSS_ZONE_original)
                     
                     if len(new_optimized_results[event_key]) > 0:
                         print('Updating optimized_results_configuration. def prepareOptimizedConfigurarionResults')
@@ -2481,14 +2648,16 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
         
     keys = list(PERFORMANCE_SCENARIOS.keys())
     values = [entry[1] for entry in PERFORMANCE_SCENARIOS.values()]
+    print(PERFORMANCE_SCENARIOS)
 
+    plt.figure()
     plt.bar(keys, values)
     plt.xlabel('Ranges')
     plt.ylabel('Values')
-    plt.xticks(rotation=45)
+    plt.xticks(rotation=75)
     plt.title('Histogram')
-    plt.tight_layout()
-    plt.axvline(x=keys.index('0:0.02'), color='red', linestyle='--', label='Zero Line')
+    #plt.tight_layout()
+    #plt.axvline(x=keys.index('0:0.02'), color='red', linestyle='--', label='Zero Line')
 
     plt.show()
 

@@ -680,13 +680,13 @@ def load_timeseries(event_key_path):
         if event_key_path in timeseries_path:
             timeseries_key.append(path + timeseries_path)
     if len(timeseries_key) == 1:
-        print('There is only one JSON associated with with event key')
+        print(f'There is only one JSON associated with {event_key_path}')
         timeseries_json_path = timeseries_key[0]
         with open(timeseries_json_path, 'r') as file:
             timeseries_json = json.load(file)
     elif len(timeseries_key) > 1:
         len_timeseries_json = len(timeseries_key)
-        print(f'There are {len_timeseries_json} JSON associated with with event key')
+        print(f'There are {len_timeseries_json} JSON associated with {event_key_path}')
         # Order the list based on PART numbers in ascending order
         ordered_files = sorted(timeseries_key, key=lambda x: int(re.search(r'PART(\d+)', x).group(1)) if re.search(r'PART(\d+)', x) else float('inf'))
         for timeseries_path_PART in ordered_files:
@@ -703,6 +703,7 @@ def load_timeseries(event_key_path):
     else:
         print('Timeseries Json does not exist. Add code in this section for downloading the timeseries from local server or Set DISCOVER to True')
 
+    print('Timeseries has been downloaded')
     return timeseries_json
 
 
@@ -739,7 +740,7 @@ def load_data_for_supervised_analysis(complete_info=None, complete_info_path=Non
                 for event in complete_info[event_key]['info'][coin]:
                     request[event_key][coin].append(event['event'])
     
-        url = "https://algocrypto.eu/analysis/get-pricechanges"
+        url = "http://localhost/analysis/get-pricechanges"
         
         response = requests.post(url=url, json = request)
         print(response.status_code)
@@ -845,18 +846,18 @@ def train_model_xgb(X_train, X_test, y_train, y_test, classifier_strings, event_
     #Initialize accuracy_score
     best_acc_score = -10**9
     params = {
-        'eta_list' : [0, 0.5, 1],
-        'gamma_list' : [0,1],
+        'eta_list' : [0.5, 1],
+        'gamma_list' : [0.5, 1],
         'max_depth_list' : [6],
         'min_child_weight_list' : [1],
         'max_delta_step_list' : [0],
         'subsample_list' : [0.5, 1],
         'sampling_method_list' : ['uniform'],
-        'lambda_list' : [0,1],
+        'lambda_list' : [1],
         'alpha_list' : [0,1],
         'tree_method_list' : ['auto', 'approx', 'hist'],
-        'n_estimators_list': [10,50],
-        'max_leaves_list': [8,16,32],
+        'n_estimators_list': [40,80,160],
+        'max_leaves_list': [32,64],
         'eval_metric_list': ['logloss']
     }
 
@@ -910,11 +911,20 @@ def train_model_xgb(X_train, X_test, y_train, y_test, classifier_strings, event_
                                                         y_pred = model.predict(X_test)
                                                         y_pred = le.inverse_transform(y_pred)
                                                         
+
                                                         for a,b in zip(y_pred, y_test):
-                                                            if b == 0 and a == 0:
-                                                                acc_score += 2
-                                                            elif b == 0 and a == 2:
-                                                                acc_score -= 2
+                                                            if b == 1 and a == 3:
+                                                                acc_score -= 50
+                                                            elif b == 3 and a == 1:
+                                                                acc_score -= 50
+                                                            elif b == 2 and a == 1:
+                                                                acc_score -= 5
+                                                            elif a == 2 and b == 1:
+                                                                acc_score -= 5
+                                                            elif a == 3 and b == 3:
+                                                                acc_score += 30
+                                                            
+                                                            
 
                                                         if acc_score > best_acc_score:
                                                             print('Found new Acc Score: ', acc_score)
