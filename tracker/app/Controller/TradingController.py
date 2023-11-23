@@ -81,7 +81,7 @@ class TradingController:
         #     now_isoformat = now.isoformat()
         #     logger.info(f'TradingController: {coin}')
 
-        riskconfiguration = TradingController.returnRiskConfiguration(riskconfiguration, volatility_coin)
+        risk_configuration = TradingController.returnRiskConfiguration(risk_configuration, volatility_coin)
             
         for event_key in risk_configuration:
 
