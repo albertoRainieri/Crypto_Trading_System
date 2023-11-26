@@ -227,7 +227,7 @@ def return_most_recent_json(last_timestamp_db):
             logger.info('')
 
 
-        if os.path.getsize(most_recent_file) > 1200000000:
+        if os.path.getsize(most_recent_file) > 1000000000:
             last_record_split = last_timestamp_fs.split('-')
             last_record_split2 = last_timestamp_fs.split(':')
             year = last_record_split[0]

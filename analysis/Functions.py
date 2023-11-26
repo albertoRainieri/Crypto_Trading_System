@@ -602,10 +602,10 @@ def earlyValidation(minimum_event_number_list, minimum_coin_number, mean_thresho
         print('RiskManagement Path is provided')
 
     event_investment_amount=100
-    df, biggest_drop, biggest_drop_date, positive_outcome, negative_outcome, PERFORMANCE_SCENARIOS = analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED, DISCOVER, event_investment_amount)
+    df, biggest_drop, biggest_drop_date, outcome, performance_scenario, status = analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED, DISCOVER, event_investment_amount)
     
-    print(f'Positive events: {positive_outcome}')
-    print(f'Negative events: {negative_outcome}')
+    # print(f'Positive events: {positive_outcome}')
+    # print(f'Negative events: {negative_outcome}')
     print(f'Biggest Drop: {biggest_drop} at {biggest_drop_date}')
 
     return df
@@ -999,7 +999,13 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
 
     timeseries_list = os.listdir(path)
     timeseries_key = []
+
+    if 'vlty' not in key:
+        VOLATILITY_GROUP = True
+
     for timeseries_path in timeseries_list:
+        if VOLATILITY_GROUP and 'vlty' in timeseries_path:
+            continue
         if key_json in timeseries_path:
             timeseries_key.append(path + timeseries_path)
     
@@ -1066,6 +1072,7 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
             response = json.loads(response.text)
             new_timeseries = response['data']
             msg = response['msg']
+            retry = response['retry']
             print(msg)
 
             n_events = 0
@@ -1121,7 +1128,16 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
         print('Status Code is : ', response.status_code)
         response = json.loads(response.text)
         timeseries = response['data']
+
+        n_events = 0
+
+        for coin in timeseries:
+            for timestamp_start in list(timeseries[coin].keys()):
+                n_events += 1
+        print(f'{n_events} new events for {key} at the first download')
+
         msg = response['msg']
+        retry = response['msg']
         print(msg)
 
         with open(file_path, 'w') as file:
@@ -1130,7 +1146,7 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
     plotTimeseries(timeseries, fields, check_past, plot)
 
     # this part is added for "RiskConfiguration" function, in order to retry the request if the following message is received
-    if msg == "WARNING: Request too big. Not all data have been downloaded, retry...":
+    if retry:
         return True
     else:
         return False
@@ -1383,31 +1399,39 @@ def RiskManagement_lowest_level(tmp, timeseries_json, coin, start_timestamp, ris
             if GOLDEN_ZONE_BOOL:
                 SELL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL = manageGoldenZoneChanges(current_change, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL)
                 if SELL:
+                    status = 'PROFIT_EXIT'
                     tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True,
-                                                        max_price, min_price)                        
+                                                        max_price, min_price, status)                        
                     break
             
             # if I'm already in LOSS ZONE, then just manage this scenario
             elif LOSS_ZONE_BOOL:
                 SELL, LOSS_ZONE_BOOL, STOP_LOSS, MINIMUM = manageLossZoneChanges(current_change, LOSS_ZONE_BOOL, LOSS_ZONE, LOSS_STEP, MINIMUM, STOP_LOSS)
                 if SELL:
+                    status = 'LOSS_EXIT'
                     tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True,
-                                                        max_price, min_price)                        
+                                                        max_price, min_price, status)                        
                     break
 
             # check if price went above golden zone
             if current_change > GOLDEN_ZONE:
+                status = 'PROFIT_EXIT'
                 SELL, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL = manageGoldenZoneChanges(current_change, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL)
-            
+                tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True,
+                                                        max_price, min_price, status)  
             # check if price went below loss zone
             elif current_change < LOSS_ZONE:
+                status = 'LOSS_EXIT'
                 SELL, LOSS_ZONE_BOOL, STOP_LOSS, MINIMUM = manageLossZoneChanges(current_change, LOSS_ZONE_BOOL, LOSS_ZONE, LOSS_STEP, MINIMUM, STOP_LOSS)
+                tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, True,
+                                                        max_price, min_price, status)  
 
 
             # check if minimum time window has passed
             elif datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(start_timestamp) + timedelta(minutes=timeframe):
+                status = 'EXIT'
                 tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, False,
-                                                         max_price, min_price)
+                                                         max_price, min_price, status)
                 break
 
                 # SELL, LB_THRESHOLD, UB_THRESHOLD = manageUsualPriceChanges(current_change, LB_THRESHOLD, UB_THRESHOLD, STEP_NOGOLDEN)
@@ -1424,8 +1448,10 @@ def RiskManagement_lowest_level(tmp, timeseries_json, coin, start_timestamp, ris
             #     break
                 
             elif obs_i == len(iterator):
+                status = 'EXIT'
                 tmp[risk_key][start_timestamp] = (current_change, obs['_id'], initial_price, current_price, coin, False,
-                                                    max_price, min_price)
+                                                    max_price, min_price, status)
+                break
                 
     return tmp
                                         
@@ -1447,6 +1473,8 @@ def RiskManagement_multiprocessing(timeseries_json, arg_i, LOSS_ZONES, STEPS_LOS
                     tmp[risk_key] = {}
 
                     # iterate through each coin
+                    n_events_risk_key = sum([len(timeseries_json[coin]) for coin in timeseries_json])
+
                     for coin in timeseries_json:
                         
                         # check if there is at least a time window of "timeframe" between 2 events of the same coin
@@ -1471,6 +1499,11 @@ def RiskManagement_multiprocessing(timeseries_json, arg_i, LOSS_ZONES, STEPS_LOS
                                 # start the riskmanagement analysis for this event
                                 tmp = RiskManagement_lowest_level(tmp, timeseries_json, coin, start_timestamp, risk_key,
                                  STEP_original, GOLDEN_ZONE_original, STEP_LOSS_original, timeframe, LOSS_ZONE_original)
+                        
+                    tmp_n_events_risk_key = len(tmp[risk_key])
+
+                    if not early_validation:
+                        assert n_events_risk_key == tmp_n_events_risk_key, f'After RiskManagement_lowest_level the number of events for data-{arg_i} is {tmp_n_events_risk_key}, but {n_events_risk_key} were expected'
     with lock:
         resp = json.loads(results.value)
         for key in list(tmp.keys()):
@@ -1500,6 +1533,7 @@ def prepareOptimizedConfigurarionResults(results, event_key):
     max_price_list = {}
     min_price_list = {}
     start_timestamp_list = {}
+    status_list = {}
 
     # risk key is defined as
     # risk_key = 'risk_golden_zone:' + str(GOLDEN_ZONE_original) + '_step:' + str(STEP_original) + '_step_no_golden:' + str(STEP_NOGOLDEN) + '_extratime:' + str(round_(extratimeframe,2))
@@ -1514,6 +1548,7 @@ def prepareOptimizedConfigurarionResults(results, event_key):
         max_price_list[risk_key] = []
         min_price_list[risk_key] = []
         start_timestamp_list[risk_key] = []
+        status_list[risk_key] = []
 
         for start_timestamp in results[risk_key]:
             coin = results[risk_key][start_timestamp][4]
@@ -1525,6 +1560,7 @@ def prepareOptimizedConfigurarionResults(results, event_key):
             early_sell[risk_key].append(results[risk_key][start_timestamp][5])
             max_price_list[risk_key].append(results[risk_key][start_timestamp][6])
             min_price_list[risk_key].append(results[risk_key][start_timestamp][7])
+            status_list[risk_key].append(results[risk_key][start_timestamp][8])
             
             start_timestamp_list[risk_key].append(start_timestamp)
 
@@ -1565,7 +1601,7 @@ def prepareOptimizedConfigurarionResults(results, event_key):
         request[event_key][coin].append(start_timestamp)
 
     # make request to the server
-    response = requests.post(url='https://algocrypto.eu/analysis/get-pricechanges', json=request)
+    response = requests.post(url='http://localhost/analysis/get-pricechanges', json=request)
     response = json.loads(response.text)
     pricechanges = response['data']
 
@@ -1621,7 +1657,8 @@ def prepareOptimizedConfigurarionResults(results, event_key):
     
     optimized_riskconfiguration_results = {'events': list(results[best_risk_key].keys()), 'gain': profit_list[best_risk_key], 'buy_price': buy_price_list[best_risk_key],
                          'exit_price': exit_price_list[best_risk_key],  'timestamp_exit': timestamp_exit_list[best_risk_key],
-                           'coin': coin_list[best_risk_key], 'early_sell': early_sell[best_risk_key], 'max_price': max_price_list[best_risk_key], 'min_price': min_price_list[best_risk_key]}
+                           'coin': coin_list[best_risk_key], 'early_sell': early_sell[best_risk_key],
+                             'max_price': max_price_list[best_risk_key], 'min_price': min_price_list[best_risk_key], 'status': status_list[best_risk_key]}
     
     # update optimized_riskconfiguration_results with the lists of "info_obj"
     for info_key in info_obj:
@@ -1629,7 +1666,7 @@ def prepareOptimizedConfigurarionResults(results, event_key):
     
     return optimized_riskconfiguration_results, (n_events, best_profit, best_risk_key, best_profit_print, risk_key_df, profit_mean_list_df, profit_std_list_df, best_std_print)
     
-def RiskManagement(key, early_validation, investment_per_event=100):
+def RiskManagement(info, key, early_validation, n_events, investment_per_event=100):
 
     '''
     This function is called by RiskConfiguration.
@@ -1648,6 +1685,26 @@ def RiskManagement(key, early_validation, investment_per_event=100):
     event_key_path = event_key_path.replace('/', '_')
     
     timeseries_json = load_timeseries(event_key_path)
+
+
+    n_events_timeseries_json = sum([len(timeseries_json[coin]) for coin in timeseries_json])
+
+    # in case there is a mismatch between the events in analysis.json and timeseries, let's delete and download again the timeseries
+    if n_events != n_events_timeseries_json:
+        msg = f'Events Timeseries Json: {n_events_timeseries_json} -- Event Analysis Json: {n_events} -- {key}'
+        print(msg)
+        msg = 'Deleting the file from timeseries_json and downloading again'
+        print(msg)
+        full_path = ROOT_PATH + "/timeseries_json/" + event_key_path + '.json'
+        os.remove(full_path)
+        print(f'{full_path} has been removed')
+        retry = True
+        while retry:
+            retry = getTimeseries(info, key, check_past=1440, look_for_newdata=True, plot=False)
+
+        timeseries_json = load_timeseries(event_key_path)
+        n_events_timeseries_json = sum([len(timeseries_json[coin]) for coin in timeseries_json])    
+        assert n_events == n_events_timeseries_json, f"Events Timeseries Json: {n_events_timeseries_json} -- Event Analysis Json: {n_events} -- {event_key_path}"
 
     # get timeframe
     vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
@@ -1725,10 +1782,10 @@ def riskmanagement_data_preparation(data, n_processes):
     if remainder != 0:
         for coin, index in zip(remainder_coins, range(len(remainder_coins))):
             data_arguments[index][coin] = data[coin]
-                           
-    # for data_argument, index in zip(data_arguments, range(len(data_arguments))):
-    #     len_data_argument = len(data_argument)
-    #     print(f'Length of data argument {index}: {len_data_argument}')
+    
+    total_coins = len(coins_list)
+    coins_divided = sum([len(data_i) for data_i in data_arguments])
+    assert total_coins == coins_divided, f'Not all coins have been inserted in data_preparation: expected: {total_coins}, current: {coins_divided}'
 
     return data_arguments
 
@@ -1994,6 +2051,8 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
     for key, key_i in zip(keys_list, range(1,len(keys_list)+1)):
         print(key)
         print(f'ITERATION {key_i} has started')
+        frequency = info[key]["frequency/month"]
+        n_events =  info[key]["events"]
 
         if 'vlty' in key:
             VOLATILITY_GROUP = True
@@ -2012,7 +2071,7 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
                 retry = getTimeseries(info, key, check_past=1440, look_for_newdata=True, plot=False)
 
 
-        df1, df2, risk, optimized_riskconfiguration_results = RiskManagement(key, early_validation)
+        df1, df2, risk, optimized_riskconfiguration_results = RiskManagement(info, key, early_validation, n_events)
         best_risk_key = risk['best_risk_key']
         best_mean_print = risk['best_mean_print']
         best_std_print = risk['best_std_print']
@@ -2025,8 +2084,6 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
         golden_step_str = get_substring_between(best_risk_key, "_step:", "_loss_zone:")
         loss_zone_str = get_substring_between(best_risk_key, "_loss_zone:", "_step_loss:")
         step_loss = best_risk_key.split('_step_loss:')[1]
-        frequency = info[key]["frequency/month"]
-        n_events =  info[key]["events"]
 
         total_optimized_riskconfiguration_results[key] = optimized_riskconfiguration_results
 
@@ -2079,7 +2136,10 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
 
     if riskmanagement_conf[8] != False:
         risk_configuration_dict['early_validation'] = risk_configuration_dict['early_validation'].isoformat()
+    else:
+        risk_configuration_dict['early_validation'] = datetime.now().isoformat()
 
+    
      # PREPARE FILES FOR PANDAS AND FOR SAVING
     if VOLATILITY_GROUP:
         for volatility in risk_configuration:
@@ -2249,6 +2309,26 @@ def send_userconfiguration(request):
     response = json.loads(response.text)
     return response
 
+def returnPerformanceScenarioCopy():
+    performance_scenario_copy = {'-1:-0.6': [[-1,-0.6],0],
+                              '-0.6:-0.4': [[-0.6,-0.4],0],
+                                '-0.4:-0.2': [[-0.4,-0.2],0],
+                                  '-0.2:-0.1': [[-0.2,-0.1],0],
+                                    '-0.1:-0.05': [[-0.1, -0.05],0],
+                                    '-0.05:-0.025': [[-0.05, -0.025],0],
+                                    '-0.025:-0.01': [[-0.025, -0.01],0],
+                                    '-0.01:0': [[-0.01, 0],0],
+                                    '0:0.01': [[0, 0.01],0],
+                                    '0.01:0.025': [[0.01, 0.025],0],
+                                    '0.025:0.05': [[0.025,0.05],0],
+                              '0.05:0.1': [[0.05,0.1],0],
+                                '0.1:0.2': [[0.1, 0.2],0],
+                                  '0.2:0.4': [[0.2, 0.4],0], 
+                                  '0.4:0.6': [[0.4,0.6],0],
+                                    '0.6:1': [[0.6,1],0],
+                                      '1:10': [[1,10],0]}
+    return performance_scenario_copy
+
 def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOVER=False, event_investment_amount=100):
     '''
     This function has the goal to anaylze the post performance of an event. 
@@ -2261,22 +2341,6 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
 
     
     '''
-
-    PERFORMANCE_SCENARIOS = {'-1:-0.6': [[-1,-0.6],0],
-                              '-0.6:-0.4': [[-0.6,-0.4],0],
-                                '-0.4:-0.2': [[-0.4,-0.2],0],
-                                  '-0.2:-0.1': [[-0.2,-0.1],0],
-                                    '-0.1:-0.05': [[-0.1, -0.05],0],
-                                    '-0.05:-0.02': [[-0.05, -0.02],0],
-                                    '-0.02:0': [[-0.02, 0],0],
-                                    '0:0.02': [[0, 0.02],0],
-                                    '0.02:0.05': [[0.02,0.05],0],
-                              '0.05:0.1': [[0.05,0.1],0],
-                                '0.1:0.2': [[0.1, 0.2],0],
-                                  '0.2:0.4': [[0.2, 0.4],0], 
-                                  '0.4:0.6': [[0.4,0.6],0],
-                                    '0.6:1': [[0.6,1],0],
-                                      '1:10': [[1,10],0]}
     
 
     #/Users/albertorainieri/Projects/Personal/analysis/riskmanagement_backup/riskmanagement-2023-8-7-15-3-724.json
@@ -2346,10 +2410,10 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
                 timeframe = int(timeframe)
                 if 'vlty' in event_key:
                     volatility = event_key.split('vlty:')[1]
-                    riskmanagement_general = riskmanagement[volatility]
+                    riskmanagement_general = riskmanagement[volatility].copy()
                     VOLATILITY_GROUP = False
                 else:
-                    riskmanagement_general = riskmanagement
+                    riskmanagement_general = riskmanagement.copy()
                     VOLATILITY_GROUP = True
 
                 if event_key in riskmanagement_general:
@@ -2363,8 +2427,10 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
 
                     # update timeseries.json
                     if DISCOVER:
-                        print(f'Downloading timeseries for {event_key} from server')
-                        retry = getTimeseries(info, event_key, check_past=1440, look_for_newdata=True, plot=False)
+                        while retry:
+                            print(f'Downloading timeseries for {event_key} from server')
+                            retry = getTimeseries(info, event_key, check_past=1440, look_for_newdata=True, plot=False)
+
                     # load timeseries.json
                     event_key_path = event_key.replace(':', '_')
                     event_key_path = event_key_path.replace('/', '_')
@@ -2389,7 +2455,6 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
                         new_optimized_riskconfiguration_results, other_vars = prepareOptimizedConfigurarionResults(new_optimized_results, event_key)
                         
                         
-
                         # update optimized_results_dict
                         for info_key in new_optimized_riskconfiguration_results:
                             optimized_results_dict[event_key][info_key] += new_optimized_riskconfiguration_results[info_key]
@@ -2408,6 +2473,7 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
                                     'max_price': optimized_results_dict[event_key]['max_price'][iterator],
                                     'min_price': optimized_results_dict[event_key]['min_price'][iterator],
                                     'timestamp_exit': optimized_results_dict[event_key]['timestamp_exit'][iterator],
+                                    'status': optimized_results_dict[event_key]['status'][iterator],
                                     'std': 0}
                     
                     for price_vol_buy_vol_key in price_vol_buy_vol_keys:
@@ -2442,8 +2508,9 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
     # this dict divides the series of the event by event_key
     timeseries_info = {}
     timeseries_info = {'total': []}
-    positive_outcome = 0
-    negative_outcome = 0
+    outcome = {'total': {'positive':0, 'negative': 0}}
+    status = {'total': {}} #this shows for each event if it is finished for early exit due to profit or loss, or normal exit
+    performance_scenario = {}
 
     if VOLATILITY_GROUP:
         for event_key in riskmanagement:
@@ -2461,20 +2528,9 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
 
                         # append event for "total"
                         timeseries_info['total'].append(event)
-                        # event_key_list.append(event['event'])
-                        # mean_list.append(event['mean'])
-                        # std_list.append(event['std'])
 
-                        
-                        for performance_scenario in PERFORMANCE_SCENARIOS:
-                            if event['mean'] >= PERFORMANCE_SCENARIOS[performance_scenario][0][0] and event['mean'] < PERFORMANCE_SCENARIOS[performance_scenario][0][1]:
-                                PERFORMANCE_SCENARIOS[performance_scenario][1] += 1
-                                continue
+                        outcome, performance_scenario, status = update_outcome_status_and_performance_scenario(event, event_key, outcome, performance_scenario, status)
 
-                        if event['mean'] > 0:
-                            positive_outcome += 1
-                        else:
-                            negative_outcome += 1
     else: 
         for volatility in riskmanagement:
             for event_key in riskmanagement[volatility]:
@@ -2492,22 +2548,10 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
 
                             # append event for "total"
                             timeseries_info['total'].append(event)
-                            # event_key_list.append(event['event'])
-                            # mean_list.append(event['mean'])
-                            # std_list.append(event['std'])
 
-                            
-                            for performance_scenario in PERFORMANCE_SCENARIOS:
-                                if event['mean'] >= PERFORMANCE_SCENARIOS[performance_scenario][0][0] and event['mean'] < PERFORMANCE_SCENARIOS[performance_scenario][0][1]:
-                                    PERFORMANCE_SCENARIOS[performance_scenario][1] += 1
-                                    continue
+                            outcome, performance_scenario, status = update_outcome_status_and_performance_scenario(event, event_key, outcome, performance_scenario, status)
 
-                            if event['mean'] > 0:
-                                positive_outcome += 1
-                            else:
-                                negative_outcome += 1
-
-    del analysis_json, riskmanagement
+    del analysis_json
 
     # sort all series
     for event_key in timeseries_info:
@@ -2520,7 +2564,17 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
     
     # compute dynamic performance mean for all series
     for event_key in timeseries_info:
+        if VOLATILITY_GROUP:
+            assert len(timeseries_info[event_key]) == riskmanagement[event_key]['riskmanagement_conf']['n_events'], "Number of events in timeseries.json does not match the number of events of the riskmanagement configuration"
+        else:
+            if event_key != 'total':
+                print(event_key)
+                volatility = event_key.split('vlty:')[1]
+                n_events_timeseries_info = len(timeseries_info[event_key])
+                n_events_riskmanagement = riskmanagement[volatility][event_key]['riskmanagement_conf']['n_events']
+                assert n_events_timeseries_info == n_events_riskmanagement, f"Number of events in timeseries.json: {n_events_timeseries_info} does not match the number of events of the riskmanagement configuration: {n_events_riskmanagement} "
 
+        print(f'Number of events for {len(timeseries_info[event_key])}')
         timestamp_timeseries = []
         datetime_timeseries = []
         mean_timeseries = []
@@ -2595,27 +2649,46 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
 
         upper_bound = np.array(mean_timeseries) + np.array(std_timeseries)
         lower_bound = np.array(mean_timeseries) - np.array(std_timeseries)
+        
+        # PLOT TIMESERIES PERFORMANCE
+        fig, ax = plt.subplots(3,1, figsize=(7, 10))
+        ax[0].plot(mean_timeseries)
+        ax[0].plot(post_performance_timeseries)
+        ax[0].plot(upper_bound)
+        ax[0].plot(lower_bound)
+        ax[0].axhline(y=0, color='red', linestyle='--')
+        ax[0].axvline(x=start_analysis_i, color='red', linestyle='--')
+        ax[0].set_title(event_key)
 
-        # 
-        # for timestamp in timestamp_timeseries:
-        #     datetime_timeseries.append(datetime.fromisoformat(timestamp))
-        
-        # if event_key == 'buy_vol_3h:0.65/vol_6h:6/timeframe:360/vlty:2':
-        #     print(event_key)
-        #     print(post_mean_list)
-        #     print(mean_list)
-        #     print(mean_timeseries)
-        
-        # plot each timeseries in terms of percentages
-        fig, ax = plt.subplots(1, 1, figsize=(7, 4))
-        #print(len(mean_timeseries), len(upper_bound), len(lower_bound))
-        ax.plot(mean_timeseries)
-        ax.plot(post_performance_timeseries)
-        ax.plot(upper_bound)
-        ax.plot(lower_bound)
-        ax.axhline(y=0, color='red', linestyle='--')
-        ax.axvline(x=start_analysis_i, color='red', linestyle='--')
-        ax.set_title(event_key)
+        # PLOT PERFORMANCE SCENARIO
+        keys_performance = list(performance_scenario[event_key].keys())
+        values_performance = [entry[1] for entry in performance_scenario[event_key].values()]
+        ax[1].bar(keys_performance, values_performance)
+        ax[1].set_xlabel('Performance Range')
+        ax[1].set_ylabel('Number of events')
+        ax[1].tick_params(axis='x', rotation=75)
+        ax[1].set_title(f'Performance scenario for {event_key}')
+
+        # PRINT STATUS
+        keys = list(status[event_key].keys())
+        values = [entry for entry in status[event_key].values()]
+        ax[2].bar(keys, values)
+        ax[2].set_xlabel('Status Exit')
+        ax[2].set_ylabel('Number of events')
+        ax[2].tick_params(axis='x', rotation=75)
+        ax[2].set_title(f'Status Exit for {event_key}')
+
+        plt.tight_layout()
+        plt.show()
+
+
+        # PRINT OUTCOME 
+        n_positive_events = outcome[event_key]['positive']
+        n_negative_events = outcome[event_key]['negative']
+        print(f'Positive events: {n_positive_events}')
+        print(f'Negative events: {n_negative_events}')
+
+        plt.show()
         
         if event_key == 'total':
             doc_df1 = {'event': timestamp_timeseries, 'mean_series': mean_timeseries, 'mean_event': mean_list, 'balance': balance_account, 'coin': coin_list, 'event_key': event_key_list}
@@ -2642,26 +2715,60 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
 
             print(f'the profit of the entire timeseries is {total_performance}% with {n_events_total_performance} events')
             print(f'the post profit is {post_performance}% with {n_event_post_performance} events')
-            print(f'Positive events: {positive_outcome}')
-            print(f'Negative events: {negative_outcome}')
+            # print(f'Positive events: {positive_outcome}')
+            # print(f'Negative events: {negative_outcome}')
             print(f'Biggest Drop: {biggest_drop} at {biggest_drop_date}')
         
-    keys = list(PERFORMANCE_SCENARIOS.keys())
-    values = [entry[1] for entry in PERFORMANCE_SCENARIOS.values()]
-    print(PERFORMANCE_SCENARIOS)
 
-    plt.figure()
-    plt.bar(keys, values)
-    plt.xlabel('Ranges')
-    plt.ylabel('Values')
-    plt.xticks(rotation=75)
-    plt.title('Histogram')
-    #plt.tight_layout()
-    #plt.axvline(x=keys.index('0:0.02'), color='red', linestyle='--', label='Zero Line')
+    return df1, biggest_drop, biggest_drop_date, outcome, performance_scenario, status
 
-    plt.show()
+def update_outcome_status_and_performance_scenario(event, event_key, outcome, performance_scenario, status):
+    '''
+    This function is used by "analyzeRiskManagementPerformance" function for updating STATUS and PERFORMANCE SCENARIO
+    '''
+    #UPDATE OUTCOME
+    if event_key not in outcome:
+        outcome[event_key] = {'positive':0, 'negative':0}
+    
+    if event['mean'] > 0:
+        outcome[event_key]['positive'] += 1
+        outcome['total']['positive'] += 1
+    else:
+        outcome[event_key]['negative'] += 1
+        outcome['total']['negative'] += 1
 
-    return df1, biggest_drop, biggest_drop_date, positive_outcome, negative_outcome, PERFORMANCE_SCENARIOS
+    #UPDATE STATUS
+    for status_event in ['PROFIT_EXIT', 'LOSS_EXIT', 'EXIT']:
+        if event['status'] == status_event:
+            #update event key
+            if event_key not in status:
+                status[event_key] = {}
+            if status_event not in status[event_key]:
+                status[event_key][status_event] = 1
+            else:
+                status[event_key][status_event] += 1
+            
+            #update total
+            if status_event not in status['total']:
+                status['total'][status_event] = 1
+            else:
+                status['total'][status_event] += 1
+            
+    #UPDATE PERFORMANCE_SCENARIO
+    performance_scenario_copy = returnPerformanceScenarioCopy()
+
+    for performance_scenario_key in performance_scenario_copy:
+        if event['mean'] >= performance_scenario_copy[performance_scenario_key][0][0] and event['mean'] < performance_scenario_copy[performance_scenario_key][0][1]:
+
+            if 'total' not in performance_scenario:
+                performance_scenario['total'] = returnPerformanceScenarioCopy()
+            performance_scenario['total'][performance_scenario_key][1] += 1
+
+            if event_key not in performance_scenario:
+                performance_scenario[event_key] = returnPerformanceScenarioCopy()
+            performance_scenario[event_key][performance_scenario_key][1] += 1
+    
+    return outcome, performance_scenario, status
     
 def PriceVariation_analysis(df, model_type='svc', target_variable: TargetVariable = 'mean_event', test_size=0.2):
 

@@ -285,17 +285,13 @@ class AnalysisController:
         #let's define a limit number of events for each coin. This is to avoid responses too heavy.
         timeframe = request['timeframe']
         if timeframe > 4000:
-            n_event_limit = 2
-            n_coin_limit = 20
+            n_event_limit = 100
         elif timeframe > 1000:
-            n_event_limit = 5
-            n_coin_limit = 50
+            n_event_limit = 200
         elif timeframe > 300:
-            n_event_limit = 10
-            n_coin_limit = 100
+            n_event_limit = 400
         else:
-            n_event_limit = 15
-            n_coin_limit = 150
+            n_event_limit = 600
 
         db = DatabaseConnection()
         db_tracker = db.get_db(DATABASE_TRACKER)
@@ -308,25 +304,25 @@ class AnalysisController:
         else:
             check_past = False
 
-        response = {'data': {}, 'msg': 'All data have been downloaded'}
-
+        response = {'data': {}, 'msg': 'All data have been downloaded', 'retry': False}
+        STOP = False
         n_coin = []
 
         for coin in coins:
+            if 'last_timestamp' not in request:
+                request['last_timestamp'] = {}
 
-            if len(n_coin) <= n_coin_limit:
-                events = request['info'][coin]
+            # let's retrieve the last event that has been already downloaded
+            if coin not in request['last_timestamp']:
+                request['last_timestamp'][coin] = datetime(2023,5,11).isoformat()
+        
+        n_events = 0
+        for coin in coins:
+            events = request['info'][coin]
 
-                # let's retrieve the last event that has been already downloaded
-                if 'last_timestamp' in request and coin in request['last_timestamp']:
-                    most_recent_datetime = datetime.fromisoformat(request['last_timestamp'][coin])
-                else:
-                    most_recent_datetime = datetime(2023,5,11)
-
-                n_events = 0
-
-                for event in events:
-                    if datetime.fromisoformat(event['event']) > most_recent_datetime and n_events <= n_event_limit:
+            for event in events:
+                if datetime.fromisoformat(event['event']) > datetime.fromisoformat(request['last_timestamp'][coin]):
+                    if n_events <= n_event_limit:
                         if coin not in n_coin:
                             n_coin.append(coin)
 
@@ -348,14 +344,14 @@ class AnalysisController:
                         timestamp_end = datetime_end.isoformat()
 
                         filter_query = {'_id': 1, 'price': 1,
-                                         'vol_1m': 1, 'buy_vol_1m': 1,
-                                           'vol_5m': 1, 'buy_vol_5m': 1,
-                                             'vol_15m': 1, 'buy_vol_15m': 1,
-                                               'vol_30m': 1, 'buy_vol_30m': 1,
-                                                 'vol_60m': 1, 'buy_vol_60m': 1,
-                                                   'vol_3h': 1, 'buy_vol_3h': 1,
-                                                     'vol_6h': 1, 'buy_vol_6h': 1,
-                                                       'vol_24h': 1, 'buy_vol_24h': 1}
+                                        'vol_1m': 1, 'buy_vol_1m': 1,
+                                        'vol_5m': 1, 'buy_vol_5m': 1,
+                                            'vol_15m': 1, 'buy_vol_15m': 1,
+                                            'vol_30m': 1, 'buy_vol_30m': 1,
+                                                'vol_60m': 1, 'buy_vol_60m': 1,
+                                                'vol_3h': 1, 'buy_vol_3h': 1,
+                                                    'vol_6h': 1, 'buy_vol_6h': 1,
+                                                    'vol_24h': 1, 'buy_vol_24h': 1}
                         
                         docs = list(db_tracker[coin].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}}, filter_query))
                         
@@ -363,9 +359,18 @@ class AnalysisController:
                             response['data'][coin] = {}
                     
                         response['data'][coin][event['event']] = {'data': docs, 'statistics': {'mean': event['mean'], 'std': event['std'], 'timeframe': timeframe, }}
-            else:
-                response['msg'] = 'WARNING: Request too big. Not all data have been downloaded, retry...'
-                break
+                    else:
+                        response['retry'] = True
+                        response['msg'] = 'WARNING: Request too big. Not all data have been downloaded, retry...'
+                        STOP = True
+
+        total_timeseries_expected = sum([1 for coin in request['info'] for event in request['info'][coin] if datetime.fromisoformat(event['event']) > datetime.fromisoformat(request['last_timestamp'][coin])])
+        total_timeseries_downloaded = sum([1 for coin in response['data'] for _ in response['data'][coin]])
+
+        if response['msg'] == 'WARNING: Request too big. Not all data have been downloaded, retry...':
+            response['msg'] = f'WARNING: Request too big. Not all data have been downloaded. {total_timeseries_downloaded}/{total_timeseries_expected}. Retry...'
+        elif total_timeseries_expected != total_timeseries_downloaded:
+            response['msg'] = f'WARNING: timeseries downloaded: {total_timeseries_downloaded}/{total_timeseries_expected}'
 
         json_string = jsonable_encoder(response)
         return JSONResponse(content=json_string)

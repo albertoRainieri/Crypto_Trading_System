@@ -676,7 +676,13 @@ def load_timeseries(event_key_path):
     timeseries_list = os.listdir(path)
     timeseries_key = []
     timeseries_json = {}
+
+    if 'vlty' not in event_key_path:
+        VOLATILITY_GROUP = True
+
     for timeseries_path in timeseries_list:
+        if VOLATILITY_GROUP and 'vlty' in timeseries_path:
+            continue
         if event_key_path in timeseries_path:
             timeseries_key.append(path + timeseries_path)
     if len(timeseries_key) == 1:
