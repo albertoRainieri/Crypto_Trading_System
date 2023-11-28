@@ -65,7 +65,7 @@ class RiskManagement:
         elif now > self.close_timewindow:
             self.SELL = True
 
-        elif now > self.ending_timewindow:
+        elif now > self.close_timewindow:
             self.manageUsualPriceChanges()
         
     def manageGoldenZoneChanges(self):
