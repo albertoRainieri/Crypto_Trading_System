@@ -26,7 +26,6 @@ from sklearn.preprocessing import StandardScaler
 from functools import reduce
 
 
-
 ROOT_PATH = os.getcwd()
 TargetVariable1 = Literal["mean", "max", "min"]
 
@@ -508,6 +507,7 @@ def updateAnalysisJson(shared_data_value, file_path, start_next_analysis, slice_
 
     with open(file_path, 'w') as file:
         json.dump(json_to_save, file)
+        
 
 def getsubstring_fromkey(key):
     '''
@@ -670,31 +670,61 @@ def update_optimized_results(optimized_results_path):
 
     return optimized_results_obj
 
-def load_timeseries(event_key_path):
-    # FIND THE THE TIMESERIES json. some Timeseries json might be divided in PART<n> if the file is too big
+def getTimeseriesPaths(event_key_path):
     path = ROOT_PATH + "/timeseries_json/"
     timeseries_list = os.listdir(path)
-    timeseries_key = []
-    timeseries_json = {}
+    timeseries_paths = []
 
     if 'vlty' not in event_key_path:
         VOLATILITY_GROUP = True
+    else:
+        VOLATILITY_GROUP = False
 
     for timeseries_path in timeseries_list:
         if VOLATILITY_GROUP and 'vlty' in timeseries_path:
             continue
+        
         if event_key_path in timeseries_path:
-            timeseries_key.append(path + timeseries_path)
-    if len(timeseries_key) == 1:
+            timeseries_paths.append(path + timeseries_path)
+
+    return timeseries_paths
+
+def getnNewInfoForVolatilityGrouped(event_key, info):
+    new_info = {}
+    for key in info:
+        if event_key in key:
+            if event_key not in new_info:
+                new_info[event_key] = {'info': info[key]['info']}
+
+            else:
+                
+                for coin in info[key]['info']:
+                    if coin not in new_info[event_key]['info']:
+                        new_info[event_key]['info'][coin] = []
+                    for event in info[key]['info'][coin]:
+                        new_info[event_key]['info'][coin].append(event)
+    
+    return new_info
+
+
+
+
+
+def load_timeseries(event_key_path):
+    # FIND THE THE TIMESERIES json. some Timeseries json might be divided in PART<n> if the file is too big
+    timeseries_paths = getTimeseriesPaths(event_key_path)
+    timeseries_json = {}
+    
+    if len(timeseries_paths) == 1:
         print(f'There is only one JSON associated with {event_key_path}')
-        timeseries_json_path = timeseries_key[0]
+        timeseries_json_path = timeseries_paths[0]
         with open(timeseries_json_path, 'r') as file:
             timeseries_json = json.load(file)
-    elif len(timeseries_key) > 1:
-        len_timeseries_json = len(timeseries_key)
+    elif len(timeseries_paths) > 1:
+        len_timeseries_json = len(timeseries_paths)
         print(f'There are {len_timeseries_json} JSON associated with {event_key_path}')
         # Order the list based on PART numbers in ascending order
-        ordered_files = sorted(timeseries_key, key=lambda x: int(re.search(r'PART(\d+)', x).group(1)) if re.search(r'PART(\d+)', x) else float('inf'))
+        ordered_files = sorted(timeseries_paths, key=lambda x: int(re.search(r'PART(\d+)', x).group(1)) if re.search(r'PART(\d+)', x) else float('inf'))
         for timeseries_path_PART in ordered_files:
             with open(timeseries_path_PART, 'r') as file:
                 tmp_timeseries = json.load(file)
@@ -708,7 +738,8 @@ def load_timeseries(event_key_path):
             del tmp_timeseries
     else:
         print('Timeseries Json does not exist. Add code in this section for downloading the timeseries from local server or Set DISCOVER to True')
-
+        return None
+    
     print('Timeseries has been downloaded')
     return timeseries_json
 
@@ -988,3 +1019,369 @@ def scale_filter_select_features(df, target_variable):
 
     return X,y
 
+def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=False):
+    '''
+    This function retrieves the timeseries based on "info" and "key"
+    "info" is the output of function "download_show_output" and key is the name of event list (e.g. "buy_vol_5m:0.65/vol_24h:8/timeframe:1440/vlty:1")
+    It downloads the data from server if not exists. otherwise the data is downloaded from "/timeseries_json"
+
+    if "check_past" is not False, it is an Integer. It is used to retrieve all the observations occurred before the Event. It is expressed in minutes.
+    "look_for_newdata" is a boolean. if True, it looks for NEW timeseries (triggered by an event) in the db server.
+    '''
+
+    # load from local or from server
+    key_json = key.replace(':', '_')
+    key_json = key_json.replace('/', '_')
+    url = 'http://localhost/analysis/get-timeseries'
+
+    path = ROOT_PATH + "/timeseries_json/"
+
+    timeseries_list = os.listdir(path)
+    timeseries_key = []
+
+    if 'vlty' not in key:
+        VOLATILITY_GROUP = True
+    else:
+        VOLATILITY_GROUP = False
+
+    for timeseries_path in timeseries_list:
+        if VOLATILITY_GROUP and 'vlty' in timeseries_path:
+            continue
+        if key_json in timeseries_path:
+            timeseries_key.append(path + timeseries_path)
+    
+    if len(timeseries_key) > 1:
+        # Extract PART numbers using regular expression
+        part_numbers = [re.search(r'PART(\d+)', file).group(1) for file in timeseries_key if re.search(r'PART(\d+)', file)]
+
+        # Find the file with the greatest PART number
+        if part_numbers:
+            max_part_number = max(map(int, part_numbers))
+            file_path = next(file for file in timeseries_key if f'PART{max_part_number}' in file)
+            print(f"The file with the greatest PART number is: {file_path}")
+            PATH_EXISTS = True
+        else:
+            print("No files with PART numbers found.")
+    
+    elif len(timeseries_key) == 1:
+        file_path = timeseries_key[0]
+        PATH_EXISTS = True
+    
+    elif len(timeseries_key) == 0:
+        file_path = path + key_json + '.json'
+        PATH_EXISTS = False
+        
+
+
+    # get substrings (vol, buy_vol, timeframe) from key
+    # vol, vol_value, buy_vol, buy_vol_value, timeframe
+    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
+
+    fields = [vol_field, buy_vol_field, timeframe, buy_vol_value, vol_value]
+
+    if PATH_EXISTS:
+        print(f'File exists, Download from local: {file_path}')
+        with open(file_path, 'r') as file:
+            # Retrieve timeseries
+            timeseries = json.load(file)
+
+        if look_for_newdata:
+
+            request = info[key]
+            request['timeframe'] = int(timeframe)
+            if not check_past:
+                pass
+            else:
+                request['check_past'] = check_past
+            
+            request['last_timestamp'] = {}
+            # define for each from which timestamp new events should be discovered
+            for coin in timeseries:
+                #get most recent timestamp
+                timestamp_list = list(timeseries[coin].keys())
+                # Convert the ISO format timestamps to datetime objects
+                datetime_list = [datetime.fromisoformat(timestamp) for timestamp in timestamp_list]
+                # Find the most recent timestamp using the min function
+                most_recent_timestamp = max(datetime_list).isoformat()
+                request['last_timestamp'][coin] = most_recent_timestamp
+
+
+            # send request
+            response = requests.post(url, json = request)
+            print('Status Code is : ', response.status_code)
+            response = json.loads(response.text)
+            new_timeseries = response['data']
+            msg = response['msg']
+            retry = response['retry']
+            print(msg)
+
+            n_events = 0
+            # let's update "timeseries" with the new events occurred in "new_timeseries"
+            for coin in new_timeseries:
+                # iterate through NEW each event of the coin
+                for timestamp_start in list(new_timeseries[coin].keys()):
+                    # if coin does not exist in timeseries (an event has never occurred before). let's create this key in "timeseries"
+                    n_events += 1
+                    if coin not in timeseries:
+                        timeseries[coin] = {}
+                    timeseries[coin][timestamp_start] = new_timeseries[coin][timestamp_start]
+                    
+            print(f'{n_events} new events for {key}')
+
+            # if file size is greater than 800MB, lets create a new one
+            if os.path.getsize(file_path) > 800000000:
+                # check if the current file part has already PART substring. 
+                # In this case thre is not, rename the path with PART substring
+                if '_PART' not in file_path:
+                    file_path1 = path + key_json + '_PART1' '.json'
+                    os.rename(file_path, file_path1)
+                    max_part_number = 1
+
+                # DEFINE THE NEW PATH JSON
+                new_part_number = max_part_number + 1
+                part_string = '_PART' + str(new_part_number)
+                new_file_path = path + key_json + part_string + '.json'
+                with open(new_file_path, 'w') as file:
+                    json.dump(new_timeseries, file)
+            else:
+                
+                with open(file_path, 'w') as file:
+                    json.dump(timeseries, file)
+
+            del new_timeseries
+            
+
+                
+    else:
+        print('File does not exist, Download from server...')
+
+        # build the request body
+        request = info[key]
+        request['timeframe'] = int(timeframe)
+
+        if not check_past:
+            pass
+        else:
+            request['check_past'] = check_past
+
+        response = requests.post(url, json = request)
+        print('Status Code is : ', response.status_code)
+        response = json.loads(response.text)
+        timeseries = response['data']
+
+        n_events = 0
+
+        for coin in timeseries:
+            for timestamp_start in list(timeseries[coin].keys()):
+                n_events += 1
+        print(f'{n_events} new events for {key} at the first download')
+
+        msg = response['msg']
+        retry = response['msg']
+        print(msg)
+
+        with open(file_path, 'w') as file:
+            json.dump(timeseries, file)
+    
+    plotTimeseries(timeseries, fields, check_past, plot)
+
+    # this part is added for "RiskConfiguration" function, in order to retry the request if the following message is received
+    if retry:
+        return True
+    else:
+        return False
+    
+def plotTimeseries(timeseries, fields, check_past, plot, filter_start=False, filter_best=False):
+
+    vol_field = fields[0]
+    buy_vol_field = fields[1]
+    timeframe = fields[2]
+    buy_vol_value = fields[3]
+    vol_value = fields[4]
+
+    # iterate through each coin
+    for coin in timeseries:
+        #print(coin)
+        # iterate through each event of the coin
+        for timestamp_start in list(timeseries[coin].keys()):
+            
+            # skip if you want to plot only live timeseries
+            if filter_start and datetime.fromisoformat(timestamp_start) < filter_start:
+                continue
+
+            #print(timestamp_start)
+            timeframe = timeseries[coin][timestamp_start]['statistics']['timeframe']
+            timestamp_end = datetime.fromisoformat(timestamp_start) + timedelta(minutes=timeframe)
+            # get mean and std of event
+            mean = timeseries[coin][timestamp_start]['statistics']['mean']
+            std = timeseries[coin][timestamp_start]['statistics']['std']
+
+            datetime_list = []
+            price_list = []
+            vol_list = []
+            buy_vol_list = []
+            # number of observation per event
+            
+
+            # label x-axis every "interval" minutes
+            interval = int(timeframe / 6)
+            current_price, volume_event, buy_volume_event = get_event_info(timeseries[coin][timestamp_start]['data'], timestamp_start, vol_field, buy_vol_field)
+
+            volume_event = (datetime.fromisoformat(timestamp_start), volume_event)
+            buy_volume_event = (datetime.fromisoformat(timestamp_start), buy_volume_event)
+            if plot:
+                print(f'Event occurred at {timestamp_start}')
+                print(f'Purchase Price: {current_price} - {buy_vol_field}: {buy_volume_event[1]} - {vol_field}: {volume_event[1]} ')
+
+            # get max price and min price
+            max_price = (datetime.fromisoformat(timestamp_start), current_price)
+            min_price = (datetime.fromisoformat(timestamp_start), current_price)
+
+            if check_past != False:
+                skip_timeseries = False
+                #print('1')
+                start_price = current_price
+                one_day_before_price = timeseries[coin][timestamp_start]['data'][0]['price']
+                six_hour_before_price_flag = True
+                three_hour_before_price_flag = True
+                one_hour_before_price_flag = True
+                final_price_price_flag = True
+
+
+                ante_performance_one_day = round_((start_price - one_day_before_price ) / one_day_before_price,2)
+                #print(start_price)
+
+                max_change = 0
+                min_change = 0
+                #print('2')
+                
+                iterator = 0
+                for obs in timeseries[coin][timestamp_start]['data']:
+                    if six_hour_before_price_flag and datetime.fromisoformat(timestamp_start) - datetime.fromisoformat(obs['_id']) < timedelta(hours=6):
+                        ante_performance_six_hour = round_((start_price - obs['price'] ) / obs['price'],2)
+                        six_hour_before_price_flag = False
+                    
+                    if three_hour_before_price_flag and datetime.fromisoformat(timestamp_start) - datetime.fromisoformat(obs['_id']) < timedelta(hours=3):
+                        ante_performance_three_hour = round_((start_price - obs['price'] ) / obs['price'],2)
+                        three_hour_before_price_flag = False
+                    
+                    if one_hour_before_price_flag and datetime.fromisoformat(timestamp_start) - datetime.fromisoformat(obs['_id']) < timedelta(hours=1):
+                        ante_performance_one_hour = round_((start_price - obs['price'] ) / obs['price'],2)
+                        one_hour_before_price_flag = False
+
+                    if final_price_price_flag and datetime.fromisoformat(obs['_id']) - datetime.fromisoformat(timestamp_start) > timedelta(minutes=timeframe):
+                        final_performance_timeseries = round_((obs['price'] - start_price) / start_price,2)
+                        # skip timeseries if you want to filter only the best performance
+                        if filter_best and max_change < filter_best:
+                            skip_timeseries = True
+                        final_price_price_flag = False
+                                            
+                    
+                    #print('3')
+                    datetime_list.append(datetime.fromisoformat(obs['_id']))
+                    price_list.append(obs['price'])
+                    vol_list.append(obs[vol_field])
+                    buy_vol_list.append(obs[buy_vol_field])
+
+                    if datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(timestamp_start) and datetime.fromisoformat(obs['_id']) < timestamp_end:
+                            
+                        if obs['price'] > max_price[1]:
+                            max_price = (datetime.fromisoformat(obs['_id']), obs['price'])
+                            max_change = round_(((max_price[1] - start_price) / start_price)*100,2)
+                        elif obs['price'] < min_price[1]:
+                            min_price = (datetime.fromisoformat(obs['_id']), obs['price'])
+                            min_change = round_(((min_price[1] - start_price) / start_price)*100,2)
+            else:
+                start_price = timeseries[coin][timestamp_start]['data'][0]['price']
+
+                max_change = 0
+                min_change = 0
+
+                for obs in timeseries[coin][timestamp_start]['data']:
+                    datetime_list.append(datetime.fromisoformat(obs['_id']))
+                    price_list.append(obs['price'])
+                    vol_list.append(obs[vol_field])
+                    buy_vol_list.append(obs[buy_vol_field])
+                    
+                    if obs['price'] > max_price[1]:
+                        max_price = (datetime.fromisoformat(obs['_id']), obs['price'])
+                        max_change = round_(((max_price[1] - start_price) / start_price)*100,2)
+                    if obs['price'] < min_price[1]:
+                        min_price = (datetime.fromisoformat(obs['_id']), obs['price'])
+                        min_change = round_(((min_price[1] - start_price) / start_price)*100,2)
+            
+            if skip_timeseries:
+                continue
+            if plot:
+                print(f'Max price occurred at {max_price[0]}: {max_price[1]} ({max_change})')
+                print(f'Min price occurred at {min_price[0]}: {min_price[1]} ({min_change})')
+                print(f'Performance 1 day at the triggering event {ante_performance_one_day}')
+                print(f'Performance 6 hours at the triggering event {ante_performance_six_hour}')
+                print(f'Performance 3 hours at the triggering event {ante_performance_three_hour}')
+                print(f'Performance 1 hour at the triggering event {ante_performance_one_hour}')
+                print(f'Performance at the end of timeseries {final_performance_timeseries}')
+
+                
+
+                #print('ok')
+                fig, ax = plt.subplots(3, 1, sharex=True, figsize=(20, 10))
+
+                # Plotting the first time series
+                ax[0].plot(datetime_list, price_list)
+                ax[0].set_ylabel('Price')
+                
+                ax[0].set_title(f'{coin} -- {timestamp_start} -- Mean: {mean}, Std: {std}')
+                #print('title')
+                ax[0].annotate(f'Max Change: {max_change}%', xy=(max_price[0], max_price[1]),
+                                xytext=(max_price[0], max_price[1]*(1-((max_change/100)/2))),
+                                textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
+                ax[0].annotate(f'Min Change: {min_change}%', xy=(min_price[0], min_price[1]),
+                                xytext=(min_price[0], min_price[1]*(1+((min_change/100)/2))),
+                                textcoords='data', ha='center', va='bottom',arrowprops=dict(arrowstyle='->'))
+                ax[0].axvline(x=datetime.fromisoformat(timestamp_start), color='blue', linestyle='--')
+                ax[0].axvline(x=timestamp_end, color='blue', linestyle='--')
+                ax[0].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval))
+                ax[0].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+                ax[0].grid(True)
+
+
+                # Plotting the second time series
+                ax[1].plot(datetime_list, vol_list)
+                ax[1].set_ylabel(f'{vol_field}:{vol_value}')
+                ax[1].axvline(x=datetime.fromisoformat(timestamp_start), color='blue', linestyle='--')
+                ax[1].axvline(x=timestamp_end, color='blue', linestyle='--')
+                ax[1].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval))
+                ax[1].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+                ax[1].annotate(f'Volume event: {volume_event[1]}', xy=(volume_event[0], volume_event[1]),
+                                xytext=(volume_event[0], volume_event[1]),
+                                textcoords='data', ha='center', va='bottom',arrowprops=dict(arrowstyle='->'))
+                ax[1].grid(True)
+
+                # Plotting the third time series
+                ax[2].plot(datetime_list, buy_vol_list)
+                ax[2].set_ylabel(f'{buy_vol_field}:{buy_vol_value}')
+                ax[2].axhline(y=0.5, color='red', linestyle='--')
+                ax[2].axvline(x=datetime.fromisoformat(timestamp_start), color='blue', linestyle='--')
+                ax[2].axvline(x=timestamp_end, color='blue', linestyle='--')
+                ax[2].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval))
+                ax[2].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+                ax[2].annotate(f'Volume event: {buy_volume_event[1]}', xy=(buy_volume_event[0], buy_volume_event[1]),
+                                xytext=(buy_volume_event[0], buy_volume_event[1]),
+                                textcoords='data', ha='center', va='bottom',arrowprops=dict(arrowstyle='->'))
+                ax[2].grid(True)
+
+                # Display the graph
+                plt.show()
+
+def get_event_info(observations, timestamp_start, vol_field, buy_vol_field):
+    '''
+    this returns the price, vol_value and buy_value registered at the event triggering
+    '''
+    position = 0
+    for obj in observations:
+        position += 1
+        if obj.get('_id') == timestamp_start:
+            return obj['price'], obj[vol_field], obj[buy_vol_field] 
+    
+    print('something went wrong "get_position_from_list_of_objects"')
+    return None
