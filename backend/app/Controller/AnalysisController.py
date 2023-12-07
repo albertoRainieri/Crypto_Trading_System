@@ -285,13 +285,13 @@ class AnalysisController:
         #let's define a limit number of events for each coin. This is to avoid responses too heavy.
         timeframe = request['timeframe']
         if timeframe > 4000:
-            n_event_limit = 100
+            n_event_limit = 1000
         elif timeframe > 1000:
             n_event_limit = 200
         elif timeframe > 300:
             n_event_limit = 400
         else:
-            n_event_limit = 600
+            n_event_limit = 800
 
         db = DatabaseConnection()
         db_tracker = db.get_db(DATABASE_TRACKER)
@@ -314,7 +314,7 @@ class AnalysisController:
 
             # let's retrieve the last event that has been already downloaded
             if coin not in request['last_timestamp']:
-                request['last_timestamp'][coin] = datetime(2023,5,11).isoformat()
+                request['last_timestamp'][coin] = datetime(2023,4,1).isoformat()
         
         n_events = 0
         for coin in coins:
@@ -358,7 +358,7 @@ class AnalysisController:
                         if coin not in response['data']:
                             response['data'][coin] = {}
                     
-                        response['data'][coin][event['event']] = {'data': docs, 'statistics': {'mean': event['mean'], 'std': event['std'], 'timeframe': timeframe, }}
+                        response['data'][coin][event['event']] = {'data': docs, 'statistics': {'mean': event['mean'], 'std': event['std'], 'timeframe': timeframe}}
                     else:
                         response['retry'] = True
                         response['msg'] = 'WARNING: Request too big. Not all data have been downloaded, retry...'
@@ -371,6 +371,8 @@ class AnalysisController:
             response['msg'] = f'WARNING: Request too big. Not all data have been downloaded. {total_timeseries_downloaded}/{total_timeseries_expected}. Retry...'
         elif total_timeseries_expected != total_timeseries_downloaded:
             response['msg'] = f'WARNING: timeseries downloaded: {total_timeseries_downloaded}/{total_timeseries_expected}'
+        else:
+            response['msg'] = f'All data have been downloaded. {total_timeseries_downloaded}/{total_timeseries_expected}'
 
         json_string = jsonable_encoder(response)
         return JSONResponse(content=json_string)
@@ -431,6 +433,37 @@ class AnalysisController:
         response = {'msg': msg}
         json_string = jsonable_encoder(response)
         return JSONResponse(content=json_string)
+    
+
+    def get_btc_eth_timeseries(request):
+        db = DatabaseConnection()
+        db_tracker = db.get_db(DATABASE_TRACKER)
+        
+        btc_docs = []
+        eth_docs = []
+        for timestamp in request['timestamp_list']:
+            timestamp_start = (datetime.fromisoformat(timestamp) - timedelta(seconds=30)).isoformat()
+            timestamp_end = (datetime.fromisoformat(timestamp) + timedelta(seconds=30)).isoformat()
+            #print(timestamp)
+            btc_doc = list(db_tracker['BTCUSDT'].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}}, {'price': 1}))
+            eth_doc = list(db_tracker['ETHUSDT'].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}}, {'price': 1}))
+            #print(btc_doc)
+
+            for doc_btc in btc_doc:
+                btc_docs.append(doc_btc['price'])
+            for doc_eth in eth_doc:
+                eth_docs.append(doc_eth['price'])
+            
+
+        response = {'data': {}}
+        response['data']['btc'] = btc_docs
+        response['data']['eth'] = eth_docs
+
+        json_string = jsonable_encoder(response)
+        return JSONResponse(content=json_string)
+
+
+
 
         
         

@@ -194,9 +194,9 @@ def return_most_recent_json(last_timestamp_db):
         for full_path in full_paths:
             file_name = full_path.split('/')[-1]
             file_name_split = file_name.split('-')
-            day = int(file_name_split[1])
+            day = int(file_name_split[3])
             month = int(file_name_split[2])
-            year = int(file_name_split[3])
+            year = int(file_name_split[1])
             
             datetime_file_path = datetime(year=year, month=month, day=day)
 
@@ -235,7 +235,7 @@ def return_most_recent_json(last_timestamp_db):
             day = last_record_split[2][:2]
             hour = last_record_split2[0][-2:]
             minute = str(int(last_record_split2[1]) + 1)
-            path_json = f'{path_dir}/data-{day}-{month}-{year}-{hour}-{minute}.json'
+            path_json = f'{path_dir}/data-{year}-{month}-{day}-{hour}-{minute}.json'
             logger.info(F'NEW JSON INITIALIZED WITH PATH {path_json}')
             data = {'datetime_creation': last_timestamp_fs, 'data': {}}
         
@@ -251,7 +251,7 @@ def return_most_recent_json(last_timestamp_db):
         day = str(datetime_start.day)
         minute = str(datetime_start.minute)
         hour = str(datetime_start.hour)
-        path_json = f'{path_dir}/data-{day}-{month}-{year}-{hour}-{minute}.json'
+        path_json = f'{path_dir}/data-{year}-{month}-{day}-{hour}-{minute}.json'
 
         data = {'datetime_creation': datetime_start_iso, 'data': {}}
     

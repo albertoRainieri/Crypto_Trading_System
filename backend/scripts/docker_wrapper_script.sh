@@ -5,7 +5,7 @@
 echo $ANALYSIS
   
 # Start the second process
-if [ $ANALYSIS ]
+if [ $ANALYSIS = "true" ]
 then
     echo 'hello'
     /bin/bash /backend/scripts/analysis_mode.sh &

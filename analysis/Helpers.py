@@ -117,9 +117,9 @@ def retrieve_datetime_for_load_data(path, list_paths, index):
     '''
     # retrieve first datetime of list_json
     path_split = path.split('-')
-    day = int(path_split[1])
+    day = int(path_split[3])
     month = int(path_split[2])
-    year = int(path_split[3])
+    year = int(path_split[1])
     hour = int(path_split[4])
     minute = int(path_split[5].split('.')[0])
     datetime1 = datetime(year=year, month=month, day=day, hour=hour, minute=minute)
@@ -127,9 +127,9 @@ def retrieve_datetime_for_load_data(path, list_paths, index):
     # retrieve first datetime of the next list_json
     next_path = list_paths[index + 1]
     next_path_split = next_path.split('-')
-    day = int(next_path_split[1])
+    day = int(next_path_split[3])
     month = int(next_path_split[2])
-    year = int(next_path_split[3])
+    year = int(next_path_split[1])
     hour = int(next_path_split[4])
     minute = int(next_path_split[5].split('.')[0])
     datetime2 = datetime(year=year, month=month, day=day, hour=hour, minute=minute)
@@ -422,6 +422,7 @@ def load_analysis_json_info(analysis_json_path, analysis_timeframe = 7, INTEGRAT
 
             # INTEGRATION HAS BEEN ADDED LATER TO ANALYZE NEW COMBINATIONS AND MERGE THE RESULTS INTO THE EXISTING analysis_json
             if INTEGRATION:
+                print(f'INTEGRATION ANALYSIS STARTED')
                 if 'start_next_analysis_integration' not in analysis_json:
                     start_interval = datetime(2023,5,11).isoformat()
                 else:
@@ -555,7 +556,7 @@ def getsubstring_fromkey(key):
     # in case keys are NOT grouped by volatility
     except:
         timeframe = key.split('timeframe:')[-1]
-        timeframe = timeframe[:-1]
+        # timeframe = timeframe[:-1]
 
     return vol, vol_value, buy_vol, buy_vol_value, timeframe
 
@@ -725,6 +726,7 @@ def load_timeseries(event_key_path):
         print(f'There are {len_timeseries_json} JSON associated with {event_key_path}')
         # Order the list based on PART numbers in ascending order
         ordered_files = sorted(timeseries_paths, key=lambda x: int(re.search(r'PART(\d+)', x).group(1)) if re.search(r'PART(\d+)', x) else float('inf'))
+        i = 0
         for timeseries_path_PART in ordered_files:
             with open(timeseries_path_PART, 'r') as file:
                 tmp_timeseries = json.load(file)
@@ -733,9 +735,11 @@ def load_timeseries(event_key_path):
                 if coin not in timeseries_json:
                     timeseries_json[coin] = {}
                 for start_timestamp in tmp_timeseries[coin]:
+                    i+=1
                     timeseries_json[coin][start_timestamp] = tmp_timeseries[coin][start_timestamp]
             
             del tmp_timeseries
+        print(f'{i} events have been loaded')
     else:
         print('Timeseries Json does not exist. Add code in this section for downloading the timeseries from local server or Set DISCOVER to True')
         return None
@@ -1019,6 +1023,15 @@ def scale_filter_select_features(df, target_variable):
 
     return X,y
 
+def extract_part_number(filename):
+    match = re.search(r'PART(\d+)', filename)
+    if match:
+        return int(match.group(1))
+    return -1
+
+def sort_filenames(filenames):
+    return sorted(filenames, key=extract_part_number)
+
 def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=False):
     '''
     This function retrieves the timeseries based on "info" and "key"
@@ -1050,28 +1063,18 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
         if key_json in timeseries_path:
             timeseries_key.append(path + timeseries_path)
     
-    if len(timeseries_key) > 1:
-        # Extract PART numbers using regular expression
-        part_numbers = [re.search(r'PART(\d+)', file).group(1) for file in timeseries_key if re.search(r'PART(\d+)', file)]
-
-        # Find the file with the greatest PART number
-        if part_numbers:
-            max_part_number = max(map(int, part_numbers))
-            file_path = next(file for file in timeseries_key if f'PART{max_part_number}' in file)
-            print(f"The file with the greatest PART number is: {file_path}")
-            PATH_EXISTS = True
-        else:
-            print("No files with PART numbers found.")
-    
-    elif len(timeseries_key) == 1:
+    if len(timeseries_key) == 1:
         file_path = timeseries_key[0]
         PATH_EXISTS = True
-    
-    elif len(timeseries_key) == 0:
+    elif len(timeseries_key) > 1:
+        ordered_files = sorted(timeseries_key, key=lambda x: int(re.search(r'PART(\d+)', x).group(1)) if re.search(r'PART(\d+)', x) else float('inf'))
+        # print(ordered_files)
+        file_path = ordered_files[-1]
+        # print(file_path)
+        PATH_EXISTS = True
+    else:
         file_path = path + key_json + '.json'
         PATH_EXISTS = False
-        
-
 
     # get substrings (vol, buy_vol, timeframe) from key
     # vol, vol_value, buy_vol, buy_vol_value, timeframe
@@ -1080,10 +1083,7 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
     fields = [vol_field, buy_vol_field, timeframe, buy_vol_value, vol_value]
 
     if PATH_EXISTS:
-        print(f'File exists, Download from local: {file_path}')
-        with open(file_path, 'r') as file:
-            # Retrieve timeseries
-            timeseries = json.load(file)
+        timeseries = load_timeseries(key_json)
 
         if look_for_newdata:
 
@@ -1107,6 +1107,7 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
 
 
             # send request
+            print('Sending the request for get-timeseries')
             response = requests.post(url, json = request)
             print('Status Code is : ', response.status_code)
             response = json.loads(response.text)
@@ -1114,19 +1115,6 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
             msg = response['msg']
             retry = response['retry']
             print(msg)
-
-            n_events = 0
-            # let's update "timeseries" with the new events occurred in "new_timeseries"
-            for coin in new_timeseries:
-                # iterate through NEW each event of the coin
-                for timestamp_start in list(new_timeseries[coin].keys()):
-                    # if coin does not exist in timeseries (an event has never occurred before). let's create this key in "timeseries"
-                    n_events += 1
-                    if coin not in timeseries:
-                        timeseries[coin] = {}
-                    timeseries[coin][timestamp_start] = new_timeseries[coin][timestamp_start]
-                    
-            print(f'{n_events} new events for {key}')
 
             # if file size is greater than 800MB, lets create a new one
             if os.path.getsize(file_path) > 800000000:
@@ -1136,15 +1124,50 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
                     file_path1 = path + key_json + '_PART1' '.json'
                     os.rename(file_path, file_path1)
                     max_part_number = 1
+                else:
+                    file_path_split = file_path.split('PART')
+                    max_part_number = int(file_path_split[1][0])
 
                 # DEFINE THE NEW PATH JSON
                 new_part_number = max_part_number + 1
                 part_string = '_PART' + str(new_part_number)
                 new_file_path = path + key_json + part_string + '.json'
+
+                n_events = 0
+
+                for coin in new_timeseries:
+                    for timestamp_start in list(new_timeseries[coin].keys()):
+                        n_events += 1
+
+                print(f'{n_events} new events for {key}')
+                print(f'Creating {file_path}')
                 with open(new_file_path, 'w') as file:
                     json.dump(new_timeseries, file)
             else:
-                
+
+                # I re load timeseries, since I want to fetch not all events, but only those saved in the last PART
+                if len(timeseries_key) > 1:
+                    del timeseries
+                    with open(file_path, 'r') as file:
+                        timeseries = json.load(file)
+
+                n_events = 0
+                # let's update "timeseries" with the new events occurred in "new_timeseries"
+                for coin in new_timeseries:
+                    # iterate through NEW each event of the coin
+                    for timestamp_start in list(new_timeseries[coin].keys()):
+                        # if coin does not exist in timeseries (an event has never occurred before). let's create this key in "timeseries"
+                        n_events += 1
+                        if coin not in timeseries:
+                            timeseries[coin] = {}
+                        if timestamp_start not in timeseries[coin]:
+                            timeseries[coin][timestamp_start] = new_timeseries[coin][timestamp_start]
+                        else:
+                            print(f'WARNING: {timestamp_start} is already present for {coin}. {key_json}. Should not be happening')
+                        
+                print(f'{n_events} new events for {key}')
+
+                print(f'Overwriting {file_path}')
                 with open(file_path, 'w') as file:
                     json.dump(timeseries, file)
 
@@ -1211,6 +1234,7 @@ def plotTimeseries(timeseries, fields, check_past, plot, filter_start=False, fil
 
             #print(timestamp_start)
             timeframe = timeseries[coin][timestamp_start]['statistics']['timeframe']
+            #print('statistic: ', timeseries[coin][timestamp_start]['statistics'])
             timestamp_end = datetime.fromisoformat(timestamp_start) + timedelta(minutes=timeframe)
             # get mean and std of event
             mean = timeseries[coin][timestamp_start]['statistics']['mean']
@@ -1372,6 +1396,7 @@ def plotTimeseries(timeseries, fields, check_past, plot, filter_start=False, fil
 
                 # Display the graph
                 plt.show()
+                plt.close()
 
 def get_event_info(observations, timestamp_start, vol_field, buy_vol_field):
     '''
@@ -1385,3 +1410,81 @@ def get_event_info(observations, timestamp_start, vol_field, buy_vol_field):
     
     print('something went wrong "get_position_from_list_of_objects"')
     return None
+
+def riskmanagement_data_preparation(data, n_processes, delete_X_perc=False, key=None, analysis_json_path='/analysis_json_v3/'):
+    # CONSTANTS
+    data_arguments = []
+    coins_list = list(data.keys())
+    n_events = sum([1 for coin in data for _ in data[coin]])
+    coins_slices = []
+    n_coins = len(data)
+    step = n_coins // n_processes
+    remainder = n_coins % n_processes
+    remainder_coins = coins_list[-remainder:]
+    slice_start = 0
+    slice_end = slice_start + step
+
+    for i in range(n_processes):
+        data_i = {}
+        for coin in coins_list[slice_start:slice_end]:
+            data_i[coin] = data[coin]
+
+        data_arguments.append(data_i)
+        del data_i
+        slice_start = slice_end
+        slice_end += step
+    
+    # add the remaining coins to the data_arguments
+    if remainder != 0:
+        for coin, index in zip(remainder_coins, range(len(remainder_coins))):
+            data_arguments[index][coin] = data[coin]
+
+    events_discarded = 0
+    if delete_X_perc:
+        new_data_arguments = []
+        file_path = ROOT_PATH + analysis_json_path + 'analysis.json'
+        with open(file_path, 'r') as file:
+            print(f'Downloading {file_path}')
+            # Retrieve shared memory for JSON data and "start_interval"
+            analysis_json = json.load(file)
+            analysis_json = analysis_json['data']
+
+        max_list = [] # list of max value for each event
+        
+        for coin in analysis_json[key]['info']:
+            for event in analysis_json[key]['info'][coin]:
+                max_list.append(event['max'])
+
+        perc99_max = np.percentile(max_list, delete_X_perc)
+        events_99 = []
+
+        # get events in 99 perc
+        for coin in analysis_json[key]['info']:
+            for event in analysis_json[key]['info'][coin]:
+                event['coin'] = coin
+                if event['max'] >= perc99_max:
+                    events_99.append((coin, event['event']))
+                    
+        for index in range(len(data_arguments)):
+            data_i = {}
+            for coin in data_arguments[index]:
+                for start_timestamp in data_arguments[index][coin]:
+                    if (coin, start_timestamp) not in events_99:
+                        if coin not in data_i:
+                            data_i[coin] = {}
+                        data_i[coin][start_timestamp] = data[coin][start_timestamp]
+                    else:
+                        print(f'{coin} - {start_timestamp} outlier discarded')
+                        events_discarded += 1
+            new_data_arguments.append(data_i)
+
+        data_arguments = new_data_arguments
+    
+    print(f'{events_discarded} events have been discarded for {delete_X_perc} percentile')
+    n_events = n_events - events_discarded
+    n_events_divided = sum([1 for data_i in range(len(data_arguments)) for coin in data_arguments[data_i] for _ in data_arguments[data_i][coin]]) 
+
+    if n_events != n_events_divided:
+        print(f'WARNING: Mismatch in data_preparation: expected: {n_events}, current: {n_events_divided}')
+
+    return data_arguments

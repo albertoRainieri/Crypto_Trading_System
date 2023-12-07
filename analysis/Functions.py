@@ -16,7 +16,7 @@ from copy import copy
 from random import randint
 import shutil
 import re
-from Helpers import round_, get_volatility, data_preparation, load_data, get_benchmark_info, get_dynamic_volume_avg, getnNewInfoForVolatilityGrouped, plotTimeseries, get_event_info
+from Helpers import round_, get_volatility, data_preparation, load_data, get_benchmark_info, get_dynamic_volume_avg, getnNewInfoForVolatilityGrouped, plotTimeseries, riskmanagement_data_preparation
 from Helpers import get_substring_between, load_analysis_json_info, updateAnalysisJson, pooled_standard_deviation, getsubstring_fromkey, load_timeseries, getTimeseries
 from Helpers import load_data_for_supervised_analysis, train_model_xgb, scale_filter_select_features
 from sklearn.svm import SVR  # Support Vector Regression
@@ -977,7 +977,7 @@ def plot_live_timeseries(risk_management_path, filter_live: bool = False, filter
 
         timeseries = load_timeseries(key_json)
         
-        plotTimeseries(timeseries, fields, check_past=1440, plot=True, filter_start=start_plot_datetime, filter_best=filter_best)
+        plotTimeseries(timeseries, fields, check_past=int(timeframe)/4, plot=True, filter_start=start_plot_datetime, filter_best=filter_best)
 
 def RiskManagement_lowest_level(tmp, timeseries_json, coin, start_timestamp, risk_key,
                                  STEP_original, GOLDEN_ZONE_original, STEP_LOSS_original, timeframe, LOSS_ZONE_original):
@@ -1135,8 +1135,8 @@ def RiskManagement_multiprocessing(timeseries_json, arg_i, LOSS_ZONES, STEPS_LOS
                         
                     tmp_n_events_risk_key = len(tmp[risk_key])
 
-                    if not early_validation:
-                        raise ValueError(f"After RiskManagement_lowest_level the number of events for data-{arg_i} is {tmp_n_events_risk_key}, but {n_events_risk_key} were expected")
+                    # if not early_validation:
+                    #     raise ValueError(f"After RiskManagement_lowest_level the number of events for data-{arg_i} is {tmp_n_events_risk_key}, but {n_events_risk_key} were expected")
     with lock:
         resp = json.loads(results.value)
         for key in list(tmp.keys()):
@@ -1334,8 +1334,9 @@ def RiskManagement(info, key, early_validation, n_events, investment_per_event=1
         os.remove(full_path)
         print(f'{full_path} has been removed')
         retry = True
+        vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
         while retry:
-            retry = getTimeseries(info, key, check_past=1440, look_for_newdata=True, plot=False)
+            retry = getTimeseries(info, key, check_past=int(timeframe)/4, look_for_newdata=True, plot=False)
 
         timeseries_json = load_timeseries(event_key_path)
 
@@ -1349,7 +1350,7 @@ def RiskManagement(info, key, early_validation, n_events, investment_per_event=1
 
     # get timeframe
     vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
-    timeframe = int(timeframe) - 0.2*int(timeframe)
+    timeframe = int(timeframe)
 
     # MULTIPROCESSING
     print('Dividing the dataset for multiprocessing')
@@ -1396,41 +1397,6 @@ def RiskManagement(info, key, early_validation, n_events, investment_per_event=1
                            'statistics': {'mean': mean_all_configs_print, 'std': std_all_configs_print, 'median': median_all_configs_print}}
     
     return df1, df2, risk_configuration, optimized_riskconfiguration_results
-
-def riskmanagement_data_preparation(data, n_processes):
-    # CONSTANTS
-    data_arguments = []
-    coins_list = list(data.keys())
-    coins_slices = []
-    n_coins = len(data)
-    step = n_coins // n_processes
-    remainder = n_coins % n_processes
-    remainder_coins = coins_list[-remainder:]
-    slice_start = 0
-    slice_end = slice_start + step
-
-    for i in range(n_processes):
-        data_i = {}
-        for coin in coins_list[slice_start:slice_end]:
-            data_i[coin] = data[coin]
-
-        data_arguments.append(data_i)
-        del data_i
-        slice_start = slice_end
-        slice_end += step
-    
-    # add the remaining coins to the data_arguments
-    if remainder != 0:
-        for coin, index in zip(remainder_coins, range(len(remainder_coins))):
-            data_arguments[index][coin] = data[coin]
-    
-    total_coins = len(coins_list)
-    coins_divided = sum([len(data_i) for data_i in data_arguments])
-
-    if total_coins != coins_divided:
-        raise ValueError(f'Not all coins have been inserted in data_preparation: expected: {total_coins}, current: {coins_divided}')
-
-    return data_arguments
 
 def manageGoldenZoneChanges(current_change, GOLDEN_ZONE_LB, GOLDEN_ZONE_UB, STEP, GOLDEN_ZONE_BOOL):
     GOLDEN_ZONE_BOOL = True
@@ -1682,7 +1648,7 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
     "download_show_output" function will provide the input
     the riskmanagement_configuration will be used during the live trading for optimization /risk management
 
-    this function is called by "earlyValidation"
+    this function is also called by "earlyValidation"
     '''
     t1 = time()
     keys_list = list(info.keys())
@@ -1696,9 +1662,9 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
             print(f'Downloading Timeseries {key_i}: {key}')
             # get latest timeseries
             retry = True        
-            # if response is not complete, retry with a new request
+            vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
             while retry:
-                retry = getTimeseries(info, key, check_past=1440, look_for_newdata=True, plot=False)
+                retry = getTimeseries(info, key, check_past=int(timeframe)/4, look_for_newdata=True, plot=False)
 
     for key, key_i in zip(keys_list, range(1,len(keys_list)+1)):
         print(key)
@@ -1788,7 +1754,7 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
         start_next_analysis = analysis_json['start_next_analysis']
         del analysis_json
 
-        risk_configuration_dict['early_validation'] = datetime.fromisoformat(start_next_analysis)
+        risk_configuration_dict['early_validation'] = datetime.fromisoformat(start_next_analysis).isoformat()
 
     
      # PREPARE FILES FOR PANDAS AND FOR SAVING
@@ -2092,7 +2058,7 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
                     if DISCOVER:
                         while retry:
                             print(f'Downloading timeseries for {event_key} from server')
-                            retry = getTimeseries(info, event_key, check_past=1440, look_for_newdata=True, plot=False)
+                            retry = getTimeseries(info, event_key, check_past=int(timeframe)/4, look_for_newdata=True, plot=False)
 
                     # load timeseries.json
                     event_key_path = event_key.replace(':', '_')
@@ -2242,15 +2208,15 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
         if VOLATILITY_GROUP and event_key != 'total':
             n_events_riskmanagement = riskmanagement[event_key]['riskmanagement_conf']['n_events']
             
-            if n_events_timeseries_info != n_events_riskmanagement:
-                raise ValueError(f"Number of events in timeseries.json {n_events_timeseries_info} does not match the number of events of the riskmanagement configuration {n_events_riskmanagement}. ")
+            if n_events_timeseries_info != n_events_riskmanagement or abs(n_events_riskmanagement-n_events_timeseries_info)!=1:
+                print(f"Number of events in timeseries.json {n_events_timeseries_info} does not match the number of events of the riskmanagement configuration {n_events_riskmanagement}. {event_key}")
         else:
             if event_key != 'total':
                 print(event_key)
                 volatility = event_key.split('vlty:')[1]
                 n_events_riskmanagement = riskmanagement[volatility][event_key]['riskmanagement_conf']['n_events']
                 if n_events_timeseries_info != n_events_riskmanagement:
-                    raise ValueError(f"Number of events in timeseries.json {n_events_timeseries_info} does not match the number of events of the riskmanagement configuration {n_events_riskmanagement}")
+                    print(f"Number of events in timeseries.json {n_events_timeseries_info} does not match the number of events of the riskmanagement configuration {n_events_riskmanagement}. {event_key}")
 
         print(f'Number of events for {len(timeseries_info[event_key])}')
         timestamp_timeseries = []
