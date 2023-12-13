@@ -252,7 +252,7 @@ def load_analysis_json():
 
 
 def download_show_output(minimum_event_number, minimum_coin_number, mean_threshold, frequency_threshold, max_threshold, lb_threshold, std_multiplier,
-                          best_coins_timeframe, early_validation=False):
+                          best_coins_timeframe, early_validation=False, filter_key=None):
     '''
     This function takes as input data stored in analysis_json/ ans return the output available for pandas DATAFRAME. 
     This is useful to have a good visualization about what TRIGGER have a better performance
@@ -370,8 +370,12 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
         for key_without_volatility in output:
             key_without_timeframe = key_without_volatility.split('/timeframe')[0]
             if key_without_volatility in keys_to_keep[key_without_timeframe]:
-                new_output[key_without_volatility] = output[key_without_volatility]
-                new_info[key_without_volatility] = complete_info[key_without_volatility]
+                if filter_key == None:
+                    new_output[key_without_volatility] = output[key_without_volatility]
+                    new_info[key_without_volatility] = complete_info[key_without_volatility]
+                elif key_without_volatility == filter_key:
+                    new_output[key_without_volatility] = output[key_without_volatility]
+                    new_info[key_without_volatility] = complete_info[key_without_volatility]
 
     del output, complete_info
     return new_output, new_info
