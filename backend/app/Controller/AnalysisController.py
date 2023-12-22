@@ -18,10 +18,8 @@ class AnalysisController:
         pass
     
     @timer_func
-    def getData(datetime_start, datetime_end):
+    def getDataTracker(datetime_start, datetime_end):
 
-        
-        
         db = DatabaseConnection()
         db_market = db.get_db(DATABASE_TRACKER)
         coins_list = db_market.list_collection_names()
@@ -39,6 +37,28 @@ class AnalysisController:
                                     'vol_24h': 1, 'buy_vol_24h': 1}
                         
 
+
+        for instrument_name in coins_list:
+            docs = list(db_market[instrument_name].find({"_id": {"$gte": datetime_start, "$lt": datetime_end}}, filter_query))
+            dict_[instrument_name] = docs
+        
+        json_string = jsonable_encoder(dict_)
+        return JSONResponse(content=json_string)
+    
+    @timer_func
+    def getDataMarket(datetime_start, datetime_end):
+
+        db = DatabaseConnection()
+        db_market = db.get_db(DATABASE_MARKET)
+        coins_list = db_market.list_collection_names()
+
+        dict_ = {}
+
+        filter_query = {'_id': 1, 'price': 1,
+                        'n_trades': 1, 'volume': 1,
+                        'buy_volume': 1, 'buy_n': 1,
+                            'quantity': 1}
+                        
 
         for instrument_name in coins_list:
             docs = list(db_market[instrument_name].find({"_id": {"$gte": datetime_start, "$lt": datetime_end}}, filter_query))

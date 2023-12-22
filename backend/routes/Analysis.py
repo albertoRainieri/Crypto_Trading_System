@@ -10,9 +10,13 @@ sys.path.insert(1, os.path.join(sys.path[0], '..'))
 router = APIRouter(
 )
 
-@router.get("/get-data")
-async def getTrades(datetime_start, datetime_end):#, request: Request = Depends(Authorization.get_current_active_user)):
-    return AnalysisController.getData(datetime_start, datetime_end)
+@router.get("/get-data-tracker")
+async def getTradesTracker(datetime_start, datetime_end):#, request: Request = Depends(Authorization.get_current_active_user)):
+    return AnalysisController.getDataTracker(datetime_start, datetime_end)
+
+@router.get("/get-data-market")
+async def getTradesMarket(datetime_start, datetime_end):#, request: Request = Depends(Authorization.get_current_active_user)):
+    return AnalysisController.getDataMarket(datetime_start, datetime_end)
 
 @router.get("/get-mosttradedcoins")
 async def getMostTradedCoins():#, request: Request = Depends(Authorization.get_current_active_user)):

@@ -59,14 +59,50 @@ server {
                 proxy_pass_header Authorization;
         }
 
-        location /analysis/get-data {
+        location /analysis/get-btc-eth-timeseries {
                 access_log /var/log/nginx/backend.access.log access;
                 error_log /var/log/nginx/backend.error.log error;
 
 
                 limit_req zone=backend burst=1;
 
-                proxy_pass http://backend:5000/analysis/get-data;
+                proxy_pass http://backend:5000/analysis/get-btc-eth-timeseries;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header Authorization $http_authorization;
+                proxy_pass_header Authorization;
+
+                if ($limit_req_status = "503") {
+                        return 403;
+                }
+        }
+
+        location /analysis/get-data-tracker {
+                access_log /var/log/nginx/backend.access.log access;
+                error_log /var/log/nginx/backend.error.log error;
+
+
+                limit_req zone=backend burst=1;
+
+                proxy_pass http://backend:5000/analysis/get-data-tracker;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header Authorization $http_authorization;
+                proxy_pass_header Authorization;
+
+                if ($limit_req_status = "503") {
+                        return 403;
+                }
+        }
+
+        location /analysis/get-data-market {
+                access_log /var/log/nginx/backend.access.log access;
+                error_log /var/log/nginx/backend.error.log error;
+
+
+                limit_req zone=backend burst=1;
+
+                proxy_pass http://backend:5000/analysis/get-data-market;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header Authorization $http_authorization;
