@@ -26,7 +26,7 @@ def main():
     DATA_RECOVERING = False
     DAYS = 0.25 # HOW many days of data will be recovered each run
     db = DatabaseConnection()
-    db_backend = db.get_db(database=DATABASE_MARKET)
+    db_market = db.get_db(database=DATABASE_MARKET)
     db_tracker = db.get_db(database=DATABASE_TRACKER)
     db_benchmark = db.get_db(database=DATABASE_BENCHMARK)
 
@@ -35,15 +35,47 @@ def main():
     # db_tracker, db_market, db_benchmark
     while True:
         now = datetime.now()
-        last_doc_saved = db_tracker['BTCUSDT'].find_one(sort=[("_id", -1)])
-        last_timestamp_db = datetime.fromisoformat(last_doc_saved['_id'])
+        last_doc_saved_tracker = db_tracker['BTCUSDT'].find_one(sort=[("_id", -1)])
+        last_doc_saved_market = db_tracker['BTCUSDT'].find_one(sort=[("_id", -1)])
+        #TODO: fix this part. check how to handle empty 
+        try:
+            if len(last_doc_saved_tracker) != 0 and len(last_doc_saved_market) != 0:
+                last_timestamp_db_tracker = datetime.fromisoformat(last_doc_saved_tracker['_id'])
+                last_timestamp_db_market = datetime.fromisoformat(last_doc_saved_market['_id'])
+            elif len(last_doc_saved_tracker) == 0:
+                last_timestamp_db_tracker = datetime(year=2023, month=5, day=7)
+                last_timestamp_db_market = datetime.fromisoformat(last_doc_saved_market['_id'])
+            elif len(last_doc_saved_market) == 0:
+                last_timestamp_db_market = datetime(year=2023, month=3, day=29)
+                last_timestamp_db_tracker = datetime.fromisoformat(last_doc_saved_market['_id'])
+        except:
+            logger.info(f'last_doc_saved_market: {last_doc_saved_market}')
+            sleep(100)
+            return
+
+        if areSameTimestamps(last_timestamp_db_tracker, last_doc_saved_market):
+            last_timestamp_db = last_doc_saved_tracker
+            TRACKER=True
+            MARKET=True
+        else:
+            if datetime.fromisoformat(last_doc_saved_tracker) < datetime.fromisoformat(last_doc_saved_market):
+                logger.info('DB Market is ahead of DB_Tracker, last_timestamp_db is taken from Tracker')
+                last_timestamp_db = last_doc_saved_tracker
+                TRACKER=True
+                MARKET=False
+            elif datetime.fromisoformat(last_doc_saved_tracker) > datetime.fromisoformat(last_doc_saved_market):
+                logger.info('DB Tracker is ahead of DB Market, last_timestamp_db is taken from Market')
+                last_timestamp_db = last_doc_saved_market
+                TRACKER=False
+                MARKET=True
+
         days_missing = now - last_timestamp_db
         logger.info(days_missing)
         
         if DATA_RECOVERING or days_missing > timedelta(days=3):
             logger.info('Started Run for recovering data from Server')
-            # this section we make sure that analysis/json and db are aligned
-            path_json, data_json, last_datetime_saved = return_most_recent_json(last_timestamp_db)
+            # this section we make sure that analysis/json_tracker and, analysis/json_market and db are aligned
+            path_json_tracker, path_json_market, data_tracker, data_market, last_datetime_saved, timedelta_market_tracker, TRACKER, MARKET= return_most_recent_json(last_timestamp_db, TRACKER, MARKET)
             # if there are more than DAYS days of missing data, keep fetching data
             if days_missing > timedelta(days=DAYS):
                 DATA_RECOVERING = True
@@ -55,19 +87,53 @@ def main():
                 # start last data fetching from server
             
             datetime_start = last_datetime_saved + timedelta(seconds=DELAY_SEARCH_SECONDS)
-            datetime_end = datetime_start + timedelta(days=DAYS)
+            datetime_end = datetime_start + min(timedelta(days=DAYS), timedelta_market_tracker)
             datetime_start_iso = datetime_start.isoformat()
             datetime_end_iso = datetime_end.isoformat()
-            logger.info(f'Data will be fetched from server from {datetime_start_iso} to {datetime_end_iso}')
+
+            if TRACKER and MARKET:
+                logger.info(f'Data will be fetched from server from {datetime_start_iso} to {datetime_end_iso} for both Tracker and Market')
+            elif TRACKER:
+                logger.info(f'Data will be fetched from server from {datetime_start_iso} to {datetime_end_iso} for Tracker ONLY')
+            elif MARKET:
+                logger.info(f'Data will be fetched from server from {datetime_start_iso} to {datetime_end_iso} for Market ONLY')
+            else:
+                logger.info(f'No Data will be fetched')
             
 
-            response = request_fetching_data(datetime_start_iso, datetime_end_iso)
-            status_code = response.status_code
-            logger.info(f'Status Code: {status_code}. Check logs from Server')
+            response_tracker, response_market = request_fetching_data(datetime_start_iso, datetime_end_iso, TRACKER, MARKET)
 
-            if response.status_code == 200:
-                update_data_json(response, data_json, path_json, db_tracker, DAYS, DELAY_SEARCH_SECONDS)
-                #TODO: COMMENT
+            if response_tracker != None and response_market != None:
+                tracker_status_code = response_tracker.status_code
+                market_status_code = response_market.status_code
+            elif response_tracker != None:
+                tracker_status_code = response_tracker.status_code
+                market_status_code = None
+            elif response_market != None:
+                tracker_status_code = response_market.status_code
+                market_status_code = None
+            
+            if tracker_status_code == 200 and market_status_code == 200:
+                logger.info(f'Requests for both market and tracker are SUCCESFULL')
+            elif tracker_status_code != 200 and market_status_code != 200:
+                logger.info(f'Requests for both market and tracker are NOT SUCCESFULL')
+            elif tracker_status_code != 200:
+                logger.info(f'Request for tracker is NOT SUCCESFULL')
+            elif market_status_code != 200:
+                logger.info(f'Request for market is NOT SUCCESFULL')
+                
+
+            if response_tracker != None and response_market != None and tracker_status_code == 200 and market_status_code == 200:
+                logger.info('Uploading both Market and Tracker Data')
+                #update_data_json(response_tracker, response_market, data_tracker, data_market, path_json_tracker, path_json_market, db_tracker, db_market, TRACKER, MARKET, DAYS, DELAY_SEARCH_SECONDS)
+                sleep(10)
+            elif response_tracker != None and tracker_status_code == 200:
+                logger.info('Uploading Tracker Data to DB and Filesystem')
+                #update_data_json(response_tracker, response_market, data_tracker, data_market, path_json_tracker, path_json_market, db_tracker, db_market, TRACKER, MARKET, DAYS, DELAY_SEARCH_SECONDS)
+                sleep(10)
+            elif response_market != None and market_status_code == 200:
+                logger.info('Uploading Market Data to DB and Filesystem')
+                #update_data_json(response_tracker, response_market, data_tracker, data_market, path_json_tracker, path_json_market, db_tracker, db_market, TRACKER, MARKET, DAYS, DELAY_SEARCH_SECONDS)
                 sleep(10)
             else:
                 logger.info('Sleeping 5 Minutes')
@@ -76,6 +142,20 @@ def main():
         
         else:
             sleep(600)
+
+def areSameTimestamps(timestamp_a, timestamp_b):
+    '''
+    check if timestamps coincide to the minute, not second
+    '''
+
+    datetime_a = datetime.fromisoformat(timestamp_a)
+    datetime_b = datetime.fromisoformat(timestamp_b)
+
+
+    if datetime_a.year == datetime_b.year and datetime_a.month == datetime_b.month and datetime_a.day == datetime_b.day and datetime_a.hour == datetime_b.hour and datetime_a.minute == datetime_b.minute:
+        return True
+    else:
+        return False
             
 def update_data_json(response, data_json, path_json, db_tracker, DAYS, DELAY_SEARCH_SECONDS):
     '''
@@ -147,103 +227,251 @@ def try_insert_many(coin_obs, db_tracker, coin):
                 # logger.info(f'Skipping: {obs} - {coin}')
                 continue
 
-def request_fetching_data(datetime_start_iso, datetime_end_iso):
+def request_fetching_data(datetime_start_iso, datetime_end_iso, TRACKER, MARKET):
     '''
     Make request to the server for fetching data
     '''
     SERVER = 'https://algocrypto.eu'
-
-    logger.info('Making the request to the server')
-    url = url = SERVER + '/analysis/get-data/'
     headers = {
-        "accept": "application/json",
-        "Authorization": f"Bearer {ACCESS_TOKEN}", 
-        "Content-Type": "application/json"
-    }
+            "accept": "application/json",
+            "Authorization": f"Bearer {ACCESS_TOKEN}", 
+            "Content-Type": "application/json"
+        }
     params = {'datetime_start': datetime_start_iso, 'datetime_end': datetime_end_iso}
-    response = requests.get(url, headers=headers, params=params)
-    return response
+    if TRACKER and MARKET:
+
+        logger.info('Making the request to the server for fetching Tracker data')
+        url = url = SERVER + '/analysis/get-data-tracker/'
+        response_tracker = requests.get(url, headers=headers, params=params)
+
+        logger.info('Making the request to the server for fetching Market data')
+        url = url = SERVER + '/analysis/get-data-market/'
+        response_market = requests.get(url, headers=headers, params=params)
+        
+    elif MARKET:
+        logger.info('Making the request to the server for fetching Market data')
+        url = url = SERVER + '/analysis/get-data-market/'
+        response_market = requests.get(url, headers=headers, params=params)
+        response_tracker = None
+        
+    elif TRACKER:
+        logger.info('Making the request to the server for fetching Tracker data')
+        url = url = SERVER + '/analysis/get-data-tracker/'
+        response_tracker = requests.get(url, headers=headers, params=params)
+        response_market = None
+        
+    return response_tracker, response_market
+
+def returnMostRecentTimestamp_TrackerMarket(path_dir_tracker, path_dir_market, list_json_tracker, list_json_market, TRACKER, MARKET):
+
+    if TRACKER:
+        # get all full paths in json directory
+        full_paths_tracker = [path_dir_tracker + "/{0}".format(x) for x in list_json_tracker]
+        #print(full_path)
+        most_recent_datetime_tracker = datetime(2020,1,1)
+        # get the most recent json
+        for full_path_tracker in full_paths_tracker:
+            file_name_tracker = full_path_tracker.split('/')[-1]
+            file_name_split_tracker = file_name_tracker.split('-')
+            day_tracker = int(file_name_split_tracker[3])
+            month_tracker = int(file_name_split_tracker[2])
+            year_tracker = int(file_name_split_tracker[1])
+            
+            datetime_file_path_tracker = datetime(year=year_tracker, month=month_tracker, day=day_tracker)
+
+            if datetime_file_path_tracker > most_recent_datetime_tracker:
+                most_recent_datetime_tracker = datetime_file_path_tracker
+                most_recent_file_tracker = full_path_tracker
+
+        logger.info(f'Most recent file for tracker is {most_recent_file_tracker}')
+        
+        #Load data, and check "last_timestamp_fs" is synced with "last_timestamp_db" for tracker
+        logger.info(f'Tracker: Loading {most_recent_file_tracker} for updating with new data')
+        f = open (most_recent_file_tracker, "r")
+        data_tracker = json.loads(f.read())
+        path_json_tracker = most_recent_file_tracker
+        logger.info('Loaded')
+        last_timestamp_fs_tracker = data_tracker['datetime_creation']
+    else:
+        last_timestamp_fs_tracker = None
+        data_tracker = None
+
+    if MARKET:
+        # get all full paths in json directory
+        full_paths_market = [path_dir_market + "/{0}".format(x) for x in list_json_market]
+        #print(full_path)
+        most_recent_datetime_market = datetime(2020,1,1)
+        # get the most recent json
+        for full_path_market in full_paths_market:
+            file_name_market = full_path_market.split('/')[-1]
+            file_name_split_market = file_name_market.split('-')
+            day_market = int(file_name_split_market[3])
+            month_market = int(file_name_split_market[2])
+            year_market = int(file_name_split_market[1])
+            
+            datetime_file_path_market = datetime(year=year_market, month=month_market, day=day_market)
+
+            if datetime_file_path_market > most_recent_datetime_market:
+                most_recent_datetime_market = datetime_file_path_market
+                most_recent_file_market = full_path_market
+
+        logger.info(f'Most recent file for market is {most_recent_file_market}')
+        
+        #Load data, and check "last_timestamp_fs" is synced with "last_timestamp_db" for market
+        logger.info(f'Market: Loading {most_recent_file_market} for updating with new data')
+        f = open (most_recent_file_market, "r")
+        data_market = json.loads(f.read())
+        path_json_market = most_recent_file_market
+        logger.info('Loaded')
+        last_timestamp_fs_market = data_market['datetime_creation']
+    else:
+        last_timestamp_fs_market = None
+        data_market = None
 
 
-def return_most_recent_json(last_timestamp_db):
+    return last_timestamp_fs_tracker, last_timestamp_fs_market, data_tracker, data_market, path_json_tracker, path_json_market
+
+def initialize_new_json(most_recent_file_tracker, most_recent_file_market, last_timestamp_fs_tracker, last_timestamp_fs_market, path_dir_tracker, path_dir_market, TRACKER, MARKET):
+
+    if TRACKER:
+        if os.path.getsize(most_recent_file_tracker) > 1000000000:
+                last_record_split = last_timestamp_fs_tracker.split('-')
+                last_record_split2 = last_timestamp_fs_tracker.split(':')
+                year = last_record_split[0]
+                month = last_record_split[1]
+                day = last_record_split[2][:2]
+                hour = last_record_split2[0][-2:]
+                minute = str(int(last_record_split2[1]) + 1)
+                path_json = f'{path_dir_tracker}/data-{year}-{month}-{day}-{hour}-{minute}.json'
+                logger.info(F'TRACKER: new json initialized with path {path_json}')
+                data_tracker = {'datetime_creation': last_timestamp_fs_tracker, 'data': {}}
+    else:
+        data_tracker = None
+    
+    if MARKET:
+        if os.path.getsize(most_recent_file_market) > 1000000000:
+            last_record_split = last_timestamp_fs_market.split('-')
+            last_record_split2 = last_timestamp_fs_market.split(':')
+            year = last_record_split[0]
+            month = last_record_split[1]
+            day = last_record_split[2][:2]
+            hour = last_record_split2[0][-2:]
+            minute = str(int(last_record_split2[1]) + 1)
+            path_json = f'{path_dir_market}/data-{year}-{month}-{day}-{hour}-{minute}.json'
+            logger.info(F'MARKET: new json initialized with path {path_json}')
+            data_market = {'datetime_creation': last_timestamp_fs_market, 'data': {}}
+    else:
+        data_market = None
+    
+    return data_tracker, data_market
+
+def check_tracker_market_db_are_aligned(last_timestamp_fs_tracker, last_timestamp_fs_market, last_timestamp_db, TRACKER_original, MARKET_original):
+
+
+    if TRACKER_original and MARKET_original:
+        if areSameTimestamps(last_timestamp_fs_tracker, last_timestamp_fs_market):
+            logger.info('Tracker and Market ON THE FILESYSTEM Json are ALIGNED')
+            last_timestamp_fs = last_timestamp_fs_tracker
+            timedelta_market_tracker = None
+            TRACKER = True
+            MARKET = True
+        else:
+            logger.info('Tracker and Market Json are NOT aligned ON THE FILESYSTEM')
+            logger.info(f'Tracker Timestamp: {last_timestamp_fs_tracker}')
+            logger.info(f'Market Timestamp: {last_timestamp_fs_market}')
+
+            if datetime.fromisoformat(last_timestamp_fs_market) < datetime.fromisoformat(last_timestamp_fs_tracker):
+                last_timestamp_fs = last_timestamp_fs_market
+                timedelta_market_tracker = datetime.fromisoformat(last_timestamp_fs_tracker) - datetime.fromisoformat(last_timestamp_fs_market)
+                days_ahead = timedelta_market_tracker.days
+                logger.info(f'Timedelta: Tracker is ahead of {timedelta_market_tracker} of {days_ahead} days')
+                # Tracker data will not be downloaded
+                TRACKER = False
+                MARKET = True
+            else:
+                last_timestamp_fs = last_timestamp_fs_tracker
+                timedelta_market_tracker = datetime.fromisoformat(last_timestamp_fs_market) - datetime.fromisoformat(last_timestamp_fs_tracker)
+                days_ahead = timedelta_market_tracker.days
+                logger.info(f'Timedelta: Market is ahead of {timedelta_market_tracker} of {days_ahead} days')
+                # Market data will not be downloaded
+                TRACKER = True
+                MARKET = False
+    elif TRACKER_original:
+        last_timestamp_fs = last_timestamp_fs_tracker
+        TRACKER = True
+        MARKET = False
+    elif MARKET_original:
+        last_timestamp_fs = last_timestamp_fs_market
+        TRACKER = False
+        MARKET = True
+
+    last_timestamp_db = (pytz.utc.localize(last_timestamp_db)).isoformat()
+
+
+    if TRACKER_original == True and MARKET_original == True and last_timestamp_fs == last_timestamp_db:
+        logger.info('Docker Container FOR BOTH MARKET AND TRACKER, filesystem /analysis/json_tracker, /analysis/json_market are aligned')
+    elif MARKET_original == True and last_timestamp_fs == last_timestamp_db:
+        logger.info('Docker Tracker Container is ahead but Docker Market Container is aligned with /analysis/json_market')
+    elif TRACKER_original == True and last_timestamp_fs == last_timestamp_db:
+        logger.info('Docker Market Container is ahead but Docker Tracker Container is aligned with /analysis/json_tracker')
+    elif MARKET_original == True and last_timestamp_fs != last_timestamp_db:
+        logger.info('')
+        logger.info('WARNING')
+        logger.info('Docker Tracker is ahead and Docker Container Market and filesystem /analysis/json_market are NOT aligned')
+        logger.info(f'Timestamp from analysis/json_tracker {last_timestamp_fs}')
+        logger.info(f'Timestamp from container db_market {last_timestamp_db}')
+        logger.info('')
+    elif TRACKER_original == True and last_timestamp_fs != last_timestamp_db:
+        logger.info('')
+        logger.info('WARNING')
+        logger.info('Docker Market is ahead and Docker Container Tracker and filesystem /analysis/json_tracker are NOT aligned')
+        logger.info(f'Timestamp from analysis/json_tracker {last_timestamp_fs}')
+        logger.info(f'Timestamp from container db_tracker {last_timestamp_db}')
+        logger.info('')
+        
+    return last_timestamp_fs, timedelta_market_tracker, TRACKER, MARKET
+
+
+
+
+def return_most_recent_json(last_timestamp_db, TRACKER, MARKET):
     '''
     This function returns the most recent json_path and relative data
     Dir Path is analsys/json/
 
     There are 3 scenarios:
     1) if no json_path exists, a new path is created and data initialized
-    2) if json_path exists but it is greater than 1.4 GB, then a new path is created and data initialized
+    2) if json_path exists but it is greater than 1 GB, then a new path is created and data initialized
     3) otherwise most recent file and relative data are loaded
     '''
 
-    JSON_PATH_DIR = '/analysis/json_tracker'
-    path_dir = JSON_PATH_DIR
-    list_json = os.listdir(path_dir)
-    
+    JSON_PATH_DIR_TRACKER = '/analysis/json_tracker'
+    JSON_PATH_DIR_MARKET = '/analysis/json_market'
+    path_dir_tracker = JSON_PATH_DIR_TRACKER
+    path_dir_market = JSON_PATH_DIR_MARKET
+    list_json_tracker = os.listdir(path_dir_tracker)
+    list_json_market = os.listdir(path_dir_market)
 
     # if at least one data.json exists, get saved data
-    if len(list_json) != 0:
+    if len(list_json_tracker) != 0 and len(list_json_market) != 0:
+
+        # return the last timestamp saved in tracker, and market fs. 
+        last_timestamp_fs_tracker, last_timestamp_fs_market, data_tracker, data_market, path_json_tracker, path_json_market = returnMostRecentTimestamp_TrackerMarket(path_dir_tracker, path_dir_market, list_json_tracker, list_json_market, TRACKER, MARKET)
+        last_timestamp_fs, timedelta_market_tracker, TRACKER, MARKET = check_tracker_market_db_are_aligned(last_timestamp_fs_tracker, last_timestamp_fs_market, last_timestamp_db)
+        data_tracker_tmp, data_market_tmp = initialize_new_json(path_json_tracker, path_json_market, last_timestamp_fs_tracker, last_timestamp_fs_market, path_dir_tracker, path_dir_market, TRACKER, MARKET)
+
+        # update data_tracker or data_market if new data structurtes have been initialized
+        if data_tracker_tmp != None:
+            data_tracker = data_tracker_tmp
+        if data_market_tmp != None:
+            data_market = data_market_tmp
         
-
-        # get all full paths in json directory
-        full_paths = [path_dir + "/{0}".format(x) for x in list_json]
-
-        #print(full_path)
-        most_recent_datetime = datetime(2020,1,1)
-        # get the most recent json
-        for full_path in full_paths:
-            file_name = full_path.split('/')[-1]
-            file_name_split = file_name.split('-')
-            day = int(file_name_split[3])
-            month = int(file_name_split[2])
-            year = int(file_name_split[1])
-            
-            datetime_file_path = datetime(year=year, month=month, day=day)
-
-            if datetime_file_path > most_recent_datetime:
-                most_recent_datetime = datetime_file_path
-                most_recent_file = full_path
-
-        logger.info(f'Most recent file is {most_recent_file}')
-        
-        #Load data, and check "last_timestamp_fs" is synced with "last_timestamp_db"
-        logger.info(f'Loading {most_recent_file} for updating with new data')
-        f = open (most_recent_file, "r")
-        data = json.loads(f.read())
-        path_json = most_recent_file
-        logger.info('Loaded')
-        last_timestamp_fs = data['datetime_creation']
-
-        last_timestamp_db = (pytz.utc.localize(last_timestamp_db)).isoformat()
-        if last_timestamp_fs == last_timestamp_db:
-            logger.info('Docker Container and filesystem /analysis/json are aligned')
-
-        else:
-            logger.info('')
-            logger.info('WARNING')
-            logger.info('Docker Container and filesystem /analysis/json are NOT aligned')
-            logger.info(f'Timestamp from analysis/json {last_timestamp_fs}')
-            logger.info(f'Timestamp from container db mongo-analysis {last_timestamp_db}')
-            logger.info('')
-
-
-        if os.path.getsize(most_recent_file) > 1000000000:
-            last_record_split = last_timestamp_fs.split('-')
-            last_record_split2 = last_timestamp_fs.split(':')
-            year = last_record_split[0]
-            month = last_record_split[1]
-            day = last_record_split[2][:2]
-            hour = last_record_split2[0][-2:]
-            minute = str(int(last_record_split2[1]) + 1)
-            path_json = f'{path_dir}/data-{year}-{month}-{day}-{hour}-{minute}.json'
-            logger.info(F'NEW JSON INITIALIZED WITH PATH {path_json}')
-            data = {'datetime_creation': last_timestamp_fs, 'data': {}}
-        
-        return path_json, data, datetime.fromisoformat(last_timestamp_fs)
+        return path_json_tracker, path_json_market, data_tracker, data_market, datetime.fromisoformat(last_timestamp_fs), timedelta_market_tracker, TRACKER, MARKET
 
     #if data.json does not exists, initialize data variable
-    else:
-
+    elif len(list_json_tracker) == 0:
+        TRACKER=True
+        MARKET=False
         datetime_start = datetime(2023,5,7)
         datetime_start_iso = datetime_start.isoformat()
         year = str(datetime_start.year)
@@ -251,11 +479,51 @@ def return_most_recent_json(last_timestamp_db):
         day = str(datetime_start.day)
         minute = str(datetime_start.minute)
         hour = str(datetime_start.hour)
-        path_json = f'{path_dir}/data-{year}-{month}-{day}-{hour}-{minute}.json'
-
-        data = {'datetime_creation': datetime_start_iso, 'data': {}}
+        path_json_tracker = f'{path_dir_tracker}/data-{year}-{month}-{day}-{hour}-{minute}.json'
+        data_tracker = {'datetime_creation': datetime_start_iso, 'data': {}}
+        path_json_market = None
+        data_market = None
+        timedelta_market_tracker = None
+        return path_json_tracker, path_json_market, data_tracker, data_market, datetime_start, timedelta_market_tracker, TRACKER, MARKET
     
-        return path_json, data, None
+    #if data.json does not exists, initialize data variable
+    elif len(list_json_market) == 0:
+        TRACKER=False
+        MARKET=True
+        datetime_start = datetime(2023,3,29)
+        datetime_start_iso = datetime_start.isoformat()
+        year = str(datetime_start.year)
+        month = str(datetime_start.month)
+        day = str(datetime_start.day)
+        minute = str(datetime_start.minute)
+        hour = str(datetime_start.hour)
+        path_json_market = f'{path_dir_market}/data-{year}-{month}-{day}-{hour}-{minute}.json'
+        data_market = {'datetime_creation': datetime_start_iso, 'data': {}}
+        path_json_tracker = None
+        data_tracker = None
+        timedelta_market_tracker = None
+        return path_json_tracker, path_json_market, data_tracker, data_market, datetime_start, timedelta_market_tracker, TRACKER, MARKET
+    
+    else:
+        TRACKER=True
+        MARKET=True
+        datetime_start_tracker = datetime(2023,5,7)
+        datetime_start_tracker_iso = datetime_start_tracker.isoformat()
+        datetime_start_market = datetime(2023,3,29)
+        datetime_start_market_iso = datetime_start_market.isoformat()
+        year = str(datetime_start.year)
+        month = str(datetime_start.month)
+        day = str(datetime_start.day)
+        minute = str(datetime_start.minute)
+        hour = str(datetime_start.hour)
+        path_json_tracker = f'{path_dir_tracker}/data-{year}-{month}-{day}-{hour}-{minute}.json'
+        path_json_market = f'{path_dir_market}/data-{year}-{month}-{day}-{hour}-{minute}.json'
+        data_tracker = {'datetime_creation': datetime_start_tracker_iso, 'data': {}}
+        data_market = {'datetime_creation': datetime_start_market_iso, 'data': {}}
+        timedelta_market_tracker = None
+        return path_json_tracker, path_json_market, data_tracker, data_market, datetime_start, timedelta_market_tracker, TRACKER, MARKET
+    
+
     
 
 if __name__ == "__main__":
