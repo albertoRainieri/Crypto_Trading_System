@@ -1,6 +1,9 @@
 from time import time
 from app.Controller.LoggingController import LoggingController
-
+import requests
+from datetime import datetime, timedelta
+import pytz
+import json, os
 
 logger = LoggingController.start_logging()
     
@@ -67,3 +70,34 @@ def getsubstring_fromkey(key):
         timeframe = timeframe[:-1]
 
     return vol, vol_value, buy_vol, buy_vol_value, timeframe
+
+def get_benchmark_info(db_benchmark):
+    '''
+    this function queries the benchmark info from all the coins from the db on server
+    '''
+    now = datetime.now(tz=pytz.UTC) - timedelta(days=1)
+    
+    year = now.year
+    month = now.month
+    day = now.day
+    file = 'benchmark-' + str(year) + '-' + str(month) + '-' + str(day)
+    full_path = '/analysis/benchmark_json/' + file
+
+    if os.path.exists(full_path):
+        print(f'Benchmark Info {full_path} exists.')
+
+    else:
+        print(f'{full_path} does not exist. Making the request to the server..')
+        ENDPOINT = 'https://algocrypto.eu'
+        METHOD = '/analysis/get-benchmarkinfo'
+
+        url_mosttradedcoins = ENDPOINT + METHOD
+        response = requests.get(url_mosttradedcoins)
+        print(f'StatusCode for getting get-benchmarkinfo: {response.status_code}')
+        benchmark_info = response.json()
+        with open(full_path, 'w') as outfile:
+            json.dump(benchmark_info, outfile)
+        
+        for coin in benchmark_info:
+            db_benchmark[coin].insert_one(benchmark_info[coin])
+        

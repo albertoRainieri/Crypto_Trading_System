@@ -14,6 +14,7 @@ from constants.constants import *
 import requests
 import pytz
 from pymongo import errors
+from app.Helpers.Helpers import get_benchmark_info
 
 
 
@@ -32,8 +33,6 @@ def main():
     db_benchmark = db.get_db(database=DATABASE_BENCHMARK)
     
 
-    
-
     # db_tracker, db_market, db_benchmark
     while True:
         
@@ -42,6 +41,7 @@ def main():
         now = datetime.now()
         last_doc_saved_tracker = db_tracker['BTCUSDT'].find_one(sort=[("_id", -1)])
         last_doc_saved_market = db_market['BTCUSDT'].find_one(sort=[("_id", -1)])
+        get_benchmark_info(db_benchmark)
         
         if last_doc_saved_tracker != None and last_doc_saved_market != None:
             last_timestamp_db_tracker = last_doc_saved_tracker['_id']
@@ -411,7 +411,7 @@ def returnMostRecentTimestamp_TrackerMarket(path_dir_tracker, path_dir_market, l
 def initialize_new_json(most_recent_file_tracker, most_recent_file_market, last_timestamp_fs_tracker, last_timestamp_fs_market, path_dir_tracker, path_dir_market, TRACKER, MARKET):
 
     if TRACKER:
-        if os.path.getsize(most_recent_file_tracker) > 1000000000:
+        if os.path.getsize(most_recent_file_tracker) > 750000000:
             last_record_split = last_timestamp_fs_tracker.split('-')
             last_record_split2 = last_timestamp_fs_tracker.split(':')
             year = last_record_split[0]
@@ -430,7 +430,7 @@ def initialize_new_json(most_recent_file_tracker, most_recent_file_market, last_
         data_tracker = None
     
     if MARKET:
-        if os.path.getsize(most_recent_file_market) > 1000000000:
+        if os.path.getsize(most_recent_file_market) > 750000000:
             last_record_split = last_timestamp_fs_market.split('-')
             last_record_split2 = last_timestamp_fs_market.split(':')
             year = last_record_split[0]
