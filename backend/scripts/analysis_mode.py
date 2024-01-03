@@ -98,7 +98,7 @@ def main():
             datetime_start = last_datetime_saved + timedelta(seconds=DELAY_SEARCH_SECONDS)
 
             if timedelta_market_tracker != None:
-                datetime_end = datetime_start + min(timedelta(days=DAYS), timedelta_market_tracker)
+                datetime_end = datetime_start + min(timedelta(days=DAYS), timedelta_market_tracker-timedelta(minutes=1))
             else:
                 datetime_end = datetime_start + timedelta(days=DAYS)
             
@@ -411,7 +411,7 @@ def returnMostRecentTimestamp_TrackerMarket(path_dir_tracker, path_dir_market, l
 def initialize_new_json(most_recent_file_tracker, most_recent_file_market, last_timestamp_fs_tracker, last_timestamp_fs_market, path_dir_tracker, path_dir_market, TRACKER, MARKET):
 
     if TRACKER:
-        if os.path.getsize(most_recent_file_tracker) > 750000000:
+        if os.path.getsize(most_recent_file_tracker) > 700000000:
             last_record_split = last_timestamp_fs_tracker.split('-')
             last_record_split2 = last_timestamp_fs_tracker.split(':')
             year = last_record_split[0]
@@ -430,7 +430,7 @@ def initialize_new_json(most_recent_file_tracker, most_recent_file_market, last_
         data_tracker = None
     
     if MARKET:
-        if os.path.getsize(most_recent_file_market) > 750000000:
+        if os.path.getsize(most_recent_file_market) > 700000000:
             last_record_split = last_timestamp_fs_market.split('-')
             last_record_split2 = last_timestamp_fs_market.split(':')
             year = last_record_split[0]

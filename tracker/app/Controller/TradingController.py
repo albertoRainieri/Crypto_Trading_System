@@ -30,6 +30,8 @@ class TradingController:
         # CHECK IF the first random key of riskconfiguration is:
         #1) '1' or '2', ... --> VOLATILITY_GROUPED = TRUE
         #2) 'buy_vol_60m:0.85/vol_60m:15/timeframe:360' --> VOLATILITY_GROUPED = FALSE
+        # print(riskconfiguration)
+        # print(volatility_coin)
         if list(riskconfiguration.keys())[0].isdigit():
             if volatility_coin in riskconfiguration:
                 return riskconfiguration[volatility_coin]
@@ -82,108 +84,109 @@ class TradingController:
         #     logger.info(f'TradingController: {coin}')
 
         risk_configuration = TradingController.returnRiskConfiguration(risk_configuration, volatility_coin)
-            
-        for event_key in risk_configuration:
-
-            # check if coin is already on trade for this specific event, if True, pass
-            COIN_ON_TRADING = False
-
-            vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(event_key)
-
-            if obs[vol_field] == None or obs[buy_vol_field] == None:
-                continue
-
-            if obs[vol_field] >= float(vol_value) and obs[buy_vol_field] >= float(buy_vol_value):
-                
-                f = open ('/tracker/user_configuration/userconfiguration.json', "r")
-                user_configuration = json.loads(f.read())
-                
-                SYS_ADMIN = os.getenv('SYS_ADMIN')
-                db = DatabaseConnection()
-                complete_process_overview = {}
-                id = datetime.now().isoformat()
-                
-                for user in user_configuration:
-                    TRADING_LIVE = user_configuration[user]['trading_live']
-
-                    if user != SYS_ADMIN and TRADING_LIVE == False:
-                        continue
-                    
-                    db_name = DATABASE_TRADING + '_' + user
-                    db_trading = db.get_db(db_name)
-                    trading_coins_list = list(db_trading[COLLECTION_TRADING_LIVE].find())
-                    if len(trading_coins_list) != 0:
-                        for coin_on_trade in trading_coins_list:
-                            if coin_on_trade['coin'] == coin and coin_on_trade['event'] == event_key:
-                                COIN_ON_TRADING = True
-                    
-                    if not COIN_ON_TRADING:
-                        last_record = db_trading[COLLECTION_TRADING_BALANCE_ACCOUNT].find_one({}, sort=[("_id", DESCENDING)])
-                        if last_record != None:
-                            investment_amount = last_record['investment_amount']
-                        else:
-                            investment_amount = user_configuration[user]['initialized_investment_amount']
-                        
-                        
-                        quantity = round_(investment_amount / obs['price'],8)
-
-                        if TRADING_LIVE:
-                            api_key_path = user_configuration[user]['api_key_path']
-                            private_key_path = user_configuration[user]['private_key_path']
-                            response, status_code = TradingController.create_order(api_key_path=api_key_path, private_key_path=private_key_path, 
-                                                                                    coin=coin, side="BUY", usdt=investment_amount)
-                            if status_code == 200:
-                                response = response.json()
-                                
-                                # let's get the real quantity and price executed, thus the investment_amount
-                                quantity = float(response["executedQty"])
-                                purchase_price = float(response["price"])
-                                investment_amount = quantity * purchase_price
-                                trading_live = True
-                                msg = f"{coin} - Event Triggered: {vol_field}:{vol_value} - {buy_vol_field}:{buy_vol_value} Live Trading: {TRADING_LIVE}. user: {user}"
-                            else:
-                                msg_text = f'Status code: {status_code} BUY Order Failed for {coin}. key event: {event_key}. user: {user}'
-                                msg = {'msg': msg_text, 'error': response.text}
-                                trading_live = False
-                                purchase_price = obs['price']
-
-                                if user != SYS_ADMIN:
-                                    logger.info(msg)
-                                    continue
-                                
-                        else:
-                            trading_live = False
-                            msg = f"{coin} - Event Triggered: {vol_field}:{vol_value} - {buy_vol_field}:{buy_vol_value} Live Trading: {TRADING_LIVE}. user: {user}"
-                            purchase_price = obs['price']
-                        ################################################################
-                        logger.info(msg)
-
-                        
-                        
-                        # get risk management configuration
-                        risk_management_configuration = json.dumps(risk_configuration[event_key])
-
-                        process_key = event_key + coin
-
-                        if process_key not in complete_process_overview:
-                            # Start Subprocess for "coin". This will launch a wss connection for getting bid price coin in real time
-                            process = subprocess.Popen(["python3", "/tracker/trading/wss-trading.py", coin, id, str(purchase_price), str(timeframe), risk_management_configuration])
-                            complete_process_overview[process_key] = process.pid
-                            pid = process.pid
-                        else:
-                            pid = complete_process_overview[process_key]
-                            logger.info('Process wss-trading.py already started')
-                        
-                        # send query to db_trading. for logging
-                        doc_db = {'_id': id, 'coin': coin, 'profit': 0, 'purchase_price': purchase_price, 'current_price': purchase_price,
-                                'quantity': quantity,'on_trade': True, 'trading_live': trading_live, 'event': event_key, 'investment_amount': investment_amount,
-                                    'exit_timestamp': datetime.fromtimestamp(0).isoformat(), 'risk_configuration': risk_configuration[event_key], 'pid': pid}
-                        
-                        db_trading[COLLECTION_TRADING_LIVE].insert_one(doc_db)
-                        db_trading[COLLECTION_TRADING_HISTORY].insert_one(doc_db)
-                        db_logger[DATABASE_TRADING_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
-
         
+        if risk_configuration != None:
+            for event_key in risk_configuration:
+
+                # check if coin is already on trade for this specific event, if True, pass
+                COIN_ON_TRADING = False
+
+                vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(event_key)
+
+                if obs[vol_field] == None or obs[buy_vol_field] == None:
+                    continue
+
+                if obs[vol_field] >= float(vol_value) and obs[buy_vol_field] >= float(buy_vol_value):
+                    
+                    f = open ('/tracker/user_configuration/userconfiguration.json', "r")
+                    user_configuration = json.loads(f.read())
+                    
+                    SYS_ADMIN = os.getenv('SYS_ADMIN')
+                    db = DatabaseConnection()
+                    complete_process_overview = {}
+                    id = datetime.now().isoformat()
+                    
+                    for user in user_configuration:
+                        TRADING_LIVE = user_configuration[user]['trading_live']
+
+                        if user != SYS_ADMIN and TRADING_LIVE == False:
+                            continue
+                        
+                        db_name = DATABASE_TRADING + '_' + user
+                        db_trading = db.get_db(db_name)
+                        trading_coins_list = list(db_trading[COLLECTION_TRADING_LIVE].find())
+                        if len(trading_coins_list) != 0:
+                            for coin_on_trade in trading_coins_list:
+                                if coin_on_trade['coin'] == coin and coin_on_trade['event'] == event_key:
+                                    COIN_ON_TRADING = True
+                        
+                        if not COIN_ON_TRADING:
+                            last_record = db_trading[COLLECTION_TRADING_BALANCE_ACCOUNT].find_one({}, sort=[("_id", DESCENDING)])
+                            if last_record != None:
+                                investment_amount = last_record['investment_amount']
+                            else:
+                                investment_amount = user_configuration[user]['initialized_investment_amount']
+                            
+                            
+                            quantity = round_(investment_amount / obs['price'],8)
+
+                            if TRADING_LIVE:
+                                api_key_path = user_configuration[user]['api_key_path']
+                                private_key_path = user_configuration[user]['private_key_path']
+                                response, status_code = TradingController.create_order(api_key_path=api_key_path, private_key_path=private_key_path, 
+                                                                                        coin=coin, side="BUY", usdt=investment_amount)
+                                if status_code == 200:
+                                    response = response.json()
+                                    
+                                    # let's get the real quantity and price executed, thus the investment_amount
+                                    quantity = float(response["executedQty"])
+                                    purchase_price = float(response["price"])
+                                    investment_amount = quantity * purchase_price
+                                    trading_live = True
+                                    msg = f"{coin} - Event Triggered: {vol_field}:{vol_value} - {buy_vol_field}:{buy_vol_value} Live Trading: {TRADING_LIVE}. user: {user}"
+                                else:
+                                    msg_text = f'Status code: {status_code} BUY Order Failed for {coin}. key event: {event_key}. user: {user}'
+                                    msg = {'msg': msg_text, 'error': response.text}
+                                    trading_live = False
+                                    purchase_price = obs['price']
+
+                                    if user != SYS_ADMIN:
+                                        logger.info(msg)
+                                        continue
+                                    
+                            else:
+                                trading_live = False
+                                msg = f"{coin} - Event Triggered: {vol_field}:{vol_value} - {buy_vol_field}:{buy_vol_value} Live Trading: {TRADING_LIVE}. user: {user}"
+                                purchase_price = obs['price']
+                            ################################################################
+                            logger.info(msg)
+
+                            
+                            
+                            # get risk management configuration
+                            risk_management_configuration = json.dumps(risk_configuration[event_key])
+
+                            process_key = event_key + coin
+
+                            if process_key not in complete_process_overview:
+                                # Start Subprocess for "coin". This will launch a wss connection for getting bid price coin in real time
+                                process = subprocess.Popen(["python3", "/tracker/trading/wss-trading.py", coin, id, str(purchase_price), str(timeframe), risk_management_configuration])
+                                complete_process_overview[process_key] = process.pid
+                                pid = process.pid
+                            else:
+                                pid = complete_process_overview[process_key]
+                                logger.info('Process wss-trading.py already started')
+                            
+                            # send query to db_trading. for logging
+                            doc_db = {'_id': id, 'coin': coin, 'profit': 0, 'purchase_price': purchase_price, 'current_price': purchase_price,
+                                    'quantity': quantity,'on_trade': True, 'trading_live': trading_live, 'event': event_key, 'investment_amount': investment_amount,
+                                        'exit_timestamp': datetime.fromtimestamp(0).isoformat(), 'risk_configuration': risk_configuration[event_key], 'pid': pid}
+                            
+                            db_trading[COLLECTION_TRADING_LIVE].insert_one(doc_db)
+                            db_trading[COLLECTION_TRADING_HISTORY].insert_one(doc_db)
+                            db_logger[DATABASE_TRADING_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+
+            
 
     def clean_db_trading(logger, db_logger, user_configuration):
         '''
