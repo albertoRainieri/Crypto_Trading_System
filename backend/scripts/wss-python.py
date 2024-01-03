@@ -183,7 +183,7 @@ def initializeVariables(coin_list):
     doc_db = {}
     prices = {}
     for instrument_name in coin_list:
-        doc_db[instrument_name] = {"_id": None, "price": None, "n_trades": 0,"volume": 0 , "buy_volume": 0, "sell_volume": 0, "buy_n": 0, "sell_n": 0, "quantity": 0}
+        doc_db[instrument_name] = {"_id": None, "price": None, "n_trades": 0,"volume": 0 , "buy_volume": 0, "sell_volume": 0, "buy_n": 0, "quantity": 0}
         prices[instrument_name] = None
     n_list_coins = []
 
@@ -211,7 +211,7 @@ def getStatisticsOnTrades(trade, instrument_name, doc_db, prices):
         doc_db[instrument_name]["buy_n"] += 1
         doc_db[instrument_name]["buy_volume"] += float(quantity) * float(price)
     else:
-        doc_db[instrument_name]["sell_n"] += 1
+        #doc_db[instrument_name]["sell_n"] += 1
         doc_db[instrument_name]["sell_volume"] += float(quantity) * float(price)
 
         
@@ -238,7 +238,8 @@ def saveTrades_toDB(prices, doc_db, database):
             doc_db[instrument_name]["price"]=prices[instrument_name]
             doc_db[instrument_name]["quantity"] = round_(doc_db[instrument_name]["quantity"],2)
             doc_db[instrument_name]["volume"] =  round_(doc_db[instrument_name]["buy_volume"] + doc_db[instrument_name]["sell_volume"],2)
-            doc_db[instrument_name]["sell_volume"] = round_(doc_db[instrument_name]["sell_volume"],2)
+            #doc_db[instrument_name]["sell_volume"] = round_(doc_db[instrument_name]["sell_volume"],2)
+            del doc_db[instrument_name]["sell_volume"]
             doc_db[instrument_name]["buy_volume"] = round_(doc_db[instrument_name]["buy_volume"],2)
             doc_db[instrument_name]['_id']= datetime.now().isoformat()
             database[instrument_name].insert_one(doc_db[instrument_name])
