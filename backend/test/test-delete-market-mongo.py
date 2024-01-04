@@ -34,7 +34,6 @@ collection_names = db.list_collection_names()
 i=0
 for collection_name in collection_names:
     i+=1
-    print(i)
     collection = db[collection_name]
 
     # Define the deletion query
@@ -47,4 +46,4 @@ for collection_name in collection_names:
 
     # Delete the records within the time range
     result = collection.delete_many(query)
-    print(f"Deleted {result.deleted_count} records from '{collection_name}' collection.")
+    print(f"{i}: Deleted {result.deleted_count} records from '{collection_name}' collection.")
