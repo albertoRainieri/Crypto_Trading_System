@@ -299,7 +299,10 @@ def saveTrades_toDB(prices, doc_db, database):
         if instrument_name != 'BTCUSDT' and instrument_name != 'ETHUSDT':
             if doc_db[instrument_name]['n_trades'] != 0:
                 last_prices[instrument_name] = prices[instrument_name]
-                doc_db[instrument_name]["price"]=prices[instrument_name]
+                if prices[instrument_name] > 0.1:
+                    doc_db[instrument_name]["price"] = round_(prices[instrument_name],2)
+                else:
+                    doc_db[instrument_name]["price"] = prices[instrument_name]
                 #doc_db[instrument_name]["quantity"] = round_(doc_db[instrument_name]["quantity"],2)
                 doc_db[instrument_name]["volume"] =  round_(doc_db[instrument_name]["buy_volume"] + doc_db[instrument_name]["sell_volume"],2)
                 #doc_db[instrument_name]["sell_volume"] = round_(doc_db[instrument_name]["sell_volume"],2)
