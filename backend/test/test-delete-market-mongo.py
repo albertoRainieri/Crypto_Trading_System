@@ -31,7 +31,10 @@ collection_names = db.list_collection_names()
 # print(start_time)
 
 # Iterate over each collection
+i=0
 for collection_name in collection_names:
+    i+=1
+    print(i)
     collection = db[collection_name]
 
     # Define the deletion query
