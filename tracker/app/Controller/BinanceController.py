@@ -114,69 +114,84 @@ class BinanceController:
         interval = '1w'
         #print('res', res)
         all_usdt_coins = []
+        all_extra_pairs = []
+        unique_coins = []
         for coin in res['symbols']:
             if coin['symbol'][-4:] == 'USDT' and coin['symbol'] != 'USDCUSDT' and coin['symbol'] != 'TUSDUSDT' and coin['symbol'] != 'USDPUSDT' and coin['symbol'] != 'BUSDUSDT' and coin['symbol'] != 'USTUSDT' and coin['symbol'] != 'EURUSDT':
                 all_usdt_coins.append(coin['symbol'])
+                unique_coin=coin['symbol'][:-4]
+                if unique_coin not in unique_coins:
+                    unique_coins.append(unique_coin)
+        
+        for coin in res['symbols']:
+            if coin['symbol'][-3:] == 'BTC' or  coin['symbol'][-3:] == 'ETH':
+                if coin['symbol'][:-3] in unique_coins:
+                    all_extra_pairs.append(coin['symbol'])
+
+        n_usdt = len(all_usdt_coins)
+        n_other = len(all_extra_pairs)
+        logger.info(f'There are {n_usdt} usdt coins')
+        logger.info(f'There are {n_other} extra pairs for all <coin>USDT')
         
         #all_usdt_coins = all_usdt_coins[:10]
-        number_coins = len(all_usdt_coins)
-        print(f'Number of coins: {number_coins}')
+        # number_coins = len(all_usdt_coins)
+        # print(f'Number of coins: {number_coins}')
 
-        # let's slice this list in 10 pieces to avoid http connection timeout to the binance server
-        number_slices = 5
-        slice = int(number_coins / number_slices)
-        slice_usdt_coin_list = []
-        slice_usdt_coin_list.append(all_usdt_coins[:slice])
+        # # let's slice this list in 10 pieces to avoid http connection timeout to the binance server
+        # number_slices = 5
+        # slice = int(number_coins / number_slices)
+        # slice_usdt_coin_list = []
+        # slice_usdt_coin_list.append(all_usdt_coins[:slice])
 
-        for i in range(1,number_slices):
-            if i != number_slices - 1:
-                slice_usdt_coin_list.append(all_usdt_coins[slice*i:slice*(i+1)])
-            else:
-                slice_usdt_coin_list.append(all_usdt_coins[slice*i:])
+        # for i in range(1,number_slices):
+        #     if i != number_slices - 1:
+        #         slice_usdt_coin_list.append(all_usdt_coins[slice*i:slice*(i+1)])
+        #     else:
+        #         slice_usdt_coin_list.append(all_usdt_coins[slice*i:])
 
-        #total_pairs = asyncio.run(BinanceController.gather(coins_list=all_usdt_coins))
-        total_pairs = asyncio.run(BinanceController.gather_total(coins_list=slice_usdt_coin_list, logger=logger, interval=interval))
+        # #total_pairs = asyncio.run(BinanceController.gather(coins_list=all_usdt_coins))
+        # total_pairs = asyncio.run(BinanceController.gather_total(coins_list=slice_usdt_coin_list, logger=logger, interval=interval))
 
-        if not total_pairs:
-            if tries < 2:
-                tries += 1
-                print(f'{tries} tries')
-                result = BinanceController.sort_pairs_by_volume(res=res, logger=logger,tries=tries)
-            else:
-                msg = "VOLUMES UPDATE: async calls to Binance API failed"
-                logger.error(msg)
-                db_logger[DATABASE_API_ERROR].insert({'_id': datetime.now().isoformat(), 'msg': msg})
+        # if not total_pairs:
+        #     if tries < 2:
+        #         tries += 1
+        #         print(f'{tries} tries')
+        #         result = BinanceController.sort_pairs_by_volume(res=res, logger=logger,tries=tries)
+        #     else:
+        #         msg = "VOLUMES UPDATE: async calls to Binance API failed"
+        #         logger.error(msg)
+        #         db_logger[DATABASE_API_ERROR].insert({'_id': datetime.now().isoformat(), 'msg': msg})
                 
                 
 
-        if not total_pairs:
-            return
+        # if not total_pairs:
+        #     return
         
-        list_volumes = []
-        most_traded_coins_list = []
+        # list_volumes = []
+        # most_traded_coins_list = []
 
-        for coin,trade in zip(all_usdt_coins, total_pairs):
-            try:
-                dict_volume = {'coin': coin, 'volume': float(trade[0][7])}
-            except:
-                logger.error(trade)
-                logger.error(type(trade))
-                logger.error(coin)
-                dict_volume = {'coin': coin, 'volume': 0}
+        # for coin,trade in zip(all_usdt_coins, total_pairs):
+        #     try:
+        #         dict_volume = {'coin': coin, 'volume': float(trade[0][7])}
+        #     except:
+        #         logger.error(trade)
+        #         logger.error(type(trade))
+        #         logger.error(coin)
+        #         dict_volume = {'coin': coin, 'volume': 0}
 
-            list_volumes.append(dict_volume)
+        #     list_volumes.append(dict_volume)
 
-        list_volumes.sort(key=lambda x: x['volume'], reverse=True)
+        # list_volumes.sort(key=lambda x: x['volume'], reverse=True)
 
-        for obj in list_volumes:
-            most_traded_coins_list.append(obj['coin'])
+        # for obj in list_volumes:
+        #     most_traded_coins_list.append(obj['coin'])
 
 
-        sorted_volumes = {'most_traded_coins': list_volumes}
-        with open("/tracker/json/sorted_instruments.json", "w") as outfile_volume:
-            outfile_volume.write(json.dumps(sorted_volumes))
+        # sorted_volumes = {'most_traded_coins': list_volumes}
+        # with open("/tracker/json/sorted_instruments.json", "w") as outfile_volume:
+        #     outfile_volume.write(json.dumps(sorted_volumes))
 
-        most_traded_coins = {'most_traded_coins': most_traded_coins_list}
+        most_traded_coins = {'most_traded_coins': all_usdt_coins, 'most_traded_coins_extra': all_extra_pairs}
         with open("/tracker/json/most_traded_coins.json", "w") as outfile_volume:
             outfile_volume.write(json.dumps(most_traded_coins))
 
@@ -195,7 +210,7 @@ class BinanceController:
 
             # if the coin from db is present in the list updated "most_traded_coins_list", then it will be marked as a live coin
             #if coin in most_traded_coins_list[:NUMBER_COINS_TO_TRADE_WSS]:
-            if coin in most_traded_coins_list:
+            if coin in all_usdt_coins:
                 # In case it is not the first time to compute this statistics on db benchmark
                 if 'Best_Trades' in cursor_benchmark[0]:
                     trade_score = cursor_benchmark[0]['Best_Trades']
@@ -264,13 +279,9 @@ class BinanceController:
             logger.error(msg)
             db_logger[DATABASE_API_ERROR].insert({'_id': datetime.now().isoformat(), 'msg': msg})
             info = loop.run_until_complete(BinanceController.exchange_info())
-        try:
-            BinanceController.sort_pairs_by_volume(res=info, logger=logger, db_logger=db_logger)
-        except Exception as e:
-            logger.error(e)
-            msg = 'VOLUMES UPDATE: Something went wrong with function "sort_pairs_by_volume'
-            logger.error(msg)
-            db_logger[DATABASE_API_ERROR].insert({'_id': datetime.now().isoformat(), 'msg': msg})
+
+        BinanceController.sort_pairs_by_volume(res=info, logger=logger, db_logger=db_logger)
+        
 
     def get_or_create_eventloop():
         try:

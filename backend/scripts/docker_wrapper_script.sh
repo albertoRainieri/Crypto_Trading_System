@@ -7,14 +7,18 @@ echo $ANALYSIS
 # Start the second process
 if [ $ANALYSIS = "true" ]
 then
-    echo 'hello'
+    echo 'Analysis Mode On'
     /bin/bash /backend/scripts/analysis_mode.sh &
 else
     /bin/bash /backend/scripts/wss_python_process.sh &
-    sleep 10
+    sleep 5
 
     # Start the third process
     /bin/bash /backend/scripts/wss_python_process_2.sh &
+    sleep 5
+    /bin/bash /backend/scripts/wss_python_process_3.sh &
+    sleep 5
+    /bin/bash /backend/scripts/wss_python_process_4.sh &
 fi
 
 

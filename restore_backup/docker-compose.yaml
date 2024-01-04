@@ -1,0 +1,64 @@
+version: "3.5"
+
+services:
+  mongo:
+
+    container_name: mongo-crypto-restorebackup
+    logging:
+      driver: "json-file"
+      options:
+          max-size: "5m"
+    build: 
+      context: ./mongodb
+      args:
+        - UID=${UID}
+        - GID=${GID}
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - MONGO_INITDB_ROOT_USERNAME=$MONGO_INITDB_ROOT_USERNAME
+      - MONGO_INITDB_ROOT_PASSWORD=$MONGO_INITDB_ROOT_PASSWORD
+      - MONGO_USERNAME=$MONGO_USERNAME
+      - MONGO_PASSWORD=$MONGO_PASSWORD
+      - MONGO_DB_URL=$MONGO_DB_URL
+      - MONGO_DB_NAME=$MONGO_DB_NAME
+      - MONGO_PORT=$MONGO_PORT
+      - MONGO_VERSION=$MONGO_VERSION
+      - TZ=$TIME_ZONE
+      
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./mongodb/db:/data/db
+    networks:
+      - restorebackup-net
+
+  mongo-express:
+    image: mongo-express
+    logging:
+      driver: "json-file"
+      options:
+          max-size: "5m"
+    container_name: mongo-express-restorebackup
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      #ME_CONFIG_MONGODB_SERVER: mongo-analysis
+      ME_CONFIG_MONGODB_SERVER: $MONGO_ADDRESS
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_MONGODB_AUTH_USERNAME: $MONGO_INITDB_ROOT_USERNAME
+      ME_CONFIG_MONGODB_AUTH_PASSWORD: $MONGO_INITDB_ROOT_PASSWORD
+      ME_CONFIG_BASICAUTH_USERNAME: $MONGO_EXPRESS_USERNAME # to enable auth in mongo-express gui
+      ME_CONFIG_BASICAUTH_PASSWORD: $MONGO_EXPRESS_PASSWORD
+      ME_CONFIG_SITE_BASEURL: "/mongo"
+      #ME_CONFIG_MONGODB_URL: mongodb://root:password@mongo:27017/
+    depends_on:
+      - mongo
+    networks:
+      - restorebackup-net
+
+networks:
+  restorebackup-net:
+    driver: bridge

@@ -49,7 +49,7 @@ def on_close(*args):
     db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
     logger.info(msg)
 
-    if LIST == 'list2':
+    if LIST == 'list2-extra':
         extra_seconds_list_2 = 60
         sleep(extra_seconds_list_2)
 
@@ -111,19 +111,51 @@ def on_open(ws):
     #coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
     # I AM MOVING ETHUSDT TO SECOND LIST BECAUSE I NOTED THAT SOMETIMES TRADE VOLUME IN LIST 2 IS VERY LOW AND THEREFORE THE SAVE TO DB HAPPENS TOO LATE,.
     # THIS IS RISKY FOR THE TRACKER WHICH IS NOT ABLE TO GET THE LAST DATA
-    if LIST == 'list1':
-        coin_list = data["most_traded_coins"][:240]
-        if 'ETHUSDT' in coin_list:
-            coin_list.remove('ETHUSDT')
-        if 'BTCUSDT' not in coin_list:
-            coin_list = ['BTCUSDT'] + coin_list
+    # if LIST == 'list1-extra':
+    #     coin_list = data["most_traded_coins_extra"][:300]
+    #     if 'ETHBTC' in coin_list:
+    #         coin_list.remove('ETHBTC')
+    #     if 'SOLBTC' not in coin_list:
+    #         coin_list = ['SOLBTC'] + coin_list
         
+    # else:
+    #     coin_list = data["most_traded_coins_extra"][300:]
+    #     if 'ETHBTC' not in coin_list:
+    #         coin_list = ['ETHBTC'] + coin_list
+    #     if 'SOLBTC' in coin_list:
+    #         coin_list.remove('SOLBTC')
+
+    most_traded_coins = data['most_traded_coins']
+    unique_coins = [coin[:-4] for coin in most_traded_coins]
+    most_traded_coins_extra = sorted(data['most_traded_coins_extra'])
+    n_extra_pairs=int(len(most_traded_coins_extra)/2)
+    if LIST == 'list1-extra':
+        coin_list = most_traded_coins_extra[:n_extra_pairs]
+        coin_list2 = most_traded_coins_extra[n_extra_pairs:]
     else:
-        coin_list = data["most_traded_coins"][240:]
-        if 'ETHUSDT' not in coin_list:
-            coin_list = ['ETHUSDT'] + coin_list
-        if 'BTCUSDT' in coin_list:
-            coin_list.remove('BTCUSDT')
+        coin_list = most_traded_coins_extra[n_extra_pairs:]
+        coin_list2 = most_traded_coins_extra[:n_extra_pairs]
+
+    
+    STOP=True
+    while STOP:
+        if LIST == 'list1-extra':
+            if coin_list[-1][:-3] != coin_list2[0][:-3]:
+                STOP=False
+            else:
+                logger.info(f'Adjusting the list for {LIST}')
+                coin_list.append(coin_list2[0])
+                coin_list2.remove(coin_list2[0])
+        else:
+            if coin_list[0][:-3] != coin_list2[-1][:-3]:
+                STOP=False
+            else:
+                logger.info(f'Adjusting the list for {LIST}')
+                coin_list2.append(coin_list[0])
+                coin_list.remove(coin_list[0])
+    
+    coin_list.append('BTCUSDT')
+    coin_list.append('ETHUSDT')
 
     logger.info(f'{LIST}: {coin_list}')
     doc_db, prices, n_list_coins = initializeVariables(coin_list)
@@ -153,8 +185,9 @@ def on_message(ws, message):
     
     data = data['data']
     instrument_name = data['s']
-    if instrument_name not in n_list_coins:
-        n_list_coins.append(instrument_name)
+    instrument_name_usdt = instrument_name[:-3] + 'USDT'
+    if instrument_name_usdt not in n_list_coins:
+        n_list_coins.append(instrument_name_usdt)
 
     now = datetime.now()
     formatted_date = now.strftime("%Y-%m-%d:%H:%M")
@@ -185,18 +218,33 @@ def on_message(ws, message):
 def initializeVariables(coin_list):
     
     doc_db = {}
-    prices = {}
+    if LIST == 'list1-extra':
+        path = '/backend/info/prices1-extra.json'
+    else:
+        path = '/backend/info/prices2-extra.json'
+
+    if os.path.exists(path):
+        with open(path, 'r') as file:
+            prices = json.load(file)
+    else:
+        prices = {}
+
     for instrument_name in coin_list:
-        doc_db[instrument_name] = {"_id": None, "price": None, "n_trades": 0,"volume": 0 , "buy_volume": 0, "sell_volume": 0, "buy_n": 0, "quantity": 0}
-        prices[instrument_name] = None
+        if instrument_name != 'BTCUSDT' and instrument_name != 'ETHUSDT':
+            instrument_name_usdt = instrument_name[:-3] + 'USDT'
+        else:
+            instrument_name_usdt = instrument_name
+
+        if instrument_name_usdt not in doc_db:
+            doc_db[instrument_name_usdt] = {"_id": None, "price": None, "n_trades": 0,"volume": 0 , "buy_volume": 0, "sell_volume": 0, "buy_n": 0}
+            if not os.path.exists(path):
+                prices[instrument_name_usdt] = None
     n_list_coins = []
 
     return doc_db, prices, n_list_coins
 
 
 def getStatisticsOnTrades(trade, instrument_name, doc_db, prices):
-
-    doc_db[instrument_name]['n_trades'] += 1
 
     if trade[ORDER]:
         order = 'SELL'
@@ -205,28 +253,39 @@ def getStatisticsOnTrades(trade, instrument_name, doc_db, prices):
 
     quantity  = trade[QUANTITY]
     price =  trade[PRICE]
+    if instrument_name[-3:] == 'BTC':
+        adjuster = 'BTCUSDT'
+    elif instrument_name[-3:] == 'ETH':
+        adjuster = 'ETHUSDT'
 
 
-    prices[instrument_name] = float(price)
+    if instrument_name != 'BTCUSDT' and instrument_name != 'ETHUSDT':
+        instrument_name_usdt = instrument_name[:-3] + 'USDT'
+        doc_db[instrument_name_usdt]['n_trades'] += 1
+        prices[instrument_name_usdt] = float(price) * prices[adjuster]
 
-    doc_db[instrument_name]["quantity"] += float(quantity)
-    
-    if order == "BUY":
-        doc_db[instrument_name]["buy_n"] += 1
-        doc_db[instrument_name]["buy_volume"] += float(quantity) * float(price)
-    else:
-        #doc_db[instrument_name]["sell_n"] += 1
-        doc_db[instrument_name]["sell_volume"] += float(quantity) * float(price)
+
+        #doc_db[instrument_name_usdt]["quantity"] += float(quantity)
+        
+        if order == "BUY":
+            doc_db[instrument_name_usdt]["buy_n"] += 1
+            doc_db[instrument_name_usdt]["buy_volume"] += float(quantity) * float(price) * prices[adjuster]
+        else:
+            doc_db[instrument_name_usdt]["sell_volume"] += float(quantity) * float(price) * prices[adjuster]
+    elif instrument_name == 'BTCUSDT':
+        prices[instrument_name] = float(price)
+    elif instrument_name == 'ETHUSDT':
+        prices[instrument_name] = float(price)
 
         
 @timer_func
 def saveTrades_toDB(prices, doc_db, database):
 
     # read last prices if path exists already
-    if LIST == 'list1':
-        path = '/backend/info/prices1.json'
+    if LIST == 'list1-extra':
+        path = '/backend/info/prices1-extra.json'
     else:
-        path = '/backend/info/prices2.json'
+        path = '/backend/info/prices2-extra.json'
         
     if os.path.exists(path):
         f = open (path, "r")
@@ -237,33 +296,35 @@ def saveTrades_toDB(prices, doc_db, database):
             last_prices[instrument_name] = None
 
     for instrument_name in prices:
-        if doc_db[instrument_name]['n_trades'] != 0:
-            last_prices[instrument_name] = prices[instrument_name]
-            doc_db[instrument_name]["price"]=prices[instrument_name]
-            doc_db[instrument_name]["quantity"] = round_(doc_db[instrument_name]["quantity"],2)
-            doc_db[instrument_name]["volume"] =  round_(doc_db[instrument_name]["buy_volume"] + doc_db[instrument_name]["sell_volume"],2)
-            #doc_db[instrument_name]["sell_volume"] = round_(doc_db[instrument_name]["sell_volume"],2)
-            del doc_db[instrument_name]["sell_volume"]
-            doc_db[instrument_name]["buy_volume"] = round_(doc_db[instrument_name]["buy_volume"],2)
-            doc_db[instrument_name]['_id']= datetime.now().isoformat()
-            database[instrument_name].insert_one(doc_db[instrument_name])
-        else:
-            if instrument_name in last_prices:
-                doc_db[instrument_name]["price"]=last_prices[instrument_name]
+        if instrument_name != 'BTCUSDT' and instrument_name != 'ETHUSDT':
+            if doc_db[instrument_name]['n_trades'] != 0:
+                last_prices[instrument_name] = prices[instrument_name]
+                doc_db[instrument_name]["price"]=prices[instrument_name]
+                #doc_db[instrument_name]["quantity"] = round_(doc_db[instrument_name]["quantity"],2)
+                doc_db[instrument_name]["volume"] =  round_(doc_db[instrument_name]["buy_volume"] + doc_db[instrument_name]["sell_volume"],2)
+                #doc_db[instrument_name]["sell_volume"] = round_(doc_db[instrument_name]["sell_volume"],2)
+                del doc_db[instrument_name]["sell_volume"]
+                doc_db[instrument_name]["buy_volume"] = round_(doc_db[instrument_name]["buy_volume"],2)
+                doc_db[instrument_name]['_id']= datetime.now().isoformat()
+                database[instrument_name].insert_one(doc_db[instrument_name])
             else:
-                continue
+                if instrument_name in last_prices:
+                    doc_db[instrument_name]["price"]=last_prices[instrument_name]
+                else:
+                    continue
 
-            if doc_db[instrument_name]["price"] == None:
-                continue
+                if doc_db[instrument_name]["price"] == None:
+                    continue
 
-            doc_db[instrument_name]["quantity"] = 0
-            doc_db[instrument_name]["volume"] = 0
-            #doc_db[instrument_name]["sell_volume"] = 0
-            del doc_db[instrument_name]["sell_volume"]
-            doc_db[instrument_name]["buy_volume"] = 0
-            doc_db[instrument_name]['_id']= datetime.now().isoformat()
-            database[instrument_name].insert_one(doc_db[instrument_name])
-    
+                #doc_db[instrument_name]["quantity"] = 0
+                doc_db[instrument_name]["volume"] = 0
+                #doc_db[instrument_name]["sell_volume"] = 0
+                del doc_db[instrument_name]["sell_volume"]
+                doc_db[instrument_name]["buy_volume"] = 0
+                doc_db[instrument_name]['_id']= datetime.now().isoformat()
+                database[instrument_name].insert_one(doc_db[instrument_name])
+        else:
+            last_prices[instrument_name] = prices[instrument_name]
 
     with open(path, "w") as outfile_volume:
         outfile_volume.write(json.dumps(last_prices))
@@ -280,7 +341,7 @@ def get_db(db_name):
 
 if __name__ == "__main__":
     db_logger = get_db(DATABASE_LOGGING)
-    database = get_db(DATABASE_MARKET)
+    database = get_db(DATABASE_MARKET_EXTRA)
     logger = LoggingController.start_logging()
     ws = websocket.WebSocketApp("wss://stream.binance.com:9443/stream?streams=",
                               on_open = on_open,

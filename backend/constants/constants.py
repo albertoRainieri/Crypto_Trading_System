@@ -11,6 +11,7 @@ BINANCE_ENDPOINT = "https://api.binance.com/api/v3/"
 
 #DATABASE
 DATABASE_MARKET="Market_Trades"
+DATABASE_MARKET_EXTRA="Market_Trades_Extra"
 DATABASE_TRACKER="Tracker"
 DATABASE_BENCHMARK="Benchmark"
 DATABASE_LOGGING="Logging"
