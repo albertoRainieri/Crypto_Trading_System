@@ -12,11 +12,16 @@ Inputs are "start_time" and "end_time"
 '''
 
 # Define the time range for deletion (midnight UTC until 05:28 UTC)
-start_time = datetime.utcnow().replace(year=2023, month=3, day=20, hour=13, minute=20, second=59, microsecond=0)
+start_time = datetime.utcnow().replace(year=2023, month=3, day=29, hour=0, minute=1, second=0, microsecond=0)
 #end_time = start_time + timedelta(hours=5, minutes=30)
-end_time = datetime.utcnow().replace(year=2023, month=12, day=1, hour=0, minute=0, second=0, microsecond=0)
+end_time = datetime.utcnow().replace(year=2023, month=5, day=16, hour=23, minute=59, second=59, microsecond=0)
 
-
+tokens_do_not_delete = ['BTCUSDT', 'ETHUSDT', 'XRPUSDT', 'ARBUSDT', 'PEPEUSDT', 'LTCUSDT',
+                        'SUIUSDT', 'EDUUSDT', 'BNBUSDT', 'SOLUSDT', 'CFXUSDT', 'LDOUSDT', 
+                        'DOGEUSDT', 'MATICUSDT', 'APTUSDT', 'FTMUSDT', 'GALAUSDT', 'ADAUSDT',
+                        'EURUSDT', 'IDUSDT', 'INJUSDT', 'FILUSDT', 'OPUSDT', 'AGIXUSDT',
+                        'SHIBUSDT', 'LINKUSDT', 'TRXUSDT', 'ATOMUSDT', 'ARPAUSDT', 'DOTUSDT',
+                        'SANDUSDT', 'JASMYUSDT', 'WOOUSDT', 'LUNCUSDT']
 
 # Connect to MongoDB
 db = DatabaseConnection()
@@ -32,6 +37,8 @@ collection_names = db.list_collection_names()
 
 # Iterate over each collection
 for collection_name in collection_names:
+    if collection_name in tokens_do_not_delete:
+        continue
     collection = db[collection_name]
 
     # Define the deletion query

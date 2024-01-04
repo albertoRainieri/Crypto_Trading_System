@@ -304,10 +304,10 @@ def saveTrades_toDB(prices, doc_db, database):
                 else:
                     doc_db[instrument_name]["price"] = prices[instrument_name]
                 #doc_db[instrument_name]["quantity"] = round_(doc_db[instrument_name]["quantity"],2)
-                doc_db[instrument_name]["volume"] =  round_(doc_db[instrument_name]["buy_volume"] + doc_db[instrument_name]["sell_volume"],2)
+                doc_db[instrument_name]["volume"] =  int(doc_db[instrument_name]["buy_volume"] + doc_db[instrument_name]["sell_volume"])
                 #doc_db[instrument_name]["sell_volume"] = round_(doc_db[instrument_name]["sell_volume"],2)
                 del doc_db[instrument_name]["sell_volume"]
-                doc_db[instrument_name]["buy_volume"] = round_(doc_db[instrument_name]["buy_volume"],2)
+                doc_db[instrument_name]["buy_volume"] = int(doc_db[instrument_name]["buy_volume"])
                 doc_db[instrument_name]['_id']= datetime.now().isoformat()
                 database[instrument_name].insert_one(doc_db[instrument_name])
             else:
