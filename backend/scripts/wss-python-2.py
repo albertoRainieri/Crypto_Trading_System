@@ -312,7 +312,10 @@ def saveTrades_toDB(prices, doc_db, database):
                 database[instrument_name].insert_one(doc_db[instrument_name])
             else:
                 if instrument_name in last_prices:
-                    doc_db[instrument_name]["price"]=last_prices[instrument_name]
+                    if prices[instrument_name] != None and prices[instrument_name] > 0.1:
+                        doc_db[instrument_name]["price"] = round_(last_prices[instrument_name],2)
+                    else:
+                        doc_db[instrument_name]["price"] = last_prices[instrument_name]
                 else:
                     continue
 
@@ -329,8 +332,10 @@ def saveTrades_toDB(prices, doc_db, database):
         else:
             last_prices[instrument_name] = prices[instrument_name]
 
+    #logger.info('saving prices-file')
     with open(path, "w") as outfile_volume:
         outfile_volume.write(json.dumps(last_prices))
+    #logger.info('saveTrades_toDB completed')
     
             #print(doc_db)
 
