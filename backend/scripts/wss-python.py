@@ -187,7 +187,7 @@ def initializeVariables(coin_list):
     doc_db = {}
     prices = {}
     for instrument_name in coin_list:
-        doc_db[instrument_name] = {"_id": None, "price": None, "n_trades": 0,"volume": 0 , "buy_volume": 0, "sell_volume": 0, "buy_n": 0}
+        doc_db[instrument_name] = {"_id": None, "price": None, "n_trades": 0, "buy_n": 0, "volume": 0 , "buy_volume": 0, "sell_volume": 0}
         prices[instrument_name] = None
     n_list_coins = []
 
@@ -206,17 +206,19 @@ def getStatisticsOnTrades(trade, instrument_name, doc_db, prices):
     quantity  = trade[QUANTITY]
     price =  trade[PRICE]
 
+    if price != 0 and quantity != 0:
+        prices[instrument_name] = float(price)
 
-    prices[instrument_name] = float(price)
-
-    #doc_db[instrument_name]["quantity"] += float(quantity)
-    
-    if order == "BUY":
-        doc_db[instrument_name]["buy_n"] += 1
-        doc_db[instrument_name]["buy_volume"] += float(quantity) * float(price)
+        #doc_db[instrument_name]["quantity"] += float(quantity)
+        
+        if order == "BUY":
+            doc_db[instrument_name]["buy_n"] += 1
+            doc_db[instrument_name]["buy_volume"] += float(quantity) * float(price)
+        else:
+            #doc_db[instrument_name]["sell_n"] += 1
+            doc_db[instrument_name]["sell_volume"] += float(quantity) * float(price)
     else:
-        #doc_db[instrument_name]["sell_n"] += 1
-        doc_db[instrument_name]["sell_volume"] += float(quantity) * float(price)
+        logger.info("Duplicate Aggregate Trade")
 
         
 @timer_func

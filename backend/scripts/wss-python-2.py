@@ -236,7 +236,7 @@ def initializeVariables(coin_list):
             instrument_name_usdt = instrument_name
 
         if instrument_name_usdt not in doc_db:
-            doc_db[instrument_name_usdt] = {"_id": None, "price": None, "n_trades": 0,"volume": 0 , "buy_volume": 0, "sell_volume": 0, "buy_n": 0}
+            doc_db[instrument_name_usdt] = {"_id": None, "price": None, "n_trades": 0, "buy_n": 0, "volume": 0 , "buy_volume": 0, "sell_volume": 0}
             if not os.path.exists(path):
                 prices[instrument_name_usdt] = None
     n_list_coins = []
@@ -253,29 +253,33 @@ def getStatisticsOnTrades(trade, instrument_name, doc_db, prices):
 
     quantity  = trade[QUANTITY]
     price =  trade[PRICE]
-    if instrument_name[-3:] == 'BTC':
-        adjuster = 'BTCUSDT'
-    elif instrument_name[-3:] == 'ETH':
-        adjuster = 'ETHUSDT'
+
+    if price != 0 and quantity != 0:
+        if instrument_name[-3:] == 'BTC':
+            adjuster = 'BTCUSDT'
+        elif instrument_name[-3:] == 'ETH':
+            adjuster = 'ETHUSDT'
 
 
-    if instrument_name != 'BTCUSDT' and instrument_name != 'ETHUSDT':
-        instrument_name_usdt = instrument_name[:-3] + 'USDT'
-        doc_db[instrument_name_usdt]['n_trades'] += 1
-        prices[instrument_name_usdt] = float(price) * prices[adjuster]
+        if instrument_name != 'BTCUSDT' and instrument_name != 'ETHUSDT':
+            instrument_name_usdt = instrument_name[:-3] + 'USDT'
+            doc_db[instrument_name_usdt]['n_trades'] += 1
+            prices[instrument_name_usdt] = float(price) * prices[adjuster]
 
 
-        #doc_db[instrument_name_usdt]["quantity"] += float(quantity)
-        
-        if order == "BUY":
-            doc_db[instrument_name_usdt]["buy_n"] += 1
-            doc_db[instrument_name_usdt]["buy_volume"] += float(quantity) * float(price) * prices[adjuster]
-        else:
-            doc_db[instrument_name_usdt]["sell_volume"] += float(quantity) * float(price) * prices[adjuster]
-    elif instrument_name == 'BTCUSDT':
-        prices[instrument_name] = float(price)
-    elif instrument_name == 'ETHUSDT':
-        prices[instrument_name] = float(price)
+            #doc_db[instrument_name_usdt]["quantity"] += float(quantity)
+            
+            if order == "BUY":
+                doc_db[instrument_name_usdt]["buy_n"] += 1
+                doc_db[instrument_name_usdt]["buy_volume"] += float(quantity) * float(price) * prices[adjuster]
+            else:
+                doc_db[instrument_name_usdt]["sell_volume"] += float(quantity) * float(price) * prices[adjuster]
+        elif instrument_name == 'BTCUSDT':
+            prices[instrument_name] = float(price)
+        elif instrument_name == 'ETHUSDT':
+            prices[instrument_name] = float(price)
+    else:
+        logger.info("Duplicate Aggregate Trade")
 
         
 @timer_func
@@ -300,9 +304,9 @@ def saveTrades_toDB(prices, doc_db, database):
             if doc_db[instrument_name]['n_trades'] != 0:
                 last_prices[instrument_name] = prices[instrument_name]
                 if prices[instrument_name] > 0.1:
-                    doc_db[instrument_name]["price"] = round_(prices[instrument_name],2)
+                    doc_db[instrument_name]["price"] = round_(prices[instrument_name],3)
                 else:
-                    doc_db[instrument_name]["price"] = prices[instrument_name]
+                    doc_db[instrument_name]["price"] = round_(last_prices[instrument_name],count_zeros_after_dot(last_prices[instrument_name])+3)
                 #doc_db[instrument_name]["quantity"] = round_(doc_db[instrument_name]["quantity"],2)
                 doc_db[instrument_name]["volume"] =  int(doc_db[instrument_name]["buy_volume"] + doc_db[instrument_name]["sell_volume"])
                 #doc_db[instrument_name]["sell_volume"] = round_(doc_db[instrument_name]["sell_volume"],2)
@@ -312,10 +316,12 @@ def saveTrades_toDB(prices, doc_db, database):
                 database[instrument_name].insert_one(doc_db[instrument_name])
             else:
                 if instrument_name in last_prices:
-                    if prices[instrument_name] != None and prices[instrument_name] > 0.1:
-                        doc_db[instrument_name]["price"] = round_(last_prices[instrument_name],2)
-                    else:
+                    if prices[instrument_name] != None and prices[instrument_name] >= 0.1:
+                        doc_db[instrument_name]["price"] = round_(last_prices[instrument_name],3)
+                    elif prices[instrument_name] == None:
                         doc_db[instrument_name]["price"] = last_prices[instrument_name]
+                    else:
+                        doc_db[instrument_name]["price"] = round_(last_prices[instrument_name],count_zeros_after_dot(last_prices[instrument_name])+3)
                 else:
                     continue
 
@@ -346,6 +352,28 @@ def get_db(db_name):
     database = DatabaseConnection()
     db = database.get_db(db_name)
     return db
+
+def count_zeros_after_dot(number):
+    
+    # Convert the number to a string
+    num_str = str(number)
+
+    # Find the index of the dot in the string
+    dot_index = num_str.find('.')
+
+    # If there is no dot or it's the last character, there are no zeros after the dot
+    if dot_index == -1 or dot_index == len(num_str) - 1:
+        return 0
+
+    # Count the number of zeros after the dot
+    zeros_count = 0
+    for char in num_str[dot_index + 1:]:
+        if char == '0':
+            zeros_count += 1
+        else:
+            break  # Stop counting if a non-zero digit is encountered
+
+    return zeros_count
 
 if __name__ == "__main__":
     db_logger = get_db(DATABASE_LOGGING)
