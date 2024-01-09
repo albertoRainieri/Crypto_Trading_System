@@ -56,8 +56,8 @@ class AnalysisController:
 
         filter_query = {'_id': 1, 'price': 1,
                         'n_trades': 1, 'volume': 1,
-                        'buy_volume': 1, 'buy_n': 1,
-                            'quantity': 1}
+                        'buy_volume': 1, 'buy_n': 1
+                        }
                         
 
         for instrument_name in coins_list:

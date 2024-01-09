@@ -347,17 +347,18 @@ def returnMostRecentTimestamp_TrackerMarket(path_dir_tracker, path_dir_market, l
     # get the most recent json
     for full_path_tracker in full_paths_tracker:
         file_name_tracker = full_path_tracker.split('/')[-1]
-        file_name_split_tracker = file_name_tracker.split('-')
-        day_tracker = int(file_name_split_tracker[3])
-        month_tracker = int(file_name_split_tracker[2])
-        year_tracker = int(file_name_split_tracker[1])
+        if file_name_tracker.startswith('data'):
+            file_name_split_tracker = file_name_tracker.split('-')
+            day_tracker = int(file_name_split_tracker[3])
+            month_tracker = int(file_name_split_tracker[2])
+            year_tracker = int(file_name_split_tracker[1])
         
-        datetime_file_path_tracker = datetime(year=year_tracker, month=month_tracker, day=day_tracker)
+            datetime_file_path_tracker = datetime(year=year_tracker, month=month_tracker, day=day_tracker)
 
-        if datetime_file_path_tracker > most_recent_datetime_tracker:
-            most_recent_datetime_tracker = datetime_file_path_tracker
-            most_recent_file_tracker = full_path_tracker
-            path_json_tracker = most_recent_file_tracker
+            if datetime_file_path_tracker > most_recent_datetime_tracker:
+                most_recent_datetime_tracker = datetime_file_path_tracker
+                most_recent_file_tracker = full_path_tracker
+                path_json_tracker = most_recent_file_tracker
 
         # get all full paths in json directory
     full_paths_market = [path_dir_market + "/{0}".format(x) for x in list_json_market]
@@ -365,18 +366,19 @@ def returnMostRecentTimestamp_TrackerMarket(path_dir_tracker, path_dir_market, l
     most_recent_datetime_market = datetime(2020,1,1)
     # get the most recent json
     for full_path_market in full_paths_market:
-        file_name_market = full_path_market.split('/')[-1]
-        file_name_split_market = file_name_market.split('-')
-        day_market = int(file_name_split_market[3])
-        month_market = int(file_name_split_market[2])
-        year_market = int(file_name_split_market[1])
-        
-        datetime_file_path_market = datetime(year=year_market, month=month_market, day=day_market)
+        if file_name_tracker.startswith('data'):
+            file_name_market = full_path_market.split('/')[-1]
+            file_name_split_market = file_name_market.split('-')
+            day_market = int(file_name_split_market[3])
+            month_market = int(file_name_split_market[2])
+            year_market = int(file_name_split_market[1])
+            
+            datetime_file_path_market = datetime(year=year_market, month=month_market, day=day_market)
 
-        if datetime_file_path_market > most_recent_datetime_market:
-            most_recent_datetime_market = datetime_file_path_market
-            most_recent_file_market = full_path_market
-            path_json_market = most_recent_file_market
+            if datetime_file_path_market > most_recent_datetime_market:
+                most_recent_datetime_market = datetime_file_path_market
+                most_recent_file_market = full_path_market
+                path_json_market = most_recent_file_market
 
     if TRACKER:
         logger.info(f'Most recent file for tracker is {most_recent_file_tracker}')
