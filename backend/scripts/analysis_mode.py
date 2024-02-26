@@ -85,6 +85,8 @@ def main():
             logger.info('Started Run for recovering data from Server')
             # this section we make sure that analysis/json_tracker and, analysis/json_market and db are aligned
             path_json_tracker, path_json_market, data_tracker, data_market, last_datetime_saved, timedelta_market_tracker, TRACKER, MARKET= return_most_recent_json(last_timestamp_db, last_timestamp_db_tracker, last_timestamp_db_market, TRACKER, MARKET)
+            datetime_start = last_datetime_saved + timedelta(seconds=DELAY_SEARCH_SECONDS)
+            
             # if there are more than DAYS days of missing data, keep fetching data
             if days_missing > timedelta(days=DAYS):
                 DATA_RECOVERING = True
@@ -95,10 +97,9 @@ def main():
                 logger.info(f'Less than {DAYS} days of data missing. Last Run')
                 # start last data fetching from server
             
-            datetime_start = last_datetime_saved + timedelta(seconds=DELAY_SEARCH_SECONDS)
 
-            if timedelta_market_tracker != None:
-                datetime_end = datetime_start + min(timedelta(days=DAYS), timedelta_market_tracker-timedelta(minutes=1))
+            if timedelta_market_tracker != None and TRACKER and MARKET:
+                datetime_end = datetime_start + min(timedelta(days=DAYS), timedelta_market_tracker-timedelta(minutes=5))
             else:
                 datetime_end = datetime_start + timedelta(days=DAYS)
             
@@ -166,19 +167,22 @@ def main():
             if response_tracker != None and response_market != None and tracker_status_code == 200 and market_status_code == 200:
                 logger.info('Uploading both Market and Tracker Data')
                 update_data_json(response_tracker, response_market, data_tracker, data_market, path_json_tracker, path_json_market, db_tracker, db_market, TRACKER, MARKET, DAYS, datetime_end, timedelta_market_tracker)
+                del data_tracker, data_market
                 sleep(10)
             elif response_tracker != None and tracker_status_code == 200:
                 logger.info('Uploading Tracker Data to DB and Filesystem')
                 update_data_json(response_tracker, response_market, data_tracker, data_market, path_json_tracker, path_json_market, db_tracker, db_market, TRACKER, MARKET, DAYS, datetime_end, timedelta_market_tracker)
+                del data_tracker, data_market
                 sleep(10)
             elif response_market != None and market_status_code == 200:
                 logger.info('Uploading Market Data to DB and Filesystem')
                 update_data_json(response_tracker, response_market, data_tracker, data_market, path_json_tracker, path_json_market, db_tracker, db_market, TRACKER, MARKET, DAYS, datetime_end, timedelta_market_tracker)
+                del data_tracker, data_market
                 sleep(10)
             else:
                 logger.info('Sleeping 5 Minutes')
                 sleep(300)
-            # Start saving data 
+            # Start saving data
         
         else:
             sleep(600)
@@ -362,11 +366,13 @@ def returnMostRecentTimestamp_TrackerMarket(path_dir_tracker, path_dir_market, l
 
         # get all full paths in json directory
     full_paths_market = [path_dir_market + "/{0}".format(x) for x in list_json_market]
+    #logger.info(list_json_market)
     #print(full_path)
     most_recent_datetime_market = datetime(2020,1,1)
     # get the most recent json
     for full_path_market in full_paths_market:
-        if file_name_tracker.startswith('data'):
+        file_name_market = full_path_market.split('/')[-1]
+        if file_name_market.startswith('data'):
             file_name_market = full_path_market.split('/')[-1]
             file_name_split_market = file_name_market.split('-')
             day_market = int(file_name_split_market[3])
@@ -432,7 +438,7 @@ def initialize_new_json(most_recent_file_tracker, most_recent_file_market, last_
         data_tracker = None
     
     if MARKET:
-        if os.path.getsize(most_recent_file_market) > 700000000:
+        if os.path.getsize(most_recent_file_market) > 350000000:
             last_record_split = last_timestamp_fs_market.split('-')
             last_record_split2 = last_timestamp_fs_market.split(':')
             year = last_record_split[0]

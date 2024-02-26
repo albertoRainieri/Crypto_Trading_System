@@ -80,7 +80,7 @@ def get_benchmark_info(db_benchmark):
     year = now.year
     month = now.month
     day = now.day
-    file = 'benchmark-' + str(year) + '-' + str(month) + '-' + str(day)
+    file = 'benchmark-' + str(year) + '-' + str(month) + '-' + str(day) + '.json'
     full_path = '/analysis/benchmark_json/' + file
 
     if os.path.exists(full_path):
