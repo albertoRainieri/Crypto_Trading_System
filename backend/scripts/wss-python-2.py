@@ -310,10 +310,14 @@ def saveTrades_toDB(prices, doc_db, database):
                 #doc_db[instrument_name]["quantity"] = round_(doc_db[instrument_name]["quantity"],2)
                 doc_db[instrument_name]["volume"] =  int(doc_db[instrument_name]["buy_volume"] + doc_db[instrument_name]["sell_volume"])
                 #doc_db[instrument_name]["sell_volume"] = round_(doc_db[instrument_name]["sell_volume"],2)
-                del doc_db[instrument_name]["sell_volume"]
+
                 doc_db[instrument_name]["buy_volume"] = int(doc_db[instrument_name]["buy_volume"])
                 doc_db[instrument_name]['_id']= datetime.now().isoformat()
-                database[instrument_name].insert_one(doc_db[instrument_name])
+
+                doc_to_save = doc_db[instrument_name].copy()
+                del doc_to_save["sell_volume"]
+
+                database[instrument_name].insert_one(doc_to_save)
             else:
                 if instrument_name in last_prices:
                     if prices[instrument_name] != None and prices[instrument_name] >= 0.1:
@@ -331,10 +335,14 @@ def saveTrades_toDB(prices, doc_db, database):
                 #doc_db[instrument_name]["quantity"] = 0
                 doc_db[instrument_name]["volume"] = 0
                 #doc_db[instrument_name]["sell_volume"] = 0
-                del doc_db[instrument_name]["sell_volume"]
+
                 doc_db[instrument_name]["buy_volume"] = 0
                 doc_db[instrument_name]['_id']= datetime.now().isoformat()
-                database[instrument_name].insert_one(doc_db[instrument_name])
+
+                doc_to_save = doc_db[instrument_name].copy()
+                del doc_to_save["sell_volume"]
+
+                database[instrument_name].insert_one(doc_to_save)
         else:
             last_prices[instrument_name] = prices[instrument_name]
 
