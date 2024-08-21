@@ -387,28 +387,25 @@ def returnMostRecentTimestamp_TrackerMarket(path_dir_tracker, path_dir_market, l
                 path_json_market = most_recent_file_market
 
     if TRACKER:
-        logger.info(f'Most recent file for tracker is {most_recent_file_tracker}')
-        
         #Load data, and check "last_timestamp_fs" is synced with "last_timestamp_db" for tracker
         logger.info(f'Tracker: Loading {most_recent_file_tracker} for updating with new data')
         f = open (most_recent_file_tracker, "r")
         data_tracker = json.loads(f.read())
         logger.info('Loaded')
         last_timestamp_fs_tracker = data_tracker['datetime_creation']
+        logger.info(f'Most recent file for tracker is {most_recent_file_tracker} with datetime_creation: {last_timestamp_fs_tracker}')
     else:
         last_timestamp_fs_tracker = None
         data_tracker = None
 
-    if MARKET:
-
-        logger.info(f'Most recent file for market is {most_recent_file_market}')
-        
+    if MARKET:        
         #Load data, and check "last_timestamp_fs" is synced with "last_timestamp_db" for market
         logger.info(f'Market: Loading {most_recent_file_market} for updating with new data')
         f = open (most_recent_file_market, "r")
         data_market = json.loads(f.read())
         logger.info('Loaded')
         last_timestamp_fs_market = data_market['datetime_creation']
+        logger.info(f'Most recent file for market is {most_recent_file_market} with datetime_creation: {last_timestamp_fs_market}')
     else:
         last_timestamp_fs_market = None
         data_market = None
@@ -562,6 +559,9 @@ def return_most_recent_json(last_timestamp_db, last_timestamp_db_tracker, last_t
     path_dir_market = JSON_PATH_DIR_MARKET
     list_json_tracker = os.listdir(path_dir_tracker)
     list_json_market = os.listdir(path_dir_market)
+    print(list_json_market)
+    print(list_json_tracker)
+    #sleep(10000)
 
     # if at least one data.json exists, get saved data
     if len(list_json_tracker) != 0 and len(list_json_market) != 0:
@@ -583,12 +583,54 @@ def return_most_recent_json(last_timestamp_db, last_timestamp_db_tracker, last_t
 
         
         return path_json_tracker, path_json_market, data_tracker, data_market, datetime.fromisoformat(last_timestamp_fs), timedelta_market_tracker, TRACKER, MARKET
+    
+    elif len(list_json_market) == 0 and len(list_json_tracker) == 0:
+        TRACKER=True
+        MARKET=True
+        datetime_start_tracker = datetime(2024,4,2) #datetime(2023,5,7)
+        datetime_start_tracker_iso = datetime_start_tracker.isoformat()
+        datetime_start_market = datetime(2024,1,30) #datetime(2023,3,29,12)
+        datetime_start_market_iso = datetime_start_market.isoformat()
+        if datetime_start_tracker < datetime_start_market:
+            TRACKER=True
+            MARKET=False
+            datetime_start = datetime_start_tracker
+            path_json_tracker = f'{path_dir_tracker}/data-{year}-{month}-{day}-{hour}-{minute}.json'
+            path_json_market = None
+            data_tracker = {'datetime_creation': datetime_start_tracker_iso, 'data': {}}
+            data_market = None
+        elif datetime_start_tracker == datetime_start_market:
+            TRACKER=True
+            MARKET=True
+            datetime_start = datetime_start_tracker
+            path_json_tracker = f'{path_dir_tracker}/data-{year}-{month}-{day}-{hour}-{minute}.json'
+            path_json_market = f'{path_dir_market}/data-{year}-{month}-{day}-{hour}-{minute}.json'
+            data_tracker = {'datetime_creation': datetime_start_tracker_iso, 'data': {}}
+            data_market = {'datetime_creation': datetime_start_market_iso, 'data': {}}
+        else:
+            TRACKER=False
+            MARKET=True
+            datetime_start = datetime_start_market
+            path_json_tracker = None
+            path_json_market = f'{path_dir_market}/data-{year}-{month}-{day}-{hour}-{minute}.json'
+            data_tracker = None
+            data_market = {'datetime_creation': datetime_start_market_iso, 'data': {}}
 
+        year = str(datetime_start.year)
+        month = str(datetime_start.month)
+        day = str(datetime_start.day)
+        minute = str(datetime_start.minute)
+        hour = str(datetime_start.hour)
+
+        
+        timedelta_market_tracker = None
+        return path_json_tracker, path_json_market, data_tracker, data_market, datetime_start, timedelta_market_tracker, TRACKER, MARKET
+    
     #if data.json does not exists, initialize data variable
     elif len(list_json_tracker) == 0:
         TRACKER=True
         MARKET=False
-        datetime_start = datetime(2023,5,7)
+        datetime_start = datetime(2024,4,2) #datetime(2023,5,7)
         datetime_start_iso = datetime_start.isoformat()
         year = str(datetime_start.year)
         month = str(datetime_start.month)
@@ -606,7 +648,7 @@ def return_most_recent_json(last_timestamp_db, last_timestamp_db_tracker, last_t
     elif len(list_json_market) == 0:
         TRACKER=False
         MARKET=True
-        datetime_start = datetime(2023,3,29,12)
+        datetime_start = datetime(2024,1,30) #datetime(2023,3,29,12)
         datetime_start_iso = datetime_start.isoformat()
         year = str(datetime_start.year)
         month = str(datetime_start.month)
@@ -619,25 +661,7 @@ def return_most_recent_json(last_timestamp_db, last_timestamp_db_tracker, last_t
         data_tracker = None
         timedelta_market_tracker = None
         return path_json_tracker, path_json_market, data_tracker, data_market, datetime_start, timedelta_market_tracker, TRACKER, MARKET
-    
-    else:
-        TRACKER=True
-        MARKET=True
-        datetime_start_tracker = datetime(2023,5,7)
-        datetime_start_tracker_iso = datetime_start_tracker.isoformat()
-        datetime_start_market = datetime(2023,3,29,12)
-        datetime_start_market_iso = datetime_start_market.isoformat()
-        year = str(datetime_start.year)
-        month = str(datetime_start.month)
-        day = str(datetime_start.day)
-        minute = str(datetime_start.minute)
-        hour = str(datetime_start.hour)
-        path_json_tracker = f'{path_dir_tracker}/data-{year}-{month}-{day}-{hour}-{minute}.json'
-        path_json_market = f'{path_dir_market}/data-{year}-{month}-{day}-{hour}-{minute}.json'
-        data_tracker = {'datetime_creation': datetime_start_tracker_iso, 'data': {}}
-        data_market = {'datetime_creation': datetime_start_market_iso, 'data': {}}
-        timedelta_market_tracker = None
-        return path_json_tracker, path_json_market, data_tracker, data_market, datetime_start, timedelta_market_tracker, TRACKER, MARKET
+
     
 
     
