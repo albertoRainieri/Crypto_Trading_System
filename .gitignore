@@ -7,6 +7,8 @@ backend/logs/*
 backend/json
 analysis/database.py
 analysis/json/
+analysis/json_tracker
+analysis/json_market
 analysis/json_test
 analysis/json_old
 analysis/benchmark_json
@@ -38,3 +40,4 @@ mongodb_analysis/
 backend/riskmanagement/
 backend/info
 backend/user_configuration
+restore_backup/.env

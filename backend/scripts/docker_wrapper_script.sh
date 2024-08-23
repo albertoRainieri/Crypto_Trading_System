@@ -2,10 +2,10 @@
 
 # Start the first process
 /bin/bash /backend/scripts/fastapi_process.sh &
-echo $ANALYSIS
+echo 'ANALYSIS: ' $ANALYSIS
   
 # Start the second process
-if [ $ANALYSIS = "true" ]
+if [ $ANALYSIS = 1 ]
 then
     echo 'Analysis Mode On'
     /bin/bash /backend/scripts/analysis_mode.sh &

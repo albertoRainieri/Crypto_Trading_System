@@ -242,7 +242,7 @@ def update_data_json(response_tracker, response_market, data_tracker, data_marke
         data_tracker['datetime_creation'] = datetime_creation
         json_string = json.dumps(data_tracker)
 
-        logger.info(f'Starting to save {path_json_tracker} in analysi/json')
+        logger.info(f'Starting to save {path_json_tracker} in analysis/json')
         with open(path_json_tracker, 'w') as outfile:
             outfile.write(json_string)
         logger.info(f'Saving to {path_json_tracker} was succesfull') 
@@ -388,24 +388,24 @@ def returnMostRecentTimestamp_TrackerMarket(path_dir_tracker, path_dir_market, l
 
     if TRACKER:
         #Load data, and check "last_timestamp_fs" is synced with "last_timestamp_db" for tracker
-        logger.info(f'Tracker: Loading {most_recent_file_tracker} for updating with new data')
+        #logger.info(f'Tracker: Loading {most_recent_file_tracker} for updating with new data')
         f = open (most_recent_file_tracker, "r")
         data_tracker = json.loads(f.read())
-        logger.info('Loaded')
+        #logger.info('Loaded')
         last_timestamp_fs_tracker = data_tracker['datetime_creation']
-        logger.info(f'Most recent file for tracker is {most_recent_file_tracker} with datetime_creation: {last_timestamp_fs_tracker}')
+        logger.info(f'{most_recent_file_tracker} last ts: {last_timestamp_fs_tracker}')
     else:
         last_timestamp_fs_tracker = None
         data_tracker = None
 
     if MARKET:        
         #Load data, and check "last_timestamp_fs" is synced with "last_timestamp_db" for market
-        logger.info(f'Market: Loading {most_recent_file_market} for updating with new data')
+        #logger.info(f'Market: Loading {most_recent_file_market} for updating with new data')
         f = open (most_recent_file_market, "r")
         data_market = json.loads(f.read())
-        logger.info('Loaded')
+        #logger.info('Loaded')
         last_timestamp_fs_market = data_market['datetime_creation']
-        logger.info(f'Most recent file for market is {most_recent_file_market} with datetime_creation: {last_timestamp_fs_market}')
+        logger.info(f'{most_recent_file_market} last ts: {last_timestamp_fs_market}')
     else:
         last_timestamp_fs_market = None
         data_market = None
@@ -517,22 +517,22 @@ def check_tracker_market_db_are_aligned(last_timestamp_fs_tracker, last_timestam
 
 
     if TRACKER_original == True and MARKET_original == True and last_timestamp_fs == last_timestamp_db:
-        logger.info('Docker Container FOR BOTH MARKET AND TRACKER, filesystem /analysis/json_tracker, /analysis/json_market are aligned')
+        logger.info('PERFECT! DBs and FSs are ALIGNED')
     elif MARKET_original == True and last_timestamp_fs == last_timestamp_db:
-        logger.info('Docker Tracker Container is ahead but Docker Market Container is aligned with /analysis/json_market')
+        logger.info('WARNING: Docker Tracker Container is ahead but Docker Market Container is aligned with /analysis/json_market')
     elif TRACKER_original == True and last_timestamp_fs == last_timestamp_db:
-        logger.info('Docker Market Container is ahead but Docker Tracker Container is aligned with /analysis/json_tracker')
+        logger.info('WARNING: Docker Market Container is ahead but Docker Tracker Container is aligned with /analysis/json_tracker')
     elif MARKET_original == True and last_timestamp_fs != last_timestamp_db:
         logger.info('')
         logger.info('WARNING')
-        logger.info('Docker Tracker is ahead and Docker Container Market and filesystem /analysis/json_market are NOT aligned')
+        logger.info('Docker Tracker is ahead of Docker Container Market and filesystem /analysis/json_market are NOT aligned')
         logger.info(f'Timestamp from analysis/json_market {last_timestamp_fs}')
         logger.info(f'Timestamp from container db_market {last_timestamp_db}')
         logger.info('')
     elif TRACKER_original == True and last_timestamp_fs != last_timestamp_db:
         logger.info('')
         logger.info('WARNING')
-        logger.info('Docker Market is ahead and Docker Container Tracker and filesystem /analysis/json_tracker are NOT aligned')
+        logger.info('Docker Market is ahead of Docker Container Tracker and filesystem /analysis/json_tracker are NOT aligned')
         logger.info(f'Timestamp from analysis/json_tracker {last_timestamp_fs}')
         logger.info(f'Timestamp from container db_tracker {last_timestamp_db}')
         logger.info('')
@@ -559,8 +559,8 @@ def return_most_recent_json(last_timestamp_db, last_timestamp_db_tracker, last_t
     path_dir_market = JSON_PATH_DIR_MARKET
     list_json_tracker = os.listdir(path_dir_tracker)
     list_json_market = os.listdir(path_dir_market)
-    print(list_json_market)
-    print(list_json_tracker)
+    # print(list_json_market)
+    # print(list_json_tracker)
     #sleep(10000)
 
     # if at least one data.json exists, get saved data
@@ -669,6 +669,15 @@ def return_most_recent_json(last_timestamp_db, last_timestamp_db_tracker, last_t
 if __name__ == "__main__":
     logger = LoggingController.start_logging()
     logger.info('Analysis Mode Enabled')
+    SLEEP_ANALYSIS = bool(os.getenv('SLEEP_ANALYSIS'))
+    if SLEEP_ANALYSIS:
+        logger.info('')
+        logger.info('#################################################################################################')
+        logger.info('WARNING: Sleep Analysis mode activated. To disable sleep mode, change SLEEP_ANALYSIS env variable')
+        logger.info('#################################################################################################')
+        logger.info('')
+        while True:
+            sleep(10)
     main()
 
 
