@@ -3,6 +3,7 @@ version: "3.5"
 services:
 
   backend:
+    privileged: true
     container_name: backend-crypto
     logging:
       driver: "json-file"
@@ -19,6 +20,9 @@ services:
     volumes:
       - ./backend/:/backend
       - ./tracker/json:/backend/json:ro
+      - ./analysis/json_tracker:/analysis/json_tracker
+      - ./analysis/json_market:/analysis/json_market
+      - ./analysis/benchmark_json:/analysis/benchmark_json
     env_file:
       - .env
     environment:
@@ -29,6 +33,7 @@ services:
       - MONGO_PORT=$MONGO_PORT
       - TZ=$TIME_ZONE
       - PRODUCTION=$PRODUCTION
+      - ANALYSIS=$ANALYSIS
     networks:
       - crypto-net
 
@@ -60,6 +65,7 @@ services:
       - MONGO_USERNAME=$MONGO_USERNAME
       - MONGO_PASSWORD=$MONGO_PASSWORD
       - MONGO_DB_URL=$MONGO_DB_URL
+      - MONGO_DB_ANALYSIS_URL=$MONGO_DB_ANALYSIS_URL
       - MONGO_PORT=$MONGO_PORT
       - TZ=$TIME_ZONE
       - PRODUCTION=$PRODUCTION
@@ -96,6 +102,40 @@ services:
       - MONGO_DB_URL=$MONGO_DB_URL
       - MONGO_PORT=$MONGO_PORT
       - TZ=$TIME_ZONE
+    networks:
+      - crypto-net
+  
+  mongo-analysis:
+
+    container_name: mongo-crypto-analysis
+    logging:
+      driver: "json-file"
+      options:
+          max-size: "5m"
+    build: 
+      context: ./mongodb
+      args:
+        - UID=${UID}
+        - GID=${GID}
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - MONGO_INITDB_ROOT_USERNAME=$MONGO_INITDB_ROOT_USERNAME
+      - MONGO_INITDB_ROOT_PASSWORD=$MONGO_INITDB_ROOT_PASSWORD
+      - MONGO_USERNAME=$MONGO_USERNAME
+      - MONGO_PASSWORD=$MONGO_PASSWORD
+      - MONGO_DB_URL=$MONGO_DB_URL
+      - MONGO_DB_NAME=$MONGO_DB_NAME
+      - MONGO_PORT=$MONGO_PORT
+      - MONGO_VERSION=$MONGO_VERSION
+      - TZ=$TIME_ZONE
+      
+    restart: always
+    # ports:
+    #   - "27017:27017"
+    
+    volumes:
+      - ./mongodb_analysis/db:/data/db
     networks:
       - crypto-net
 
@@ -144,7 +184,8 @@ services:
     # ports:
     #   - "8081:8081"
     environment:
-      ME_CONFIG_MONGODB_SERVER: mongo
+      #ME_CONFIG_MONGODB_SERVER: mongo-analysis
+      ME_CONFIG_MONGODB_SERVER: $MONGO_ADDRESS
       ME_CONFIG_MONGODB_PORT: 27017
       ME_CONFIG_MONGODB_AUTH_USERNAME: $MONGO_INITDB_ROOT_USERNAME
       ME_CONFIG_MONGODB_AUTH_PASSWORD: $MONGO_INITDB_ROOT_PASSWORD
@@ -166,7 +207,7 @@ services:
     restart: always
     ports:
       - "80:80"
-      - "443:443"
+      #- "443:443"
     volumes:
       - ./nginx/logs/:/var/log/nginx
       - ./nginx/conf/default:/etc/nginx/sites-available/default

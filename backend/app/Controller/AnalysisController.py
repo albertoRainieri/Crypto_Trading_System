@@ -371,7 +371,7 @@ class AnalysisController:
                                                 'vol_60m': 1, 'buy_vol_60m': 1,
                                                 'vol_3h': 1, 'buy_vol_3h': 1,
                                                     'vol_6h': 1, 'buy_vol_6h': 1,
-                                                    'vol_24h': 1, 'buy_vol_24h': 1}
+                                                    'vol_24h': 1, 'buy_vol_24h': 1, 'trades_1m': 1, 'trades_5m': 1}
                         
                         docs = list(db_tracker[coin].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}}, filter_query))
                         
@@ -458,6 +458,7 @@ class AnalysisController:
     def get_btc_eth_timeseries(request):
         db = DatabaseConnection()
         db_tracker = db.get_db(DATABASE_TRACKER)
+        print(request)
         
         btc_docs = []
         eth_docs = []
