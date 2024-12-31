@@ -669,15 +669,19 @@ def return_most_recent_json(last_timestamp_db, last_timestamp_db_tracker, last_t
 if __name__ == "__main__":
     logger = LoggingController.start_logging()
     logger.info('Analysis Mode Enabled')
-    SLEEP_ANALYSIS = bool(os.getenv('SLEEP_ANALYSIS'))
+    SLEEP_ANALYSIS_ENV=os.getenv('SLEEP_ANALYSIS')
+    SLEEP_ANALYSIS = bool(int(SLEEP_ANALYSIS_ENV))
+    print(f'sleep: {SLEEP_ANALYSIS_ENV}')
+
     if SLEEP_ANALYSIS:
         logger.info('')
         logger.info('#################################################################################################')
         logger.info('WARNING: Sleep Analysis mode activated. To disable sleep mode, change SLEEP_ANALYSIS env variable')
         logger.info('#################################################################################################')
         logger.info('')
-        while True:
-            sleep(10)
-    main()
+        sleep(1000)
+    else:
+        
+        main()
 
 

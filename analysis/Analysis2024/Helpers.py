@@ -1082,7 +1082,7 @@ def plotTimeseries(timeseries, fields, check_past, plot, filter_start=False, fil
                 ax[0].axvline(x=datetime.fromisoformat(timestamp_start), color='blue', linestyle='--')
                 ax[0].axvline(x=timestamp_end, color='blue', linestyle='--')
                 ax[0].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval))
-                ax[0].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+                ax[0].xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
                 ax[0].grid(True)
 
 
@@ -1092,7 +1092,7 @@ def plotTimeseries(timeseries, fields, check_past, plot, filter_start=False, fil
                 ax[1].axvline(x=datetime.fromisoformat(timestamp_start), color='blue', linestyle='--')
                 ax[1].axvline(x=timestamp_end, color='blue', linestyle='--')
                 ax[1].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval))
-                ax[1].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+                ax[1].xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
                 ax[1].annotate(f'Volume event: {volume_event[1]}', xy=(volume_event[0], volume_event[1]),
                                 xytext=(volume_event[0], volume_event[1]),
                                 textcoords='data', ha='center', va='bottom',arrowprops=dict(arrowstyle='->'))
@@ -1105,7 +1105,7 @@ def plotTimeseries(timeseries, fields, check_past, plot, filter_start=False, fil
                 ax[2].axvline(x=datetime.fromisoformat(timestamp_start), color='blue', linestyle='--')
                 ax[2].axvline(x=timestamp_end, color='blue', linestyle='--')
                 ax[2].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval))
-                ax[2].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+                ax[2].xaxis.set_major_formatter(mdates.DateFormatter(' %H:%M'))
                 ax[2].annotate(f'Volume event: {buy_volume_event[1]}', xy=(buy_volume_event[0], buy_volume_event[1]),
                                 xytext=(buy_volume_event[0], buy_volume_event[1]),
                                 textcoords='data', ha='center', va='bottom',arrowprops=dict(arrowstyle='->'))

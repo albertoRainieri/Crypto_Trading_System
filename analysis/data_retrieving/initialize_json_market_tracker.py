@@ -2,8 +2,8 @@ import json
 from datetime import datetime
 
 # paths saved in the USB DRIVE
-last_tracker_saved = '/Volumes/PortableSSD/Alberto/Trading/json_tracker/data-2024-02-03-06-25.json'
-last_market_saved = '/Volumes/PortableSSD/Alberto/Trading/json_market/data-2024-01-29-18-25.json'
+last_tracker_saved = '/Volumes/PortableSSD/Alberto/Trading/json_tracker/data-2024-08-15-00-0.json'
+last_market_saved = '/Volumes/PortableSSD/Alberto/Trading/json_market/data-2024-08-12-12-0.json'
 path_project = '/Users/albertorainieri/Personal'
 
 
