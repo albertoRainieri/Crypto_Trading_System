@@ -357,63 +357,73 @@ def get_observation_window(data_market_coin, start_datetime_obs, obs):
         #print(f'Not enough obs: {obs_len}')
         return None
     
-def create_volume_standings():
+def create_volume_standings(benchmark_json=None):
     '''
     This function delivers the standings of volumes for each coin for each day
     { BTCUSDT --> { "2024-09-26" : 1 } ... } , { "2024-09-27" : 1 } }
     '''
-    path_benchmark_new = f'{ROOT_DIRECTORY}/analysis/benchmark_json/benchmark-NEW.json'
-    if os.path.exists(path_benchmark_new):
-        with open(path_benchmark_new, 'r') as file:
-            # Retrieve shared memory for JSON data and "start_interval"
-            benchmark_json = json.load(file)
+    now = datetime.now()
+    year = now.year
+    month = now.month
+    day = now.day
 
-    list_dates = list(benchmark_json["BTCUSDT"]["volume_series"].keys())
+    path_volume_standings = ROOT_DIRECTORY + f'/analysis/Analysis2024/benchmark_json/volume_standings_{year}-{month}-{day}.json'
+    if os.path.exists(path_volume_standings):
+        print(f'svolume standings is up to date')
+    else:
+        print(f'{path_volume_standings} does not exist')
+        if benchmark_json == None:
+            path_benchmark_new = f'/Users/albertorainieri/Personal/analysis/benchmark_json/benchmark-2024-12-30.json'
+            if os.path.exists(path_benchmark_new):
+                with open(path_benchmark_new, 'r') as file:
+                    # Retrieve shared memory for JSON data and "start_interval"
+                    benchmark_json = json.load(file)
 
-    #orig_list.sort(key=lambda x: x.count, reverse=True)
-    summary = {}
-    for coin in benchmark_json:
-        for date in list_dates:
-            if date not in summary:
-                summary[date] = []
-            if date not in benchmark_json[coin]["volume_series"]:
-                continue
-            total_volume_30_days = [benchmark_json[coin]["volume_series"][date][0]]
-            current_datetime = datetime.strptime(date, "%Y-%m-%d")
-            for i in range(1,31):
-                datetime_past = current_datetime - timedelta(days=i)
-                previous_date = datetime_past.strftime("%Y-%m-%d")
-                if previous_date in benchmark_json[coin]["volume_series"]:
-                    total_volume_30_days.append(benchmark_json[coin]["volume_series"][previous_date][0])
+        list_dates = list(benchmark_json["BTCUSDT"]["volume_series"].keys())
 
-            summary[date].append({"coin":coin,"volume_date": round_(np.mean(total_volume_30_days),2)})
-    
-    standings = {}
-    #print(summary)
-    for date in summary:
-        if date not in standings:
-            standings[date] = []
+        #orig_list.sort(key=lambda x: x.count, reverse=True)
+        summary = {}
+        for coin in benchmark_json:
+            for date in list_dates:
+                if date not in summary:
+                    summary[date] = []
+                if date not in benchmark_json[coin]["volume_series"]:
+                    continue
+                total_volume_30_days = [benchmark_json[coin]["volume_series"][date][0]]
+                current_datetime = datetime.strptime(date, "%Y-%m-%d")
+                for i in range(1,31):
+                    datetime_past = current_datetime - timedelta(days=i)
+                    previous_date = datetime_past.strftime("%Y-%m-%d")
+                    if previous_date in benchmark_json[coin]["volume_series"]:
+                        total_volume_30_days.append(benchmark_json[coin]["volume_series"][previous_date][0])
+
+                summary[date].append({"coin":coin,"volume_date": round_(np.mean(total_volume_30_days),2)})
         
-        list_volumes = summary[date]
-        standings[date] = sorted(list_volumes, key=itemgetter('volume_date'), reverse=True)
-        new_list = {}
-        for coin_position, i in zip(standings[date], range(1,len(standings[date])+1)):
-            coin = coin_position["coin"]
-            if i <= 10:
-                new_list[coin] = 1
-            elif i <= 50:
-                new_list[coin] = 2
-            elif i <= 100:
-                new_list[coin] = 3
-            elif i <= 200:
-                new_list[coin] = 4
-            else:
-                new_list[coin] = 5
-        standings[date] = new_list
-    
-    path_volume_standings = ROOT_DIRECTORY + "/analysis/benchmark_json/volume_standings_2024-8-22.json"
-    with open(path_volume_standings, 'w') as f:
-      json.dump(standings, f, indent=4)
+        standings = {}
+        #print(summary)
+        for date in summary:
+            if date not in standings:
+                standings[date] = []
+            
+            list_volumes = summary[date]
+            standings[date] = sorted(list_volumes, key=itemgetter('volume_date'), reverse=True)
+            new_list = {}
+            for coin_position, i in zip(standings[date], range(1,len(standings[date])+1)):
+                coin = coin_position["coin"]
+                if i <= 10:
+                    new_list[coin] = 1
+                elif i <= 50:
+                    new_list[coin] = 2
+                elif i <= 100:
+                    new_list[coin] = 3
+                elif i <= 200:
+                    new_list[coin] = 4
+                else:
+                    new_list[coin] = 5
+            standings[date] = new_list
+        
+        with open(path_volume_standings, 'w') as f:
+            json.dump(standings, f, indent=4)
 
 
 def update_benchmark():

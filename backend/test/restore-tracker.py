@@ -17,9 +17,9 @@ start_time_market = start_time - timedelta(days=1)
 end_time = datetime.utcnow().replace(year=2023, month=5, day=10, hour=23, minute=59, second=50, microsecond=0)
 
 # Connect to MongoDB
-db = DatabaseConnection()
-db_tracker = db.get_db(DATABASE_TRACKER)
-db_market = db.get_db(DATABASE_MARKET)
+client = DatabaseConnection()
+db_tracker = client.get_db(DATABASE_TRACKER)
+db_market = client.get_db(DATABASE_MARKET)
 
 # Get the collection names
 coin_collection_tracker = db_tracker.list_collection_names()
@@ -32,6 +32,8 @@ for coin in coin_collection_tracker:
 
     for doc in docs_tracker:
         id_tracker = doc['_id']
+
+client.close()
         
 
 

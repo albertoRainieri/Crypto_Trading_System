@@ -24,8 +24,8 @@ tokens_do_not_update = ['BTCUSDT', 'ETHUSDT', 'XRPUSDT', 'ARBUSDT', 'PEPEUSDT', 
                         'SANDUSDT', 'JASMYUSDT', 'WOOUSDT', 'LUNCUSDT']
 
 # Connect to MongoDB
-db = DatabaseConnection()
-db_benchmark = db.get_db(DATABASE_BENCHMARK)
+client = DatabaseConnection()
+db_benchmark = client.get_db(DATABASE_BENCHMARK)
 
 # Get the collection names
 collection_names = db_benchmark.list_collection_names()
@@ -49,3 +49,5 @@ for coin in collection_names:
 
     # Delete the records within the time range
     #print(f"Result from db_benchmark deletion {result} records from '{collection_name}' collection.")
+
+client.close()

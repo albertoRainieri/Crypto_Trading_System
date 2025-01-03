@@ -20,8 +20,8 @@ class AnalysisController:
     @timer_func
     def getDataTracker(datetime_start, datetime_end):
 
-        db = DatabaseConnection()
-        db_market = db.get_db(DATABASE_TRACKER)
+        client = DatabaseConnection()
+        db_market = client.get_db(DATABASE_TRACKER)
         coins_list = db_market.list_collection_names()
 
         dict_ = {}
@@ -42,14 +42,15 @@ class AnalysisController:
             docs = list(db_market[instrument_name].find({"_id": {"$gte": datetime_start, "$lt": datetime_end}}, filter_query))
             dict_[instrument_name] = docs
         
+        client.close()
         json_string = jsonable_encoder(dict_)
         return JSONResponse(content=json_string)
     
     @timer_func
     def getDataMarket(datetime_start, datetime_end):
 
-        db = DatabaseConnection()
-        db_market = db.get_db(DATABASE_MARKET)
+        client = DatabaseConnection()
+        db_market = client.get_db(DATABASE_MARKET)
         coins_list = db_market.list_collection_names()
 
         dict_ = {}
@@ -64,6 +65,7 @@ class AnalysisController:
             docs = list(db_market[instrument_name].find({"_id": {"$gte": datetime_start, "$lt": datetime_end}}, filter_query))
             dict_[instrument_name] = docs
         
+        client.close()
         json_string = jsonable_encoder(dict_)
         return JSONResponse(content=json_string)
     
@@ -87,8 +89,8 @@ class AnalysisController:
 
     def getBenchmarkInfo():
         
-        db = DatabaseConnection()
-        db_benchmark = db.get_db(DATABASE_BENCHMARK)
+        client = DatabaseConnection()
+        db_benchmark = client.get_db(DATABASE_BENCHMARK)
         coins_list = db_benchmark.list_collection_names()
 
         dict_ = {}
@@ -144,7 +146,8 @@ class AnalysisController:
                         dict_[coin]['n_obs'] = 0
                 else:
                     dict_[coin][field] = cursor_benchmark[0][field]
-        
+
+        client.close()
         json_string = jsonable_encoder(dict_)
         return JSONResponse(content=json_string)
     
@@ -205,8 +208,8 @@ class AnalysisController:
         The time intervals considered are those in the variable "list_timeframes"
         '''
 
-        db = DatabaseConnection()
-        db_tracker = db.get_db(DATABASE_TRACKER)
+        client = DatabaseConnection()
+        db_tracker = client.get_db(DATABASE_TRACKER)
 
         # define the db columns and their corresponding time frames
         list_timeframes = {'info_5m': 6, 'info_15m': 15, 'info_30m': 30,
@@ -290,6 +293,7 @@ class AnalysisController:
                         else:
                             response[event_key][coin][start_timestamp][timeframe] = (None, None, None)
 
+        client.close()
         final_response = {'data': response, 'msg': log_nan_replaced}
         return final_response
     
@@ -313,8 +317,8 @@ class AnalysisController:
         else:
             n_event_limit = 800
 
-        db = DatabaseConnection()
-        db_tracker = db.get_db(DATABASE_TRACKER)
+        client = DatabaseConnection()
+        db_tracker = client.get_db(DATABASE_TRACKER)
 
         coins = list(request['info'].keys())
         # in case check_past exists, I want to retrieve x minutes of observations before che event.
@@ -394,6 +398,7 @@ class AnalysisController:
         else:
             response['msg'] = f'All data have been downloaded. {total_timeseries_downloaded}/{total_timeseries_expected}'
 
+        client.close()
         json_string = jsonable_encoder(response)
         return JSONResponse(content=json_string)
     
@@ -456,8 +461,8 @@ class AnalysisController:
     
 
     def get_btc_eth_timeseries(request):
-        db = DatabaseConnection()
-        db_tracker = db.get_db(DATABASE_TRACKER)
+        client = DatabaseConnection()
+        db_tracker = client.get_db(DATABASE_TRACKER)
         print(request)
         
         btc_docs = []
@@ -480,6 +485,7 @@ class AnalysisController:
         response['data']['btc'] = btc_docs
         response['data']['eth'] = eth_docs
 
+        client.close()
         json_string = jsonable_encoder(response)
         return JSONResponse(content=json_string)
 

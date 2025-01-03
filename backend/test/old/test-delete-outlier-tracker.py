@@ -23,8 +23,8 @@ collection_names = ['SUIUSDT', 'EDUUSDT', 'BNBUSDT', 'SOLUSDT', 'CFXUSDT', 'LDOU
                         'SANDUSDT', 'JASMYUSDT', 'WOOUSDT', 'LUNCUSDT']
 
 # Connect to MongoDB
-db = DatabaseConnection()
-db = db.get_db(DATABASE_TRACKER)
+client = DatabaseConnection()
+db = client.get_db(DATABASE_TRACKER)
 
 # start_time = datetime.utcnow().replace(hour=5, minute=32, second=0, microsecond=0)
 # end_time = start_time + timedelta(hours=0, minutes=3)
@@ -45,3 +45,5 @@ for collection_name in collection_names:
     # Delete the records within the time range
     result = collection.delete_many(query)
     print(f"Deleted {result.deleted_count} records from '{collection_name}' collection.")
+
+client.close()

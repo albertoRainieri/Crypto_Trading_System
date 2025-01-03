@@ -20,12 +20,12 @@ class DatabaseConnection:
             self.db_url = os.getenv('MONGO_DB_ANALYSIS_URL')
 
         else:
-            logger.info('Backend is starting in production mode, be sure "mongo" container is running')
+            logger.info('Container is trying to connect to mongo container in production mode')
             self.db_url = os.getenv('MONGO_DB_URL')
 
 
-        logger.info(f'ENV: db url : {self.db_url}')
-        logger.info(f'ENV: Analysis: {self.analysis_mode}')
+        # logger.info(f'ENV: db url : {self.db_url}')
+        # logger.info(f'ENV: Analysis: {self.analysis_mode}')
         if self.db_url == "mongo-analysis" and not self.analysis_mode:
             logger.info(f'WARNING: .env file is not set properly: \n MONGO_DB_URL = mongo-analysis \n ANALYSIS = {self.analysis_mode}. \n If you want the backend to work in anaysis mode, change the env variable ANALYSIS, otherwise change the db_url')
             sleep(1000000)
@@ -33,11 +33,15 @@ class DatabaseConnection:
     def get_db(self, database='default'):
         try:
 
-            db = MongoClient(host=self.db_url, port=int(self.port), username=self.username,
+            self.db = MongoClient(host=self.db_url, port=int(self.port), username=self.username,
                                     password=self.password, serverSelectionTimeoutMS=1500)
                 #db = MongoClient("mongodb://root:password@mongo:27017/")
 
-            return db[database]
+            return self.db[database]
         except pymongo.errors.ServerSelectionTimeoutError as err:
             logger.info('Connection Refused or Error Auth')
             sleep(5)
+    
+
+    def close(self):
+        self.db.close()

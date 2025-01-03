@@ -102,7 +102,7 @@ class TradingController:
                     user_configuration = json.loads(f.read())
                     
                     SYS_ADMIN = os.getenv('SYS_ADMIN')
-                    db = DatabaseConnection()
+                    client = DatabaseConnection()
                     complete_process_overview = {}
                     id = datetime.now().isoformat()
                     
@@ -113,7 +113,7 @@ class TradingController:
                             continue
                         
                         db_name = DATABASE_TRADING + '_' + user
-                        db_trading = db.get_db(db_name)
+                        db_trading = client.get_db(db_name)
                         trading_coins_list = list(db_trading[COLLECTION_TRADING_LIVE].find())
                         if len(trading_coins_list) != 0:
                             for coin_on_trade in trading_coins_list:
@@ -186,7 +186,31 @@ class TradingController:
                             db_trading[COLLECTION_TRADING_HISTORY].insert_one(doc_db)
                             db_logger[DATABASE_TRADING_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
 
+                    client.close()
+    
+    def restart_order_book_polling(logger):
+        f = open ('/tracker/riskmanagement/riskmanagement.json', "r")
+        risk_configuration = json.loads(f.read())
+        event_keys = list(risk_configuration.keys())
+
+        logger.info('TradingController.restart_order_book_polling is started')
+        client = DatabaseConnection()
+
+        for event_key in event_keys:
+            minutes_timeframe = int(event_key.split('timeframe:')[-1])
             
+            db = client.get_db(DATABASE_ORDER_BOOK)
+            db_collection = db[event_key]
+            docs = list(db_collection.find({}))
+            for doc in docs:
+                id = doc['_id']
+                # if event trigger time window is still open
+                if datetime.now() <  datetime.fromisoformat(id) + timedelta(minutes=minutes_timeframe):
+                    coin = doc['coin']
+                    logger.info(f'Resuming Order Book for coin {coin}, event_key {event_key} and id {id}')
+                    subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id])
+        client.close()
+
 
     def clean_db_trading(logger, db_logger, user_configuration):
         '''
@@ -196,11 +220,11 @@ class TradingController:
         This function iterates this task for each user making attention of not starting a same process (wss-trading.py) more than once
         '''
         complete_process_overview = {}
-        db = DatabaseConnection()
+        client = DatabaseConnection()
 
         for user in user_configuration:
             db_name = DATABASE_TRADING + '_' + user
-            db_trading = db.get_db(db_name)
+            db_trading = client.get_db(db_name)
 
             CLEAN_DB_TRADING = user_configuration[user]['clean_db_trading']
             api_key_path = user_configuration[user]['api_key_path']
@@ -338,6 +362,7 @@ class TradingController:
                     db_trading[COLLECTION_TRADING_LIVE].update_one(query, update_data)
 
             del db_trading
+        client.close()
 
     @timer_func
     def checkPerformance_test(db_trading, logger):
@@ -412,12 +437,11 @@ class TradingController:
                 db_trading[COLLECTION_TRADING_PERFORMANCE_TESTING].update_one(query, update)
 
     @timer_func
-    def checkPerformance(logger, user_configuration):
+    def checkPerformance(client, logger, user_configuration):
         '''
         this function check the performance of the trading bot if mode TRADING_LIVE is enabled
         '''
         SYS_ADMIN = os.getenv('SYS_ADMIN')
-        db = DatabaseConnection()
 
         for user in user_configuration:
             TRADING_LIVE = user_configuration[user]['trading_live']
@@ -427,7 +451,7 @@ class TradingController:
                 continue
         
             db_name = DATABASE_TRADING + '_' + user
-            db_trading = db.get_db(db_name)
+            db_trading = client.get_db(db_name)
 
             id = datetime.now().isoformat()
 
@@ -483,7 +507,6 @@ class TradingController:
             
             db_trading[COLLECTION_PERFORMANCE].insert(doc_db)
             del db_trading
-        
     
     def makeRequest(api_path, method, params, api_key_path, private_key_path):
 
@@ -557,12 +580,12 @@ class TradingController:
     def get_balance_account(logger, user_configuration):
         # t1 = time()
         SYS_ADMIN = os.getenv('SYS_ADMIN')
-        db = DatabaseConnection()
+        client = DatabaseConnection()
 
         for user in user_configuration:
             TRADING_LIVE = user_configuration[user]['trading_live']
             db_name = DATABASE_TRADING + '_' + user
-            db_trading = db.get_db(db_name)
+            db_trading = client.get_db(db_name)
 
             if user != SYS_ADMIN and TRADING_LIVE == False:
                 continue
@@ -675,6 +698,8 @@ class TradingController:
             else:
                 logger.info('ERROR: WAS NOT ABLE TO RETRIEVE INFO FROM /v3/account Binance API')
                 logger.info(response)
+        
+        client.close()
             
         
 
@@ -717,6 +742,9 @@ class TradingController:
         method = 'POST'
         data, status_code = TradingController.makeRequest(api_path=api_path, params=params, method=method, api_key_path=api_key_path, private_key_path=private_key_path)
         return data, status_code
+    
+
+
 
         
 

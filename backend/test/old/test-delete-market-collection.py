@@ -21,9 +21,9 @@ tokens_do_not_delete = ['BTCUSDT', 'ETHUSDT', 'XRPUSDT', 'ARBUSDT', 'PEPEUSDT', 
                         'SANDUSDT', 'JASMYUSDT', 'WOOUSDT', 'LUNCUSDT']
 
 # Connect to MongoDB
-db = DatabaseConnection()
-db_market = db.get_db(DATABASE_MARKET)
-db_benchmark = db.get_db(DATABASE_BENCHMARK)
+client = DatabaseConnection()
+db_market = client.get_db(DATABASE_MARKET)
+db_benchmark = client.get_db(DATABASE_BENCHMARK)
 
 # Get the collection names
 collection_names_market = db_market.list_collection_names()
@@ -75,3 +75,5 @@ for coin in last_prices:
     # # Delete the records within the time range
     # result = collection.delete_many(query)
     # print(f"Deleted {result.deleted_count} records from '{collection_name}' collection.")
+
+client.close()

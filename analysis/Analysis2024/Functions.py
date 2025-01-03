@@ -20,7 +20,7 @@ from random import randint
 import shutil
 import re
 from Analysis2024.Helpers import round_, get_volume_standings, data_preparation, load_data, get_benchmark_info, get_dynamic_volatility, getnNewInfoForVolatilityGrouped, plotTimeseries, riskmanagement_data_preparation
-from Analysis2024.Helpers import get_substring_between, load_analysis_json_info, updateAnalysisJson, pooled_standard_deviation, getsubstring_fromkey, load_timeseries, getTimeseries
+from Analysis2024.Helpers import get_substring_between, load_analysis_json_info, updateAnalysisJson, pooled_standard_deviation, getsubstring_fromkey, load_timeseries, getTimeseries, load_volume_standings
 import calendar
 import seaborn as sn
 from typing import Literal
@@ -37,10 +37,7 @@ def total_function_multiprocessing(list_time_interval_field, list_order_concentr
     t1 = time()
 
     # get volume_standings (the standings of all the coins in terms of amount of traded volume).
-    path_volume_standings = "/Users/albertorainieri/Personal/analysis/benchmark_json/volume_standings_2024-8-22.json"
-    with open(path_volume_standings, 'r') as file:
-        # Retrieve shared memory for JSON data and "start_interval"
-        volume_standings = json.load(file)
+    volume_standings = load_volume_standings()
 
 
     # get json_analysis path. Check if there is already some data analyzed in json_analysis/ path. The new data will be appended
@@ -256,12 +253,14 @@ def analyze_events(data, buy_vol_field, vol_field, trades_field, minutes_price_w
                     # if buy_vol is greater than limit and
                     # if vol is greater than limit and
                     # if datetime_obs does not fall in a previous analysis window. (i.e. datetime_obs is greater than the limit_window set)
-                    if obs[buy_vol_field] >= event_buy_volume and obs[vol_field] > event_volume and datetime_obs > limit_window and obs[trades_field] != None:
-
-                        trades_order = obs[trades_field]
-                        order_concentration = trades_order / obs[vol_field]
-                        if order_concentration > order_concentration_level:
-                            continue
+                    #if obs[buy_vol_field] >= event_buy_volume and obs[vol_field] > event_volume and datetime_obs > limit_window and obs[trades_field] != None:
+                    if obs[buy_vol_field] >= event_buy_volume and obs[vol_field] > event_volume and datetime_obs > limit_window:
+                        
+                        # UNCOMMENT FOR TRADE CONCENTRATIION ANALYSIS
+                        # trades_order = obs[trades_field]
+                        # order_concentration = trades_order / obs[vol_field]
+                        # if order_concentration > order_concentration_level:
+                        #     continue
                         
                         #print(f'buy_vol: {buy_vol_field} -> {event_buy_volume} - vol: {vol_field} -> {event_volume} - order_conc: {order_concentration_level}')
                         
@@ -438,6 +437,7 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
         first_event = {}
         last_event = {}
         for key in list(shared_data.keys()):
+            n_coins = len(shared_data[key]['info'])
             # print(key)
             # print(shared_data[key].keys())
             if key != 'coins' or key != 'events':
@@ -523,7 +523,7 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
             if time_interval_analysis != 0:
                 event_frequency_month = round_((n_events / time_interval_analysis) * 30,2)
 
-            if output[key_without_volatility]['n_events'] >= minimum_event_number and mean > mean_threshold and mean <= std_multiplier * std:
+            if output[key_without_volatility]['n_events'] >= minimum_event_number and mean > mean_threshold and mean <= std_multiplier * std and event_frequency_month >= frequency_threshold:
                 output[key_without_volatility]['mean'] = mean
                 output[key_without_volatility]['median'] = median
                 output[key_without_volatility]['std'] = std

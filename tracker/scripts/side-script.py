@@ -24,7 +24,7 @@ def main(db, logger, db_logger, user_configuration):
 
         if minute == 59 and second == 15 and hour == 23:
         #if second == 10:
-            TradingController.checkPerformance(logger, user_configuration)
+            TradingController.checkPerformance(client, logger, user_configuration)
             logger.info("Performance has been updated from 'TradingController.checkPerformance'")
             sleep(0.2)
 
@@ -50,8 +50,8 @@ def main(db, logger, db_logger, user_configuration):
     
 
 if __name__ == '__main__':
-    db = DatabaseConnection()
-    db_logger = db.get_db(DATABASE_API_ERROR)
+    client = DatabaseConnection()
+    db_logger = client.get_db(DATABASE_API_ERROR)
 
     logger = LoggingController.start_logging()
 
@@ -60,6 +60,7 @@ if __name__ == '__main__':
 
     sleep(2)
     TradingController.clean_db_trading(logger, db_logger, user_configuration)
+    TradingController.restart_order_book_polling(logger)
 
     for user in user_configuration:
         if user_configuration[user]['trading_live']:

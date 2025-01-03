@@ -106,14 +106,14 @@ class RiskManagement:
             self.SELL = True
     
     
-    def saveToDb(self, bid_price, db):
+    def saveToDb(self, bid_price, client):
 
         f = open ('/tracker/user_configuration/userconfiguration.json', "r")
         user_configuration = json.loads(f.read())
 
         for user in user_configuration:
             db_name = DATABASE_TRADING + '_' + user
-            db_trading = db.get_db(db_name)
+            db_trading = client.get_db(db_name)
 
             minute_now = datetime.now().minute
             if minute_now != self.current_minute:

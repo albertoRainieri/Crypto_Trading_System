@@ -19,8 +19,8 @@ end_time = datetime.utcnow().replace(year=2023, month=12, day=1, hour=0, minute=
 
 
 # Connect to MongoDB
-db = DatabaseConnection()
-db = db.get_db(DATABASE_TRACKER)
+client = DatabaseConnection()
+db = client.get_db(DATABASE_TRACKER)
 
 # Get the collection names
 collection_names = db.list_collection_names()
@@ -45,3 +45,5 @@ for collection_name in collection_names:
     # Delete the records within the time range
     result = collection.delete_many(query)
     print(f"Deleted {result.deleted_count} records from '{collection_name}' collection.")
+
+client.close()

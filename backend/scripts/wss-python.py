@@ -272,17 +272,10 @@ def saveTrades_toDB(prices, doc_db, database):
     
             #print(doc_db)
 
-def get_db(db_name):
-    '''
-    Establish connectivity with db
-    '''
-    database = DatabaseConnection()
-    db = database.get_db(db_name)
-    return db
-
 if __name__ == "__main__":
-    db_logger = get_db(DATABASE_LOGGING)
-    database = get_db(DATABASE_MARKET)
+    client = DatabaseConnection()
+    db_logger = client.get_db(DATABASE_LOGGING)
+    database = client.get_db(DATABASE_MARKET)
     logger = LoggingController.start_logging()
     ws = websocket.WebSocketApp("wss://stream.binance.com:9443/stream?streams=",
                               on_open = on_open,

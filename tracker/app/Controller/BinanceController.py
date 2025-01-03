@@ -30,9 +30,9 @@ class BinanceController:
         Establish connectivity with db
         '''
         # Retrieve Database DATABASE_DATA_STORAGE
-        database = DatabaseConnection()
-        db = database.get_db(db_name)
-        return db
+        client = DatabaseConnection()
+        db = client.get_db(db_name)
+        return db, client
     
     
 
@@ -199,7 +199,7 @@ class BinanceController:
         # UPDATE DB BENCHMARK. THE INFO UPDATED IS ABOUT THE FREQUENCY OF THE COIN TRADED.
         # IF A COIN FALLS OUT OF THE BEST POSITIONS, IT WILL GET A NEGATIVE SCORE.
 
-        db_benchmark = BinanceController.get_db(DATABASE_BENCHMARK)
+        db_benchmark, client = BinanceController.get_db(DATABASE_BENCHMARK)
         list_coins_benchmark = db_benchmark.list_collection_names()
 
         # iterate through each pair in the db
@@ -266,7 +266,8 @@ class BinanceController:
                     last_30_trades = {'list_last_30_trades': [0], 'score_last_30_trades': 0}
 
                     db_benchmark[coin].update_one({"_id": id_benchmark}, {"$set": {"Best_Trades": new_trade_score, 'Last_30_Trades': last_30_trades}})
-
+        
+        client.close()
 
 
     def main_sort_pairs_list(logger=LoggingController.start_logging(), db_logger=None):

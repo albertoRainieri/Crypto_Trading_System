@@ -24,8 +24,8 @@ tokens_do_not_delete = ['BTCUSDT', 'ETHUSDT', 'XRPUSDT', 'ARBUSDT', 'PEPEUSDT', 
                         'SANDUSDT', 'JASMYUSDT', 'WOOUSDT', 'LUNCUSDT']
 print(len(tokens_do_not_delete), ' coins will not be deleted')
 # Connect to MongoDB
-db = DatabaseConnection()
-db = db.get_db(DATABASE_TRACKER)
+client = DatabaseConnection()
+db = client.get_db(DATABASE_TRACKER)
 
 # Get the collection names
 collection_names = db.list_collection_names()
@@ -52,3 +52,5 @@ for collection_name in collection_names:
     # Delete the records within the time range
     result = collection.delete_many(query)
     print(f"Deleted {result.deleted_count} records from '{collection_name}' collection.")
+
+client.close()

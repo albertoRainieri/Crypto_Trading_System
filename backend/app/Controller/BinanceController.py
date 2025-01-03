@@ -307,7 +307,9 @@ class BinanceController:
     
 
     def start_live_trades(self, coin_list, logger=LoggingController.start_logging(), sleep_seconds=0.8):
-        
+        '''
+        this function is deprecated, NOT USED 2025/01
+        '''
         now = datetime.now()
 
         sleep_seconds = BinanceController.isIncreaseSleepSeconds(now, sleep_seconds, logger)

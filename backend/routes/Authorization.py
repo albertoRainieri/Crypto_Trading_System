@@ -4,7 +4,6 @@ sys.path.insert(1, os.path.join(sys.path[0], '..'))
 from fastapi import APIRouter, status
 from fastapi import Depends, HTTPException, Request
 from app.Controller.LoggingController import LoggingController
-from database.DatabaseConnection import DatabaseConnection
 from app.Controller.AuthController import Authorization
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from app.Models.Auth import Token

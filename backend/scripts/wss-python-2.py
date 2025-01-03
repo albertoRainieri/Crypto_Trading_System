@@ -384,6 +384,9 @@ def count_zeros_after_dot(number):
     return zeros_count
 
 if __name__ == "__main__":
+    '''
+    SCRIPT DEPRECATED 2025/01
+    '''
     db_logger = get_db(DATABASE_LOGGING)
     database = get_db(DATABASE_MARKET_EXTRA)
     logger = LoggingController.start_logging()

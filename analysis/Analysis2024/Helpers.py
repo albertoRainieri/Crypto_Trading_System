@@ -172,13 +172,13 @@ def updateData_for_load_data(data, path, most_traded_coin_list, start_interval, 
 
 def get_date_key(path):
     # Define a regular expression pattern to match the date part of the filename
-    date_pattern = r"data-(\d{2})-(\d{2})-(\d{4})"
+    date_pattern = r"data-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{1,2})"
 
     match = re.search(date_pattern, path)
     if match:
-        day, month, year = map(int, match.groups())
+        year, month, day, hour, minute = map(int, match.groups())
         # Create a tuple to use for sorting (year, month, day)
-        return (year, month, day)
+        return (year, month, day, hour, minute)
     else:
         # Handle cases where the filename format doesn't match
         return ()
@@ -203,9 +203,12 @@ def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=d
     del volume_info, df_benchmark
 
     # get all the json paths in "analysis/json"
-    path_dir = "/Volumes/PortableSSD/Alberto/Trading/Json/json_tracker_update/"
+    #path_dir = "/Volumes/PortableSSD/Alberto/Trading/Json/json_tracker_update/" #IN TRACKER_UPDATE YOU WILL FIND ORDER CONCENTRATION
+    path_dir = "/Volumes/PortableSSD/Alberto/Trading/Json/json_tracker/"
     list_json = os.listdir(path_dir)
+    #print(list_json)
     list_files = sorted(list_json, key=get_date_key)
+    #print(list_files)
     list_paths = [path_dir + file for file in list_files]
     # for path_print in list_paths:
     #     print(path_print)
@@ -268,9 +271,75 @@ def load_data(start_interval=datetime(2023,5,7, tzinfo=pytz.UTC), end_interval=d
 def get_benchmark_info():
     '''
     this function queries the benchmark info from all the coins from the db on server
+    from Analysis2023
+    '''
+    now = datetime.now(tz=pytz.UTC) - timedelta(days=1)
+    
+    year = now.year
+    month = now.month
+    day = now.day
+    file = 'benchmark-' + str(day) + '-' + str(month) + '-' + str(year)
+    full_path = ROOT_PATH + '/benchmark_json/' + file
+
+    if os.path.exists(full_path):
+        print(f'{full_path} exists. Loading the file...')
+        f = open(full_path)
+        benchmark_info = json.load(f)
+    else:
+        print(f'{full_path} does not exist. Making the request to the server..')
+        ENDPOINT = 'https://algocrypto.eu'
+        METHOD = '/analysis/get-benchmarkinfo'
+
+        url_mosttradedcoins = ENDPOINT + METHOD
+        response = requests.get(url_mosttradedcoins)
+        print(f'StatusCode for getting get-benchmarkinfo: {response.status_code}')
+        benchmark_info = response.json()
+        with open(full_path, 'w') as outfile:
+            json.dump(benchmark_info, outfile)
+
+    # check if there is any 0 in "volume_30_avg"
+    # Also let's count how volatility is distributed across all the coins
+    volatility = {}
+    for coin in benchmark_info:
+        if benchmark_info[coin]['volume_30_avg'] == 0:
+            benchmark_info[coin]['volume_30_avg'] = 1
+            benchmark_info[coin]['volume_30_std'] = 1
+        else:
+            coin_volatility = str(int(benchmark_info[coin]['volume_30_std'] / benchmark_info[coin]['volume_30_avg']))
+            if coin_volatility not in volatility:
+                volatility[coin_volatility] = 1
+            else:
+                volatility[coin_volatility] += 1
+            
+    #benchmark_info = json.loads(benchmark_info)
+    df = pd.DataFrame(benchmark_info).transpose()
+    df.drop('volume_series', inplace=True, axis=1)
+
+    # Modify DF
+    st_dev_ON_mean_30 = df['volume_30_std'] / df['volume_30_avg']
+    df.insert (2, "st_dev_ON_mean_30", st_dev_ON_mean_30)
+    df = df.sort_values(by=['volume_30_avg'], ascending=False)
+
+    for var in list(locals()):
+        if var.startswith('__') and var.endswith('__'):
+            continue  # Skip built-in variables
+        if var == 'benchmark_info' and var == 'df':
+            continue
+        del locals()[var]
+
+    return benchmark_info, df, volatility
+
+def get_benchmark_info_deprecated():
+    '''
+    this function queries the benchmark info from all the coins from the db on server
     '''
 
-    full_path = "/Users/albertorainieri/Personal/analysis/benchmark_json/benchmark-NEW.json"
+    #full_path = "/Users/albertorainieri/Personal/analysis/benchmark_json/benchmark-NEW.json"
+    now = datetime.now()
+    year = now.year
+    month = now.month
+    day = now.day
+    full_path = "/Users/albertorainieri/Personal/analysis/Analysis2024/benchmark_json/benchmark-30-12-2024"
 
     f = open(full_path)
     benchmark_info = json.load(f)
@@ -316,10 +385,10 @@ def get_dynamic_volatility(benchmark_info):
     dynamic_volatility = {}
     days = 30
 
-    for coin in benchmark_info[0]:
+    for coin in benchmark_info:
         # get "volume series" for a coin, as per db_benchmark
         
-        volume_series = benchmark_info[0][coin]['volume_series']
+        volume_series = benchmark_info[coin]['volume_series']
 
         # turn volume_series from an object of objects to a list of tuples. See the example below
         list_info = list(volume_series.items())
@@ -1205,3 +1274,89 @@ def riskmanagement_data_preparation(data, n_processes, delete_X_perc=False, key=
         print(f'WARNING: Mismatch in data_preparation: expected: {n_events}, current: {n_events_divided}')
 
     return data_arguments
+
+def get_volume_standings_file(path_volume_standings, benchmark_json=None):
+    '''
+    This function delivers the standings of volumes for each coin for each day
+    { BTCUSDT --> { "2024-09-26" : 1 } ... } , { "2024-09-27" : 1 } }
+    '''
+    now = datetime.now()
+    year = now.year
+    month = now.month
+    day = now.day
+
+
+    if os.path.exists(path_volume_standings):
+        print(f'svolume standings is up to date')
+    else:
+        print(f'{path_volume_standings} does not exist')
+        if benchmark_json == None:
+            path_benchmark_new = f'/Users/albertorainieri/Personal/analysis/benchmark_json/benchmark-2024-12-30.json'
+            if os.path.exists(path_benchmark_new):
+                with open(path_benchmark_new, 'r') as file:
+                    # Retrieve shared memory for JSON data and "start_interval"
+                    benchmark_json = json.load(file)
+
+        list_dates = list(benchmark_json["BTCUSDT"]["volume_series"].keys())
+
+        #orig_list.sort(key=lambda x: x.count, reverse=True)
+        summary = {}
+        for coin in benchmark_json:
+            for date in list_dates:
+                if date not in summary:
+                    summary[date] = []
+                if date not in benchmark_json[coin]["volume_series"]:
+                    continue
+                total_volume_30_days = [benchmark_json[coin]["volume_series"][date][0]]
+                current_datetime = datetime.strptime(date, "%Y-%m-%d")
+                for i in range(1,31):
+                    datetime_past = current_datetime - timedelta(days=i)
+                    previous_date = datetime_past.strftime("%Y-%m-%d")
+                    if previous_date in benchmark_json[coin]["volume_series"]:
+                        total_volume_30_days.append(benchmark_json[coin]["volume_series"][previous_date][0])
+
+                summary[date].append({"coin":coin,"volume_date": round_(np.mean(total_volume_30_days),2)})
+        
+        standings = {}
+        #print(summary)
+        for date in summary:
+            if date not in standings:
+                standings[date] = []
+            
+            list_volumes = summary[date]
+            standings[date] = sorted(list_volumes, key=itemgetter('volume_date'), reverse=True)
+            new_list = {}
+            for coin_position, i in zip(standings[date], range(1,len(standings[date])+1)):
+                coin = coin_position["coin"]
+                if i <= 10:
+                    new_list[coin] = 1
+                elif i <= 50:
+                    new_list[coin] = 2
+                elif i <= 100:
+                    new_list[coin] = 3
+                elif i <= 200:
+                    new_list[coin] = 4
+                else:
+                    new_list[coin] = 5
+            standings[date] = new_list
+        
+        with open(path_volume_standings, 'w') as f:
+            json.dump(standings, f, indent=4)
+    
+    return standings
+
+def load_volume_standings():
+    now = datetime.now()
+    year = now.year
+    month = now.month
+    day = now.day
+    path_volume_standings = ROOT_PATH + f'/benchmark_json/volume_standings_{year}-{month}-{day}.json'
+    if os.path.exists(path_volume_standings):
+        print(f'svolume standings is up to date, loading then..')
+        with open(path_volume_standings, 'r') as file:
+            volume_standings = json.load(file)
+    else:
+        benchmark_json, df_benchmark, volatility = get_benchmark_info()
+        volume_standings = get_volume_standings_file(path_volume_standings, benchmark_json)
+    
+    return volume_standings

@@ -40,7 +40,7 @@ def test_close_connection():
     '''
     sleep(60)
     current_bid_price = purchase_price
-    terminate_process(current_bid_price, purchase_price, db)
+    terminate_process(current_bid_price, purchase_price, client)
 
 def terminate_all_trading_process():
     pass
@@ -68,22 +68,22 @@ def on_message(ws, message):
         #TODO: send order close to Binance
 
         # terminate process
-        terminate_process(current_bid_price, purchase_price, db)
+        terminate_process(current_bid_price, purchase_price, client)
 
     # every minute I update the record in the db
-    riskmanagement.saveToDb(current_bid_price, db)
+    riskmanagement.saveToDb(current_bid_price, client)
 
 
 
 
-def terminate_process(current_bid_price, purchase_price, db):
+def terminate_process(current_bid_price, purchase_price, client):
 
     f = open ('/tracker/user_configuration/userconfiguration.json', "r")
     user_configuration = json.loads(f.read())
 
     for user in user_configuration:
         db_name = DATABASE_TRADING + '_' + user
-        db_trading = db.get_db(db_name)
+        db_trading = client.get_db(db_name)
 
         now = datetime.now()
         # Terminate the process
@@ -149,15 +149,10 @@ def terminate_process(current_bid_price, purchase_price, db):
         
                     pid = os.getpid()
                     logger.info(f'Terminating process {pid}')
-                    os.kill(pid, SIGKILL)
 
-def get_db(db_name):
-    '''
-    Establish connectivity with db
-    '''
-    database = DatabaseConnection()
-    db = database.get_db(db_name)
-    return db
+    client.close()
+    os.kill(pid, SIGKILL)
+
 
 def define_on_open(coin):
     def on_open(ws, coin=coin):
@@ -198,7 +193,6 @@ def launch_wss_session(coin):
 if __name__ == "__main__":
     global riskmanagement
 
-    db_logger = get_db(DATABASE_LOGGING)
     logger = LoggingController.start_logging()
     #logger.info('Started')
     
@@ -211,7 +205,8 @@ if __name__ == "__main__":
     riskmanagement = RiskManagement(id, coin, purchase_price, timeframe, 
                                     riskmanagement_configuration, logger)
     
-    db = DatabaseConnection()
+    client = DatabaseConnection()
+    db_logger = client.get_db(DATABASE_LOGGING)
     #close_timewindow = riskmanagement.close_timewindow.isoformat()
     #logger.info(f'Trade {coin} started at {id} will be running no later then {close_timewindow}')
     
