@@ -13,7 +13,7 @@ import json
 SECOND_START_TRACKING = 2
 FIRST_RUN = True
 
-def main(db_trades, db_tracker, db_benchmark, db_logger, logger, FIRST_RUN, SECOND_START_TRACKING, user_configuration):
+def main(db_trades, db_tracker, db_benchmark, db_logger, logger, FIRST_RUN, SECOND_START_TRACKING):
     '''
     This function tracks the statistics of the most traded pairs each minute
     '''
@@ -28,9 +28,6 @@ def main(db_trades, db_tracker, db_benchmark, db_logger, logger, FIRST_RUN, SECO
             #asyncio.run(TrackerController.start_tracking(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, logger=logger, db_logger=db_logger))
             TrackerController.start_tracking(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, logger=logger, db_logger=db_logger)
             
-            #update user_configuration
-            # f = open ('/tracker/user_configuration/userconfiguration.json', "r")
-            # user_configuration = json.loads(f.read())
             
             # sleep until next run of tracking
             FIRST_RUN = False
@@ -47,23 +44,18 @@ def main(db_trades, db_tracker, db_benchmark, db_logger, logger, FIRST_RUN, SECO
     
 
 if __name__ == '__main__':
-    db = DatabaseConnection()
+    client = DatabaseConnection()
     logger = LoggingController.start_logging()
-    db_trades = db.get_db(database=DATABASE_MARKET)
-    db_tracker = db.get_db(database=DATABASE_TRACKER)
-    db_benchmark = db.get_db(database=DATABASE_BENCHMARK)
-    #db_trading = db.get_db(database=DATABASE_TRADING)
-    db_logger = db.get_db(DATABASE_LOGGING)
+    db_trades = client.get_db(database=DATABASE_MARKET)
+    db_tracker = client.get_db(database=DATABASE_TRACKER)
+    db_benchmark = client.get_db(database=DATABASE_BENCHMARK)
+    #db_trading = client.get_db(database=DATABASE_TRADING)
+    db_logger = client.get_db(DATABASE_LOGGING)
 
     SECOND_START_TRACKING = 2
     FIRST_RUN = True
 
-    f = open ('/tracker/user_configuration/userconfiguration.json', "r")
-    user_configuration = json.loads(f.read())
-
-
 
     sleep(2)
     main(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, db_logger=db_logger,
-          logger=logger, FIRST_RUN=FIRST_RUN, SECOND_START_TRACKING=SECOND_START_TRACKING,
-          user_configuration=user_configuration)
+          logger=logger, FIRST_RUN=FIRST_RUN, SECOND_START_TRACKING=SECOND_START_TRACKING)

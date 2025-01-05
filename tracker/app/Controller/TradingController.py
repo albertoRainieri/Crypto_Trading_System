@@ -171,6 +171,7 @@ class TradingController:
                             if process_key not in complete_process_overview:
                                 # Start Subprocess for "coin". This will launch a wss connection for getting bid price coin in real time
                                 process = subprocess.Popen(["python3", "/tracker/trading/wss-trading.py", coin, id, str(purchase_price), str(timeframe), risk_management_configuration])
+                                subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id])
                                 complete_process_overview[process_key] = process.pid
                                 pid = process.pid
                             else:
@@ -577,10 +578,9 @@ class TradingController:
             return msg, status_code
         
     #@timer_func
-    def get_balance_account(logger, user_configuration):
+    def get_balance_account(client, logger, user_configuration):
         # t1 = time()
         SYS_ADMIN = os.getenv('SYS_ADMIN')
-        client = DatabaseConnection()
 
         for user in user_configuration:
             TRADING_LIVE = user_configuration[user]['trading_live']
@@ -697,10 +697,7 @@ class TradingController:
             
             else:
                 logger.info('ERROR: WAS NOT ABLE TO RETRIEVE INFO FROM /v3/account Binance API')
-                logger.info(response)
-        
-        client.close()
-            
+                logger.info(response)            
         
 
 

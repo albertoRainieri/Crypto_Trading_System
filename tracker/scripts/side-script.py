@@ -13,7 +13,7 @@ from datetime import datetime
 import json
 
 
-def main(db, logger, db_logger, user_configuration):
+def main(client, logger, db_logger, user_configuration):
     logger.info('Side Script Started')
     while True:
         
@@ -29,18 +29,18 @@ def main(db, logger, db_logger, user_configuration):
             sleep(0.2)
 
         if minute == 59 and second == 18 and hour == 23:
-            BinanceController.main_sort_pairs_list(logger=logger, db_logger=db_logger)
+            BinanceController.main_sort_pairs_list(client=client, logger=logger, db_logger=db_logger)
             logger.info("list of instruments updated from 'BinanceController.main_sort_pairs_list'")
 
         if minute == 0 and second == 20 and hour == 0:
-            Benchmark.computeVolumeAverage(db=db)
+            Benchmark.computeVolumeAverage(client=client)
             logger.info("volumes have been updated from 'Benchmark.computeVolumeAverage'")
         
         if second == 55:
             #logger.info('Updating Balance Account')
             f = open ('/tracker/user_configuration/userconfiguration.json', "r")
             user_configuration = json.loads(f.read())
-            TradingController.get_balance_account(logger, user_configuration)
+            TradingController.get_balance_account(client, logger, user_configuration)
             sleep(0.2)
         
         sleep(0.8)
@@ -69,4 +69,4 @@ if __name__ == '__main__':
             logger.info(f'TRADING_LIVE is NOT enabled for {user}')
 
 
-    main(db=db, logger=logger, db_logger=db_logger, user_configuration=user_configuration)
+    main(client=client, logger=logger, db_logger=db_logger, user_configuration=user_configuration)

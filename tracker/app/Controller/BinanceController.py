@@ -22,19 +22,6 @@ import asyncio
 
 class BinanceController:
 
-    def __init__(self) -> None:
-        self.db = DatabaseConnection()
-
-    def get_db(db_name):
-        '''
-        Establish connectivity with db
-        '''
-        # Retrieve Database DATABASE_DATA_STORAGE
-        client = DatabaseConnection()
-        db = client.get_db(db_name)
-        return db, client
-    
-    
 
     async def get_async(url):
         #header = CryptoController.getHeader()
@@ -104,7 +91,7 @@ class BinanceController:
         logger.info('The request to the API "ExchangeInfo" was succesfull')
         return res
 
-    def sort_pairs_by_volume(res, logger=LoggingController.start_logging(), tries=0, db_logger=None):
+    def sort_pairs_by_volume(client, res, logger=LoggingController.start_logging(), tries=0, db_logger=None):
         '''
         This function takes the list of pair (from "ExchangeInfo" function) and gathers information for each one of them.
         Finally it creates a sorted list of pair by volume
@@ -199,7 +186,7 @@ class BinanceController:
         # UPDATE DB BENCHMARK. THE INFO UPDATED IS ABOUT THE FREQUENCY OF THE COIN TRADED.
         # IF A COIN FALLS OUT OF THE BEST POSITIONS, IT WILL GET A NEGATIVE SCORE.
 
-        db_benchmark, client = BinanceController.get_db(DATABASE_BENCHMARK)
+        db_benchmark = client.get_db(DATABASE_BENCHMARK)
         list_coins_benchmark = db_benchmark.list_collection_names()
 
         # iterate through each pair in the db
@@ -267,10 +254,8 @@ class BinanceController:
 
                     db_benchmark[coin].update_one({"_id": id_benchmark}, {"$set": {"Best_Trades": new_trade_score, 'Last_30_Trades': last_30_trades}})
         
-        client.close()
 
-
-    def main_sort_pairs_list(logger=LoggingController.start_logging(), db_logger=None):
+    def main_sort_pairs_list(client=DatabaseConnection(), logger=LoggingController.start_logging(), db_logger=None):
         loop = BinanceController.get_or_create_eventloop()
         
         info = loop.run_until_complete(BinanceController.exchange_info(logger))
@@ -281,7 +266,7 @@ class BinanceController:
             db_logger[DATABASE_API_ERROR].insert({'_id': datetime.now().isoformat(), 'msg': msg})
             info = loop.run_until_complete(BinanceController.exchange_info())
 
-        BinanceController.sort_pairs_by_volume(res=info, logger=logger, db_logger=db_logger)
+        BinanceController.sort_pairs_by_volume(client=client, res=info, logger=logger, db_logger=db_logger)
         
 
     def get_or_create_eventloop():
