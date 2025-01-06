@@ -14,7 +14,7 @@ services:
       args:
         - UID=${UID}
         - GID=${GID}
-    restart: never
+    restart: always
     # ports:
     #   - "5000:5000"
     volumes:
@@ -34,6 +34,7 @@ services:
       - TZ=$TIME_ZONE
       - PRODUCTION=$PRODUCTION
       - ANALYSIS=$ANALYSIS
+      - SLEEP_ANALYSIS=$SLEEP_ANALYSIS
     networks:
       - crypto-net
 
@@ -73,6 +74,7 @@ services:
       - MAX_EVENTS_SYNCED=$MAX_EVENTS_SYNCED
       - MAXIMUM_LOSS=$MAXIMUM_LOSS
       - SYS_ADMIN=$SYS_ADMIN
+      - ANALYSIS=$ANALYSIS
     networks:
       - crypto-net
 
@@ -185,7 +187,7 @@ services:
     #   - "8081:8081"
     environment:
       #ME_CONFIG_MONGODB_SERVER: mongo-analysis
-      ME_CONFIG_MONGODB_SERVER: $MONGO_ADDRESS
+      ME_CONFIG_MONGODB_SERVER: mongo
       ME_CONFIG_MONGODB_PORT: 27017
       ME_CONFIG_MONGODB_AUTH_USERNAME: $MONGO_INITDB_ROOT_USERNAME
       ME_CONFIG_MONGODB_AUTH_PASSWORD: $MONGO_INITDB_ROOT_PASSWORD
@@ -207,7 +209,7 @@ services:
     restart: always
     ports:
       - "80:80"
-      - "443:443"
+      #- "443:443"
     volumes:
       - ./nginx/logs/:/var/log/nginx
       - ./nginx/conf/default:/etc/nginx/sites-available/default
