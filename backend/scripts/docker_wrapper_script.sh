@@ -15,10 +15,10 @@ else
 
     # Start the third process
     /bin/bash /backend/scripts/wss_python_process_2.sh &
-    sleep 5
-    /bin/bash /backend/scripts/wss_python_process_3.sh &
-    sleep 5
-    /bin/bash /backend/scripts/wss_python_process_4.sh &
+#     sleep 5
+#     /bin/bash /backend/scripts/wss_python_process_3.sh &
+#     sleep 5
+#     /bin/bash /backend/scripts/wss_python_process_4.sh &
 fi
 
 
