@@ -95,8 +95,13 @@ class TradingController:
 
                 if obs[vol_field] == None or obs[buy_vol_field] == None:
                     continue
-
+                
                 if obs[vol_field] >= float(vol_value) and obs[buy_vol_field] >= float(buy_vol_value):
+
+
+                    id = datetime.now().isoformat()
+                    # Start Order Book Polling
+                    subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, '0'])
                     
                     f = open ('/tracker/user_configuration/userconfiguration.json', "r")
                     user_configuration = json.loads(f.read())
@@ -104,7 +109,6 @@ class TradingController:
                     SYS_ADMIN = os.getenv('SYS_ADMIN')
                     client = DatabaseConnection()
                     complete_process_overview = {}
-                    id = datetime.now().isoformat()
                     
                     for user in user_configuration:
                         TRADING_LIVE = user_configuration[user]['trading_live']
@@ -171,7 +175,6 @@ class TradingController:
                             if process_key not in complete_process_overview:
                                 # Start Subprocess for "coin". This will launch a wss connection for getting bid price coin in real time
                                 process = subprocess.Popen(["python3", "/tracker/trading/wss-trading.py", coin, id, str(purchase_price), str(timeframe), risk_management_configuration])
-                                subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id])
                                 complete_process_overview[process_key] = process.pid
                                 pid = process.pid
                             else:
@@ -179,7 +182,14 @@ class TradingController:
                                 logger.info('Process wss-trading.py already started')
                             
                             # send query to db_trading. for logging
-                            doc_db = {'_id': id, 'coin': coin, 'profit': 0, 'purchase_price': purchase_price, 'current_price': purchase_price,
+
+                            id_volume_standings_db = datetime.now().strftime("%Y-%m-%d") 
+                            db_volume_standings = client.get_db(DATABASE_VOLUME_STANDINGS)
+                            volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find_one({"_id": id_volume_standings_db})
+                            ranking = volume_standings['standings'][coin]['rank']
+
+
+                            doc_db = {'_id': id, 'coin': coin, 'ranking': ranking, 'profit': 0, 'purchase_price': purchase_price, 'current_price': purchase_price,
                                     'quantity': quantity,'on_trade': True, 'trading_live': trading_live, 'event': event_key, 'investment_amount': investment_amount,
                                         'exit_timestamp': datetime.fromtimestamp(0).isoformat(), 'risk_configuration': risk_configuration[event_key], 'pid': pid}
                             
@@ -193,6 +203,7 @@ class TradingController:
         f = open ('/tracker/riskmanagement/riskmanagement.json', "r")
         risk_configuration = json.loads(f.read())
         event_keys = list(risk_configuration.keys())
+        RESTART = '1'
 
         logger.info('TradingController.restart_order_book_polling is started')
         client = DatabaseConnection()
@@ -209,7 +220,7 @@ class TradingController:
                 if datetime.now() <  datetime.fromisoformat(id) + timedelta(minutes=minutes_timeframe):
                     coin = doc['coin']
                     logger.info(f'Resuming Order Book for coin {coin}, event_key {event_key} and id {id}')
-                    subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id])
+                    subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, RESTART])
         client.close()
 
 

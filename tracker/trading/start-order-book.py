@@ -14,7 +14,8 @@ from app.Controller.LoggingController import LoggingController
 def binance_order_book_request(coin):
     url = f"https://api.binance.com/api/v3/depth?symbol={coin}&limit=5000"
     response = requests.get(url=url)
-    return response.text
+    status_code = response.status_code
+    return response.text, status_code
 
 def round_(number, decimal):
     return float(format(number, f".{decimal}f"))
@@ -26,7 +27,7 @@ def get_statistics(resp):
 
     # lowest_bid_price = json_resp['bids'][-1][0]
     # highest_ask_price = json_resp['asks'][-1][0]
-    current_price = round_((float(json_resp['bids'][0][0]) + float(json_resp['asks'][0][0])) / 2, 6)
+    current_price = float(json_resp['bids'][0][0])
 
     for ask_order in json_resp['asks']:
         total_ask_volume += float(ask_order[0]) * float(ask_order[1])
@@ -63,9 +64,13 @@ def get_statistics(resp):
     return current_price, int(total_ask_volume), int(total_bid_volume), summary_ask_orders, summary_bid_orders
 
 
-def get_info_order_book(coin):
-    response = binance_order_book_request(coin)
-    return get_statistics(response)
+def get_info_order_book(coin, logger):
+    response, status_code = binance_order_book_request(coin)
+    if status_code == 200:
+        return get_statistics(response)
+    else:
+        logger.info('Status Code for api/v3/depth is not 200')
+        return None
 
 def extract_timeframe(input_string):
   """
@@ -111,36 +116,49 @@ if __name__ == "__main__":
     coin = sys.argv[1]
     event_key = sys.argv[2]
     id = sys.argv[3]
+    RESTART = bool(int(sys.argv[4]))
     minutes_timeframe = int(extract_timeframe(event_key))
+    now = datetime.now()
+
 
     client = DatabaseConnection()
     db = client.get_db(DATABASE_ORDER_BOOK)
     db_collection = db[event_key]
     docs = list(db_collection.find({}))
-    #logger = LoggingController.start_logging()
+    logger = LoggingController.start_logging()
+
+    id_volume_standings_db = now.strftime("%Y-%m-%d") 
+    db_volume_standings = client.get_db(DATABASE_VOLUME_STANDINGS)
+    volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find_one({"_id": id_volume_standings_db})
+    ranking = volume_standings['standings'][coin]['rank']
 
     INITIALIZE_DOC_ORDERBOOK = True
+    STOP_SCRIPT = False
+
     for doc in docs:
         # If True, the event trigger has just started, otherwise the system has restarted and we are trying to resume the order book polling
         if doc['_id'] == id:
             INITIALIZE_DOC_ORDERBOOK = False
-
+        # In case, the script has started in the script time windows, skip
+        elif doc['coin'] == coin and now < datetime.fromisoformat(doc['_id']) + timedelta(minutes=minutes_timeframe):
+            STOP_SCRIPT = True        
     # initialize doc
 
-    if INITIALIZE_DOC_ORDERBOOK:
-        db_collection.insert_one({"_id": id, "coin": coin, "current_price": {},
+    if not STOP_SCRIPT and INITIALIZE_DOC_ORDERBOOK and not RESTART:
+        db_collection.insert_one({"_id": id, "coin": coin, "ranking": ranking, "current_price": {},
                                 "ask_volume": {}, "bid_volume": {},
                                 "bid_orders": {}, "ask_orders": {}})
 
+    if not STOP_SCRIPT:
+        # this id is used to save the order book
+        now = datetime.now()
+        stop_script_datetime = datetime.now() + timedelta(minutes=minutes_timeframe)
 
-    # this id is used to save the order book
-    now = datetime.now()
-    stop_script_datetime = datetime.now() + timedelta(minutes=minutes_timeframe)
-
-    while datetime.now() < stop_script_datetime:
-        order_book_info = get_info_order_book(coin)
-        update_db_order_book_record(id, event_key, db_collection, order_book_info)
-        sleep(SLEEP_SECONDS-datetime.now().second)
+        while datetime.now() < stop_script_datetime:
+            order_book_info = get_info_order_book(coin, logger)
+            if order_book_info != None:
+                update_db_order_book_record(id, event_key, db_collection, order_book_info)
+            sleep(SLEEP_SECONDS-datetime.now().second)
 
     
     client.close()

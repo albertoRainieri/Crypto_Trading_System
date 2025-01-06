@@ -20,7 +20,7 @@ class DatabaseConnection:
             self.db_url = os.getenv('MONGO_DB_ANALYSIS_URL')
 
         else:
-            logger.info('Container is trying to connect to mongo container in production mode')
+            #logger.info('Container is trying to connect to mongo container in production mode')
             self.db_url = os.getenv('MONGO_DB_URL')
 
 

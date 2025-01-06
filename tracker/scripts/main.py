@@ -17,8 +17,6 @@ def main(db_trades, db_tracker, db_benchmark, db_logger, logger, FIRST_RUN, SECO
     '''
     This function tracks the statistics of the most traded pairs each minute
     '''
-    
-    logger.info('Tracker Started')
 
     while True:
 
@@ -57,5 +55,6 @@ if __name__ == '__main__':
 
 
     sleep(2)
+    logger.info('Main Script Started')
     main(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, db_logger=db_logger,
           logger=logger, FIRST_RUN=FIRST_RUN, SECOND_START_TRACKING=SECOND_START_TRACKING)

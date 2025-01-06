@@ -46,6 +46,7 @@ class Benchmark:
         db_market = client.get_db(DATABASE_MARKET)
         db_benchmark = client.get_db(DATABASE_BENCHMARK)
         db_logger = client.get_db(DATABASE_LOGGING)
+        db_volume_standings = client.get_db(DATABASE_VOLUME_STANDINGS)
 
         # Get the updated coin list
         coins_list = db_market.list_collection_names()
@@ -283,3 +284,62 @@ class Benchmark:
                     
                     db_benchmark[coin].update_one(filter, new_volume_series)
                     #print(f'{coin} has been updated')
+
+        Benchmark.computeVolumeStandings(db_benchmark, db_volume_standings)
+
+
+    
+    def computeVolumeStandings(db_benchmark, db_volume_standings):
+        '''
+        This function gets executed everyday at midnight and creates a standings for all the coins based on the Benchmark Database
+        '''
+
+        coins_list_benchmark = db_benchmark.list_collection_names()
+        coins_list_volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find({})
+
+        volume_list = [] # [{'coin': BTCUSDT, 'volume_30_avg': 10000000}, {'coin': ETHUSDT, 'volume_30_avg': 5000000}, ...]
+        for coin in coins_list_benchmark:
+            cursor_benchmark = list(db_benchmark[coin].find())
+            volume_avg_30 = cursor_benchmark[0]['volume_30_avg']
+            volume_list.append({'coin': coin, 'volume_30_avg': volume_avg_30})
+        
+        volume_standings = Benchmark.sort_and_rank_by_volume(volume_list)
+
+        print(volume_standings)
+        id_volume_standings_doc = datetime.now().strftime("%Y-%m-%d") 
+
+        db_volume_standings[COLLECTION_VOLUME_STANDINGS].insert_one({'_id': id_volume_standings_doc, 'standings': volume_standings})
+
+
+
+
+
+
+
+    
+    def sort_and_rank_by_volume(data):
+        """
+        Sorts a list of objects with 'volume' and 'coin' keys by 'volume' in descending order 
+        and assigns a rank to each object.
+
+        Args:
+            data: A list of dictionaries, where each dictionary has 'volume' and 'coin' keys.
+
+        Returns:
+            A new list of dictionaries, where each dictionary contains 
+            'volume', 'coin', and 'rank' keys.
+        """
+
+        sorted_data = sorted(data, key=lambda x: x['volume_30_avg'], reverse=True) 
+        ranked_data = []
+
+        for rank, item in enumerate(sorted_data, 1):  # Start ranking from 1
+            item['rank'] = rank
+            ranked_data.append(item)
+
+        standings = {}
+        for obj in ranked_data:
+            coin = obj['coin']
+            standings[coin] = {'rank': obj['rank'], 'volume': obj['volume_30_avg']}
+
+        return standings
