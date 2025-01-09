@@ -197,7 +197,41 @@ class TradingController:
                             db_trading[COLLECTION_TRADING_HISTORY].insert_one(doc_db)
                             db_logger[DATABASE_TRADING_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
 
-                    client.close()
+                    client.close()    
+    # ASYNC DISABLED. THIS IS PREFERRED CHOICE even if CPU Support is high
+    def check_event_triggering_testing(coin, obs, volatility_coin, logger, db_logger, risk_configuration):
+
+        '''
+        This function is used for testing purposes, for prodcution use "check_event_triggering"
+        In particular, I just to want to gather data about order_books where there is an event
+        '''
+
+
+        risk_configuration = TradingController.returnRiskConfiguration(risk_configuration, volatility_coin)
+        
+        if risk_configuration != None:
+            for event_key in risk_configuration:
+
+                # check if coin is already on trade for this specific event, if True, pass
+                COIN_ON_TRADING = False
+
+                vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(event_key)
+
+                if obs[vol_field] == None or obs[buy_vol_field] == None:
+                    continue
+                
+                if obs[vol_field] >= float(vol_value) and obs[buy_vol_field] >= float(buy_vol_value):
+
+
+                    id = datetime.now().isoformat()
+                    # Start Order Book Polling
+                    subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, '0'])
+
+        else:
+            logger.info('risk_configuration.json is null')
+                    
+                    
+
     
     def restart_order_book_polling(logger):
         f = open ('/tracker/riskmanagement/riskmanagement.json', "r")
