@@ -36,12 +36,12 @@ def main(client, logger, db_logger, user_configuration):
             Benchmark.computeVolumeAverage(client=client)
             logger.info("volumes have been updated from 'Benchmark.computeVolumeAverage'")
         
-        if second == 55:
-            #logger.info('Updating Balance Account')
-            f = open ('/tracker/user_configuration/userconfiguration.json', "r")
-            user_configuration = json.loads(f.read())
-            TradingController.get_balance_account(client, logger, user_configuration)
-            sleep(0.2)
+        # if second == 55:
+        #     #logger.info('Updating Balance Account')
+        #     f = open ('/tracker/user_configuration/userconfiguration.json', "r")
+        #     user_configuration = json.loads(f.read())
+        #     TradingController.get_balance_account(client, logger, user_configuration)
+        #     sleep(0.2)
         
         sleep(0.8)
 
