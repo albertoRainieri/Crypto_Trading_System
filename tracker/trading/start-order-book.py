@@ -68,7 +68,7 @@ def get_statistics(resp):
             next_delta_threshold = cumulative_bid_volume_ratio + delta
             #print(f'{next_delta_threshold}: {bid_order}')
 
-    return current_price, int(total_ask_volume), int(total_bid_volume), summary_ask_orders, summary_bid_orders
+    return current_price, int(total_bid_volume), int(total_ask_volume), summary_bid_orders, summary_ask_orders,
 
 
 def get_info_order_book(coin, logger):
@@ -97,17 +97,17 @@ def extract_timeframe(input_string):
 
 def update_db_order_book_record(id, event_key, db_collection, order_book_info):
 
-    current_price = order_book_info[0]
-    total_ask_volume = order_book_info[1]
-    total_bid_volume = order_book_info[2]
-    summary_ask_orders = order_book_info[3]
-    summary_bid_orders = order_book_info[4]
+
+    new_data = []
+    new_data.append(order_book_info[0]) #current_price 
+    new_data.append(order_book_info[1]) #total_bid_volume
+    new_data.append(order_book_info[2]) #total_ask_volume
+    new_data.append(order_book_info[3]) #summary_bid_orders
+    new_data.append(order_book_info[4]) #summary_ask_orders
 
     now = datetime.now().replace(microsecond=0).isoformat()
     filter_query = {"_id": id}
-    update_doc = {"$set": {f"current_price.{now}": current_price,
-                           f"ask_volume.{now}": total_ask_volume, f"bid_volume.{now}": total_bid_volume,
-                           f"ask_orders.{now}": summary_ask_orders, f"bid_orders.{now}": summary_bid_orders}}
+    update_doc = {"$set": {f"data.{now}": new_data}}
     result = db_collection.update_one(filter_query, update_doc)
 
     if result.modified_count != 1:
@@ -170,9 +170,7 @@ if __name__ == "__main__":
 
     # initialize
     if not STOP_SCRIPT and INITIALIZE_DOC_ORDERBOOK and not RESTART:
-        db_collection.insert_one({"_id": id, "coin": coin, "ranking": ranking, "current_price": {},
-                                "ask_volume": {}, "bid_volume": {},
-                                "bid_orders": {}, "ask_orders": {}})
+        db_collection.insert_one({"_id": id, "coin": coin, "ranking": ranking, "data": {}})
 
     if not STOP_SCRIPT:
         # this id is used to save the order book
