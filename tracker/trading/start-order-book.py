@@ -9,12 +9,19 @@ import requests
 from constants.constants import *
 from database.DatabaseConnection import DatabaseConnection
 from app.Controller.LoggingController import LoggingController
-
+from signal import SIGKILL
+import random
 
 def binance_order_book_request(coin):
     url = f"https://api.binance.com/api/v3/depth?symbol={coin}&limit=5000"
     response = requests.get(url=url)
+    headers = response.headers
     status_code = response.status_code
+    if status_code == 418:
+        logger.info(headers)
+        retry_after = int(headers['retry-after'])
+        logger.info(f'ip banned, waiting {retry_after}')
+        sleep(retry_after+1)
     return response.text, status_code
 
 def round_(number, decimal):
@@ -69,7 +76,6 @@ def get_info_order_book(coin, logger):
     if status_code == 200:
         return get_statistics(response)
     else:
-        logger.info('Status Code for api/v3/depth is not 200')
         return None
 
 def extract_timeframe(input_string):
@@ -111,8 +117,9 @@ if __name__ == "__main__":
     '''
     This Script starts an order book polling whenever an event trade is started
     '''
+    #decide which second to make request to binance
+    second_binance_request = random.randint(5, 58)
 
-    SLEEP_SECONDS = 60
     coin = sys.argv[1]
     event_key = sys.argv[2]
     id = sys.argv[3]
@@ -126,6 +133,7 @@ if __name__ == "__main__":
     db_collection = db[event_key]
     docs = list(db_collection.find({}))
     logger = LoggingController.start_logging()
+    
 
     id_volume_standings_db = now.strftime("%Y-%m-%d") 
     db_volume_standings = client.get_db(DATABASE_VOLUME_STANDINGS)
@@ -135,15 +143,32 @@ if __name__ == "__main__":
     INITIALIZE_DOC_ORDERBOOK = True
     STOP_SCRIPT = False
 
+    # count the current number of live order book scripts. Limit 20
+    event_keys = db.list_collection_names()
+    live_order_book_scripts = 0
+    for collection in event_keys:
+        docs = db[collection].find({},{'_id':1})
+        for doc in docs:
+            dt = datetime.fromisoformat(doc['_id'])
+            if dt + timedelta(minutes=minutes_timeframe) > now:
+                live_order_book_scripts += 1
+
+    if live_order_book_scripts > 20:
+        logger.info(f'Order-Book: Max Number of order_book scripts reached, skipping {event_key} for {coin}')
+        STOP_SCRIPT = True
+
+    logger.info(f'Order-Book: event_key {event_key} triggered for {coin} - ranking {ranking }-  orderbook-script-number: {live_order_book_scripts}')
+
     for doc in docs:
         # If True, the event trigger has just started, otherwise the system has restarted and we are trying to resume the order book polling
         if doc['_id'] == id:
             INITIALIZE_DOC_ORDERBOOK = False
         # In case, the script has started in the script time windows, skip
         elif doc['coin'] == coin and now < datetime.fromisoformat(doc['_id']) + timedelta(minutes=minutes_timeframe):
-            STOP_SCRIPT = True        
-    # initialize doc
+            STOP_SCRIPT = True
 
+
+    # initialize
     if not STOP_SCRIPT and INITIALIZE_DOC_ORDERBOOK and not RESTART:
         db_collection.insert_one({"_id": id, "coin": coin, "ranking": ranking, "current_price": {},
                                 "ask_volume": {}, "bid_volume": {},
@@ -158,7 +183,7 @@ if __name__ == "__main__":
             order_book_info = get_info_order_book(coin, logger)
             if order_book_info != None:
                 update_db_order_book_record(id, event_key, db_collection, order_book_info)
-            sleep(SLEEP_SECONDS-datetime.now().second)
+            sleep(60-datetime.now().second + second_binance_request) 
 
     
     client.close()
