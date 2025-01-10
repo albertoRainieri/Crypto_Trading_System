@@ -223,7 +223,7 @@ class TradingController:
                 if obs[vol_field] >= float(vol_value) and obs[buy_vol_field] >= float(buy_vol_value):
 
 
-                    id = datetime.now().isoformat()
+                    id = obs['_id']
                     # Start Order Book Polling
                     subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, '0'])
 
