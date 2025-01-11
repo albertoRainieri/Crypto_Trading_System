@@ -319,7 +319,7 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
                         
             if n_events >= minimum_event_number and n_coins >= minimum_coin_number and event_frequency_month >= frequency_threshold:
 
-                vol, vol_value, buy_vol, buy_vol_value, timeframe = getsubstring_fromkey(key)
+                vol, vol_value, buy_vol, buy_vol_value, timeframe, lvl = getsubstring_fromkey(key)
                 
                 mean = round_(np.mean(np.array(mean_list))*100,2)
                 max_return = round_(np.mean(np.array(max_list))*100,2)
@@ -385,7 +385,7 @@ def inspect_key(event_key, percentile_list, showPercentile, DISCOVER=False):
 
     # Load Analysis Json
     analysis_json = load_analysis_json()
-    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(event_key)
+    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
 
     # Initialize variables
     mean_list = [] # list of mean value for each event
@@ -551,7 +551,7 @@ def inspect_key(event_key, percentile_list, showPercentile, DISCOVER=False):
 
     plotDensityFunction(max_list, percX_max_list, plot_info, event_key, percentiles, percentile_list)
 
-    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(event_key)
+    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
     fields = [vol_field, buy_vol_field, timeframe, buy_vol_value, vol_value]
     if showPercentile != None:
         plotTimeseries(new_timeseries[showPercentile], fields, check_past=120, plot=True, filter_start=False, filter_best=False)
@@ -559,7 +559,7 @@ def inspect_key(event_key, percentile_list, showPercentile, DISCOVER=False):
 
 def plotDensityFunction(max_list, percX_max_list, plot_info, event_key, percentiles, percentile_list):
     
-    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(event_key)
+    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
     # lets plot a density function of the max and draw some information for each percentile
     sns.set(style="whitegrid")
     plt.figure(figsize=(15, 6))
@@ -652,7 +652,7 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
 
     for key, key_i in zip(keys_list, range(1,len(keys_list)+1)):
         if DISCOVER:
-            vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
+            vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(key)
             print(f'Downloading Timeseries {key_i}/{n_keys}: {key}')
             print(f'Timeframe detected: {timeframe}')
             retry = True        
@@ -857,7 +857,7 @@ def RiskManagement(info, key, early_validation, n_events, investment_per_event=1
         raise ValueError(f"Events Timeseries Json: {n_events_timeseries_json} -- Event Analysis Json: {n_events} -- {event_key_path}")
 
     # get timeframe
-    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
+    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(key)
     timeframe = int(timeframe)
 
     # MULTIPROCESSING

@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.serialization import load_pem_private_key
 import base64
 from pymongo import DESCENDING
 from pathlib import Path
+import re
 
 
 
@@ -91,7 +92,9 @@ class TradingController:
                 # check if coin is already on trade for this specific event, if True, pass
                 COIN_ON_TRADING = False
 
-                vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(event_key)
+                vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
+                if lvl == None:
+                    lvl = 'None'
 
                 if obs[vol_field] == None or obs[buy_vol_field] == None:
                     continue
@@ -101,7 +104,7 @@ class TradingController:
 
                     id = datetime.now().isoformat()
                     # Start Order Book Polling
-                    subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, '0'])
+                    subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, lvl, '0'])
                     
                     f = open ('/tracker/user_configuration/userconfiguration.json', "r")
                     user_configuration = json.loads(f.read())
@@ -215,7 +218,9 @@ class TradingController:
                 # check if coin is already on trade for this specific event, if True, pass
                 COIN_ON_TRADING = False
 
-                vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(event_key)
+                vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
+                if lvl == None:
+                    lvl = 'None'
 
                 if obs[vol_field] == None or obs[buy_vol_field] == None:
                     continue
@@ -225,13 +230,27 @@ class TradingController:
 
                     id = obs['_id']
                     # Start Order Book Polling
-                    subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, '0'])
+                    subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, lvl, '0'])
 
         else:
             logger.info('risk_configuration.json is null')
                     
                     
+    def extract_timeframe(input_string):
+        """
+        Extracts the timeframe value (e.g., 1440) from the given input string.
 
+        Args:
+            input_string: The input string containing the timeframe.
+
+        Returns:
+            The extracted timeframe value as a string, or None if no match is found.
+        """
+        match = re.search(r"timeframe:(\d+)", input_string)
+        if match:
+            return match.group(1)
+        else:
+            return None
     
     def restart_order_book_polling(logger):
         f = open ('/tracker/riskmanagement/riskmanagement.json', "r")
@@ -243,7 +262,7 @@ class TradingController:
         client = DatabaseConnection()
 
         for event_key in event_keys:
-            minutes_timeframe = int(event_key.split('timeframe:')[-1])
+            minutes_timeframe = int(TradingController.extract_timeframe(event_key))
             
             db = client.get_db(DATABASE_ORDER_BOOK)
             db_collection = db[event_key]
@@ -254,7 +273,7 @@ class TradingController:
                 if datetime.now() <  datetime.fromisoformat(id) + timedelta(minutes=minutes_timeframe):
                     coin = doc['coin']
                     logger.info(f'Resuming Order Book for coin {coin}, event_key {event_key} and id {id}')
-                    subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, RESTART])
+                    subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, 'None', RESTART])
         client.close()
 
 
@@ -376,7 +395,7 @@ class TradingController:
                     coin = doc['coin']
                     purchase_price = doc['purchase_price']
                     event_key = doc['event']
-                    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(event_key)
+                    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
 
                     risk_management_configuration = json.dumps(doc['risk_configuration'])
                     id = doc['_id']

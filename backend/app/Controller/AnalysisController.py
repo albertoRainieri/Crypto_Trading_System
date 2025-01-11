@@ -238,7 +238,7 @@ class AnalysisController:
                 response[event_key] = {}
 
             # get vol and buy_vol field (db columns)
-            vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(event_key)
+            vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
 
             for coin in request[event_key]:
                 if coin not in response[event_key]:
@@ -488,6 +488,19 @@ class AnalysisController:
         client.close()
         json_string = jsonable_encoder(response)
         return JSONResponse(content=json_string)
+    
+
+    def get_orderbook(request):
+        client = DatabaseConnection()
+        db_order_book = client.get_db(DATABASE_ORDER_BOOK)
+
+        response = {}
+
+        for event_key in request:
+            for coin in request[event_key]:
+                for timestamp in request[event_key][coin]:
+                    docs = list(db_order_book[event_key].find({'_id': timestamp}))
+
 
 
 

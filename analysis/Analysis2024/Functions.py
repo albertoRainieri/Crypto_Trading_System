@@ -393,7 +393,7 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
                 
                 if n_events >= minimum_event_number and n_coins >= minimum_coin_number and event_frequency_month >= frequency_threshold:
 
-                    vol, vol_value, buy_vol, buy_vol_value, timeframe = getsubstring_fromkey(key)
+                    vol, vol_value, buy_vol, buy_vol_value, timeframe, lvl = getsubstring_fromkey(key)
                     volatility = key.split('vlty:')[1]
                     
                     mean = round_(np.mean(np.array(mean_list))*100,2)
@@ -441,7 +441,7 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
             # print(key)
             # print(shared_data[key].keys())
             if key != 'coins' or key != 'events':
-                vol, vol_value, buy_vol, buy_vol_value, timeframe = getsubstring_fromkey(key)
+                vol, vol_value, buy_vol, buy_vol_value, timeframe, lvl = getsubstring_fromkey(key)
                 key_split = key.split('/vlty:')
                 key_without_volatility = key_split[0]
                 n_events = 0

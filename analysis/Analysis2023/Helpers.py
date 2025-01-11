@@ -523,42 +523,22 @@ def getsubstring_fromkey(key):
     vol --> vol_24h
     buy_vol_value --> 0.65
     vol_value --> 8
+    lvl --> if exists
     '''
-    # split the key
-    key_split = key.split(':')
+    match = re.search(r'vol_(\d+m):(\d+(?:\.\d+)?)/vol_(\d+m):(\d+(?:\.\d+)?)/timeframe:(\d+)', text)
+    if match:
+        if 'lvl' in text:
+            lvl = text.split('lvl:')[-1]
+        else:
+            lvl = None
 
-    # get buy_vol
-    buy_vol = key_split[0]
-
-    #get vol
-    vol = key_split[1][key_split[1].index('/')+1:]
-
-    # get buy_vol_value
-    buy_vol_value = key.split(buy_vol + ':')[-1].split('/vol')[0]
-
-    # get vol_value
-    vol_value = key.split(vol + ':')[-1].split('/timeframe')[0]
-
-    # get timeframe value
-    # initializing substrings
-    sub1 = "timeframe"
-    sub2 = "/vlty"
-    # getting index of substrings
-    idx1 = key.index(sub1)
-
-    # in case keys are grouped by volatility
-    try:
-        idx2 = key.index(sub2)
-        timeframe = ''
-        # getting elements in between
-        for idx in range(idx1 + len(sub1) + 1, idx2):
-            timeframe = timeframe + key[idx]
-    # in case keys are NOT grouped by volatility
-    except:
-        timeframe = key.split('timeframe:')[-1]
-        # timeframe = timeframe[:-1]
-
-    return vol, vol_value, buy_vol, buy_vol_value, timeframe
+        buy_vol = 'buy_vol_' + match.group(1)
+        buy_vol_value = match.group(2)
+        vol = 'vol_' + match.group(3)
+        vol_value = match.group(4)
+        timeframe = match.group(5)
+    
+    return vol, vol_value, buy_vol, buy_vol_value, timeframe, lvl
 
 
 def sort_files_in_json_dir():
@@ -1078,7 +1058,7 @@ def getTimeseries(info, key, check_past=False, look_for_newdata=False, plot=Fals
 
     # get substrings (vol, buy_vol, timeframe) from key
     # vol, vol_value, buy_vol, buy_vol_value, timeframe
-    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
+    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(key)
 
     fields = [vol_field, buy_vol_field, timeframe, buy_vol_value, vol_value]
 

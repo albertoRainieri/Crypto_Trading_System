@@ -774,7 +774,7 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
                 
                 if n_events >= minimum_event_number and n_coins >= minimum_coin_number and event_frequency_month >= frequency_threshold:
 
-                    vol, vol_value, buy_vol, buy_vol_value, timeframe = getsubstring_fromkey(key)
+                    vol, vol_value, buy_vol, buy_vol_value, timeframe, lvl = getsubstring_fromkey(key)
                     volatility = key.split('vlty:')[1]
                     
                     mean = round_(np.mean(np.array(mean_list))*100,2)
@@ -821,7 +821,7 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
             # print(key)
             # print(shared_data[key].keys())
             if key != 'coins' or key != 'events':
-                vol, vol_value, buy_vol, buy_vol_value, timeframe = getsubstring_fromkey(key)
+                vol, vol_value, buy_vol, buy_vol_value, timeframe, lvl = getsubstring_fromkey(key)
                 key_split = key.split('/vlty:')
                 key_without_volatility = key_split[0]
                 n_events = 0
@@ -978,7 +978,7 @@ def plot_live_timeseries(risk_management_path, filter_live: bool = False, filter
         key_json = key.replace(':', '_')
         key_json = key_json.replace('/', '_')
 
-        vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
+        vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(key)
         fields = [vol_field, buy_vol_field, timeframe, buy_vol_value, vol_value]
 
         timeseries = load_timeseries(key_json)
@@ -1340,7 +1340,7 @@ def RiskManagement(info, key, early_validation, n_events, investment_per_event=1
         os.remove(full_path)
         print(f'{full_path} has been removed')
         retry = True
-        vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
+        vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(key)
         while retry:
             retry = getTimeseries(info, key, check_past=int(timeframe)/4, look_for_newdata=True, plot=False)
 
@@ -1356,7 +1356,7 @@ def RiskManagement(info, key, early_validation, n_events, investment_per_event=1
             raise ValueError(f"Events Timeseries Json: {n_events_timeseries_json} -- Event Analysis Json: {n_events} -- {event_key_path}")
 
     # get timeframe
-    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
+    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(key)
     timeframe = int(timeframe)
 
     # MULTIPROCESSING
@@ -1613,7 +1613,7 @@ def check_investment_amount(info, output, investment_amount = 100, riskmanagemen
                 number_of_winner_keys += 1
                 #print(key)
 
-        vol, vol_value, buy_vol, buy_vol_value, timeframe = getsubstring_fromkey(key)
+        vol, vol_value, buy_vol, buy_vol_value, timeframe, lvl = getsubstring_fromkey(key)
         for coin in info[key]['info']:
             for event in info[key]['info'][coin]:
                 obj1 = {'event': event['event'], 'side': 1}
@@ -1669,7 +1669,7 @@ def RiskConfiguration(info, riskmanagement_conf, optimized_gain_threshold, mean_
             print(f'Downloading Timeseries {key_i}: {key}')
             # get latest timeseries
             retry = True        
-            vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe = getsubstring_fromkey(key)
+            vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(key)
             while retry:
                 retry = getTimeseries(info, key, check_past=int(timeframe)/4, look_for_newdata=True, plot=False)
 
@@ -2040,7 +2040,7 @@ def analyzeRiskManagementPerformance(riskmanagement_path, OPTIMIZED=True, DISCOV
             # iterate through each event key and update if needed
             for event_key in optimized_results_dict:
                 new_optimized_results = {event_key: {}}
-                vol, vol_value, buy_vol, buy_vol_value, timeframe = getsubstring_fromkey(event_key)
+                vol, vol_value, buy_vol, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
                 timeframe = int(timeframe)
                 if 'vlty' in event_key:
                     volatility = event_key.split('vlty:')[1]

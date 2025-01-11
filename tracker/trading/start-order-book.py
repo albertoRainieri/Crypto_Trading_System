@@ -123,7 +123,13 @@ if __name__ == "__main__":
     coin = sys.argv[1]
     event_key = sys.argv[2]
     id = sys.argv[3]
-    RESTART = bool(int(sys.argv[4]))
+    lvl = sys.argv[4]
+    if lvl == 'None':
+        lvl = None
+    else:
+        lvl = int(lvl)
+
+    RESTART = bool(int(sys.argv[5]))
     minutes_timeframe = int(extract_timeframe(event_key))
     now = datetime.now()
 
@@ -138,7 +144,8 @@ if __name__ == "__main__":
     id_volume_standings_db = now.strftime("%Y-%m-%d") 
     db_volume_standings = client.get_db(DATABASE_VOLUME_STANDINGS)
     volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find_one({"_id": id_volume_standings_db})
-    ranking = volume_standings['standings'][coin]['rank']
+    ranking = int(volume_standings['standings'][coin]['rank'])
+
 
     INITIALIZE_DOC_ORDERBOOK = True
     STOP_SCRIPT = False
@@ -157,16 +164,24 @@ if __name__ == "__main__":
         logger.info(f'Order-Book: Max Number of order_book scripts reached, skipping {event_key} for {coin}')
         STOP_SCRIPT = True
 
-    logger.info(f'Order-Book: event_key {event_key} triggered for {coin} - ranking {ranking }-  orderbook-script-number: {live_order_book_scripts}')
+    # logger.info(f'lvl: {lvl}')
+    # logger.info(type(lvl))
+    # logger.info(f'ranking: {ranking}')
+    # logger.info(type(ranking))
 
     for doc in docs:
         # If True, the event trigger has just started, otherwise the system has restarted and we are trying to resume the order book polling
         if doc['_id'] == id:
-            INITIALIZE_DOC_ORDERBOOK = False
+            INITIALIZE_DOC_ORDERBOOK = False       
         # In case, the script has started in the script time windows, skip
         elif doc['coin'] == coin and now < datetime.fromisoformat(doc['_id']) + timedelta(minutes=minutes_timeframe):
+            logger.info(f'coin {coin}-{event_key} is running, skipping script')
             STOP_SCRIPT = True
 
+    # if the event_key has a ranking threshold ("lvl") than check if ranking is in that threshold
+    if not RESTART and lvl != None and ranking > lvl:
+        logger.info(f'coin {coin} has a ranking {ranking} higher than the threshold of the event_key lvl {event_key}')
+        STOP_SCRIPT = True 
 
     # initialize
     if not STOP_SCRIPT and INITIALIZE_DOC_ORDERBOOK and not RESTART:
@@ -174,6 +189,7 @@ if __name__ == "__main__":
 
     if not STOP_SCRIPT:
         # this id is used to save the order book
+        logger.info(f'Order-Book: event_key {event_key} triggered for {coin} - ranking {ranking }-  orderbook-script-number: {live_order_book_scripts}')
         now = datetime.now()
         stop_script_datetime = datetime.now() + timedelta(minutes=minutes_timeframe)
 
@@ -181,7 +197,9 @@ if __name__ == "__main__":
             order_book_info = get_info_order_book(coin, logger)
             if order_book_info != None:
                 update_db_order_book_record(id, event_key, db_collection, order_book_info)
-            sleep(60-datetime.now().second + second_binance_request) 
+            sleep(60-datetime.now().second + second_binance_request)
+    else:
+        logger.info(f'STOP SCRIPT for {coin}')
 
     
     client.close()
