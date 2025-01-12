@@ -154,7 +154,7 @@ if __name__ == "__main__":
     event_keys = db.list_collection_names()
     live_order_book_scripts = 0
     for collection in event_keys:
-        docs = db[collection].find({},{'_id':1})
+        docs = list(db[collection].find({},{'_id':1, 'coin':1}))
         for doc in docs:
             dt = datetime.fromisoformat(doc['_id'])
             if dt + timedelta(minutes=minutes_timeframe) > now:
@@ -164,10 +164,6 @@ if __name__ == "__main__":
         logger.info(f'Order-Book: Max Number of order_book scripts reached, skipping {event_key} for {coin}')
         STOP_SCRIPT = True
 
-    # logger.info(f'lvl: {lvl}')
-    # logger.info(type(lvl))
-    # logger.info(f'ranking: {ranking}')
-    # logger.info(type(ranking))
 
     for doc in docs:
         # If True, the event trigger has just started, otherwise the system has restarted and we are trying to resume the order book polling
@@ -175,12 +171,12 @@ if __name__ == "__main__":
             INITIALIZE_DOC_ORDERBOOK = False       
         # In case, the script has started in the script time windows, skip
         elif doc['coin'] == coin and now < datetime.fromisoformat(doc['_id']) + timedelta(minutes=minutes_timeframe):
-            logger.info(f'coin {coin}-{event_key} is running, skipping script')
+            #logger.info(f'coin {coin}-{event_key} is running, skipping script')
             STOP_SCRIPT = True
 
     # if the event_key has a ranking threshold ("lvl") than check if ranking is in that threshold
     if not RESTART and lvl != None and ranking > lvl:
-        logger.info(f'coin {coin} has a ranking {ranking} higher than the threshold of the event_key lvl {event_key}')
+        #logger.info(f'coin {coin} has a ranking {ranking} higher than the threshold of the event_key lvl {event_key}')
         STOP_SCRIPT = True 
 
     # initialize
@@ -198,8 +194,6 @@ if __name__ == "__main__":
             if order_book_info != None:
                 update_db_order_book_record(id, event_key, db_collection, order_book_info)
             sleep(60-datetime.now().second + second_binance_request)
-    else:
-        logger.info(f'STOP SCRIPT for {coin}')
 
     
     client.close()
