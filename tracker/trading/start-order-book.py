@@ -111,7 +111,8 @@ def update_db_order_book_record(id, event_key, db_collection, order_book_info):
     result = db_collection.update_one(filter_query, update_doc)
 
     if result.modified_count != 1:
-        print(f"Order Book update failed for {event_key} with id {id}.") 
+        now = datetime.now().isoformat()
+        print(f"{now}: Order Book update failed for {event_key} with id {id}.") 
 
 if __name__ == "__main__":
     '''
