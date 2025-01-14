@@ -138,7 +138,7 @@ if __name__ == "__main__":
     client = DatabaseConnection()
     db = client.get_db(DATABASE_ORDER_BOOK)
     db_collection = db[event_key]
-    docs = list(db_collection.find({}))
+    event_key_docs = list(db_collection.find({}, {'_id':1,'coin':1}))
     logger = LoggingController.start_logging()
     
 
@@ -165,8 +165,8 @@ if __name__ == "__main__":
         logger.info(f'Order-Book: Max Number of order_book scripts reached, skipping {event_key} for {coin}')
         STOP_SCRIPT = True
 
-
-    for doc in docs:
+    # check in the current event_key if there are current jobs
+    for doc in event_key_docs:
         # If True, the event trigger has just started, otherwise the system has restarted and we are trying to resume the order book polling
         if doc['_id'] == id:
             INITIALIZE_DOC_ORDERBOOK = False       
