@@ -45,10 +45,10 @@ def getsubstring_fromkey(text):
             lvl = None
 
         buy_vol = 'buy_vol_' + match.group(1)
-        buy_vol_value = match.group(2)
+        buy_vol_value = float(match.group(2))
         vol = 'vol_' + match.group(3)
-        vol_value = match.group(4)
-        timeframe = match.group(5)
+        vol_value = int(match.group(4))
+        timeframe = int(match.group(5))
     
     return vol, vol_value, buy_vol, buy_vol_value, timeframe, lvl
 

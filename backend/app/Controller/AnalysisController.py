@@ -497,9 +497,20 @@ class AnalysisController:
         response = {}
 
         for event_key in request:
+            if event_key not in response:
+                response[event_key] = {}
             for coin in request[event_key]:
-                for timestamp in request[event_key][coin]:
-                    docs = list(db_order_book[event_key].find({'_id': timestamp}))
+                if coin not in response[event_key]:
+                    response[event_key][coin] = {}
+                for _id in request[event_key][coin]:
+                    docs = list(db_order_book[event_key].find({'_id': _id}, {'_id': 0, 'ranking': 1, 'data': 1}))
+                    response[event_key][coin][_id] = docs
+        
+        client.close()
+        json_string = jsonable_encoder(response)
+        return JSONResponse(content=json_string)
+            
+                    
 
 
 

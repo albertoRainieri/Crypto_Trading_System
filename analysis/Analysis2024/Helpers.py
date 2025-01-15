@@ -15,6 +15,7 @@ from copy import copy
 from random import randint
 import shutil
 import re
+from operator import itemgetter
 # import xgboost as xgb
 # from xgboost import XGBClassifier
 # from sklearn.preprocessing import LabelEncoder
@@ -31,6 +32,142 @@ TargetVariable1 = Literal["mean", "max", "min"]
 
 def round_(number, decimal):
     return float(format(number, f".{decimal}f"))
+
+def create_event_keys(X, list_minutes, analysis_name):
+    event_keys = []
+
+    for xi in X:
+        lvl = xi['lvl']
+        for time_interval in xi['info']:
+            for buy_vol in xi['info'][time_interval]['buy_vol']:
+                for vol in xi['info'][time_interval]['vol']:
+                    if lvl == None:
+                        event_key = f'buy_vol_{time_interval}:{buy_vol}/vol_{time_interval}:{vol}/timeframe:{list_minutes}'
+                    else:
+                        event_key = f'buy_vol_{time_interval}:{buy_vol}/vol_{time_interval}:{vol}/timeframe:{list_minutes}/lvl:{lvl}'
+                    event_keys.append(event_key)
+    
+    riskmanagement_json = {}
+    for event_key in event_keys:
+        riskmanagement_json[event_key] = []
+    
+    with open(f'{ROOT_PATH}/riskmanagement_json/{analysis_name}.json', 'w') as outfile:
+        json.dump(riskmanagement_json, outfile)
+    
+    return event_keys
+
+def has_structure(data):
+  """
+  Checks if the given data has the structure: 
+  {key1: {key2: [elem1, elem2, ...]}} 
+
+  Args:
+    data: The data to be checked.
+
+  Returns:
+    True if the data has the specified structure, False otherwise.
+  """
+  try:
+    # Check if data is a dictionary
+    if not isinstance(data, dict):
+      return False
+
+    # Check if all values in the top-level dictionary are also dictionaries
+    for key1, value1 in data.items():
+      if not isinstance(value1, dict):
+        return False
+
+    # Check if all values in the nested dictionaries are lists
+    for key1, value1 in data.items():
+      for key2, value2 in value1.items():
+        if not isinstance(value2, list):
+          return False
+
+    return True 
+
+  except (IndexError, KeyError):
+    return False
+
+def get_order_book(initial_request):
+
+    # check initial_request data structure
+    is_initial_request_ok = has_structure(initial_request)
+    # GET METADATA
+    if is_initial_request_ok:
+        path_order_book_metadata = f'{ROOT_PATH}/order_book/metadata.json'
+        if os.path.exists(path_order_book_metadata):
+            f = open(path_order_book_metadata, "r")
+            metadata_order_book = json.loads(f.read())
+        else:
+            metadata_order_book = {}
+
+        # Check if the order_book_event has been already downloaded and create request
+        request = {}
+        to_update = False
+        for event_key in initial_request:
+            for coin in initial_request[event_key]:
+                for _id in initial_request[event_key][coin]:
+                    if event_key not in metadata_order_book:
+                        metadata_order_book[event_key] = {}
+                    if coin not in metadata_order_book[event_key]:
+                        metadata_order_book[event_key][coin] = []
+                    # in case the order_book event has never been downloaded, insert in request
+                    if _id not in metadata_order_book[event_key][coin]:
+                        to_update = True
+                        if event_key not in request:
+                            request[event_key] = {}
+                        if coin not in request[event_key]:
+                            request[event_key][coin] = [_id]
+                        else:
+                            request[event_key][coin].append(_id)
+
+        # make the request to the server
+        if to_update:
+            url = "https://algocrypto.eu/analysis/get-order-book"
+            #url = "http://localhost/analysis/get-order-book"
+            response = requests.post(url=url, json = request)
+            status_code = response.status_code
+
+            # get the response, and update data_order_book_event_key and metadata
+            if status_code == 200:
+                response = json.loads(response.text)
+                for event_key in response:
+                    event_key_path = event_key.replace(":", "_").replace("/", "_")
+                    path_order_book_event_key = f'{ROOT_PATH}/order_book/{event_key_path}.json'
+                    if os.path.exists(path_order_book_event_key):
+                        f = open(path_order_book_event_key, "r")
+                        data_order_book_event_key = json.loads(f.read())
+                    else:
+                        data_order_book_event_key = {}
+                    for coin in response[event_key]:
+                        if coin not in data_order_book_event_key:
+                            data_order_book_event_key[coin] = {}
+                        for _id in response[event_key][coin]:
+                            metadata_order_book[event_key][coin].append(_id)
+                            data_order_book_event_key[coin][_id] = response[event_key][coin][_id]
+
+                    # Save the data_order_book_event_key
+                    with open(path_order_book_event_key, 'w') as outfile_data:
+                        json.dump(data_order_book_event_key, outfile_data)
+
+                # Save the metadata
+                with open(path_order_book_metadata, 'w') as outfile_metadata:
+                        json.dump(metadata_order_book, outfile_metadata)
+            else:
+                print(f'Status Code: {status_code}, error received from server')
+        else:
+            print('Metadata is up to date')
+    else:
+        print(" data structure of the initial request is not correct ")
+
+    
+    
+
+
+
+
+
+
 
 def get_volatility(dynamic_benchmark_info_coin, full_timestamp):
     '''
@@ -334,12 +471,11 @@ def get_benchmark_info_deprecated():
     this function queries the benchmark info from all the coins from the db on server
     '''
 
-    #full_path = "/Users/albertorainieri/Personal/analysis/benchmark_json/benchmark-NEW.json"
     now = datetime.now()
     year = now.year
     month = now.month
     day = now.day
-    full_path = "/Users/albertorainieri/Personal/analysis/Analysis2024/benchmark_json/benchmark-30-12-2024"
+    full_path = f"{ROOT_PATH}/benchmark_json/benchmark-30-12-2024"
 
     f = open(full_path)
     benchmark_info = json.load(f)
@@ -590,15 +726,15 @@ def getsubstring_fromkey(text):
     match = re.search(r'vol_(\d+m):(\d+(?:\.\d+)?)/vol_(\d+m):(\d+(?:\.\d+)?)/timeframe:(\d+)', text)
     if match:
         if 'lvl' in text:
-            lvl = text.split('lvl:')[-1]
+            lvl = int(text.split('lvl:')[-1])
         else:
             lvl = None
 
         buy_vol = 'buy_vol_' + match.group(1)
-        buy_vol_value = match.group(2)
+        buy_vol_value = float(match.group(2))
         vol = 'vol_' + match.group(3)
-        vol_value = match.group(4)
-        timeframe = match.group(5)
+        vol_value = int(match.group(4))
+        timeframe = int(match.group(5))
     
     return vol, vol_value, buy_vol, buy_vol_value, timeframe, lvl
 
@@ -1267,7 +1403,7 @@ def get_volume_standings_file(path_volume_standings, benchmark_json=None):
 
 
     if os.path.exists(path_volume_standings):
-        print(f'svolume standings is up to date')
+        print(f'volume standings is up to date')
     else:
         print(f'{path_volume_standings} does not exist')
         if benchmark_json == None:
@@ -1295,7 +1431,7 @@ def get_volume_standings_file(path_volume_standings, benchmark_json=None):
                     if previous_date in benchmark_json[coin]["volume_series"]:
                         total_volume_30_days.append(benchmark_json[coin]["volume_series"][previous_date][0])
 
-                summary[date].append({"coin":coin,"volume_date": round_(np.mean(total_volume_30_days),2)})
+                summary[date].append({"coin":coin,"volume_avg": round_(np.mean(total_volume_30_days),2)})
         
         standings = {}
         #print(summary)
@@ -1304,24 +1440,20 @@ def get_volume_standings_file(path_volume_standings, benchmark_json=None):
                 standings[date] = []
             
             list_volumes = summary[date]
-            standings[date] = sorted(list_volumes, key=itemgetter('volume_date'), reverse=True)
-            new_list = {}
-            for coin_position, i in zip(standings[date], range(1,len(standings[date])+1)):
-                coin = coin_position["coin"]
-                if i <= 10:
-                    new_list[coin] = 1
-                elif i <= 50:
-                    new_list[coin] = 2
-                elif i <= 100:
-                    new_list[coin] = 3
-                elif i <= 200:
-                    new_list[coin] = 4
-                else:
-                    new_list[coin] = 5
-            standings[date] = new_list
+            standings[date] = sorted(list_volumes, key=itemgetter('volume_avg'), reverse=True)
+        
+        final_standings = {}
+        for date in standings:
+            final_standings[date] = {}
+            position = 1
+            for obj in standings[date]:
+                coin = obj['coin']
+                final_standings[date][coin] = position
+                position += 1
+        
         
         with open(path_volume_standings, 'w') as f:
-            json.dump(standings, f, indent=4)
+            json.dump(final_standings, f, indent=4)
     
     return standings
 

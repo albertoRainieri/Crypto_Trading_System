@@ -27,7 +27,7 @@ from typing import Literal
 
 ROOT_PATH="/Users/albertorainieri/Personal/analysis/Analysis2024"
 
-def total_function_multiprocessing(list_time_interval_field, list_order_concentration, list_minutes, list_event_buy_volume, list_event_volume, n_processes, analysis_timeframe):
+def total_function_multiprocessing(event_keys, analysis_timeframe, n_processes):
     '''
     this function loads only the data not analyzed and starts "wrap_analyze_events_multiprocessing" function. Finally it saves the output a path dedicated
 
@@ -37,11 +37,11 @@ def total_function_multiprocessing(list_time_interval_field, list_order_concentr
     t1 = time()
 
     # get volume_standings (the standings of all the coins in terms of amount of traded volume).
-    volume_standings = load_volume_standings()
+    volume_standings_full = load_volume_standings()
 
 
     # get json_analysis path. Check if there is already some data analyzed in json_analysis/ path. The new data will be appended
-    total_combinations = len(list_time_interval_field) * len(list_order_concentration) * len(list_minutes) * len(list_event_volume) * len(list_event_buy_volume)
+    total_combinations = len(event_keys)
     print('total_combinations', ': ', total_combinations)
 
     #load analysis json info
@@ -75,8 +75,7 @@ def total_function_multiprocessing(list_time_interval_field, list_order_concentr
     print(f'Events from {start_interval} to {start_next_analysis} will be analyzed')
 
     # Execute the function "wrap_analyze_events_multiprocessing" in parallel
-    pool.starmap(wrap_analyze_events_multiprocessing, [(arg, arg_i, list_time_interval_field, list_order_concentration, list_minutes,
-                                         list_event_buy_volume, list_event_volume, volume_standings, end_interval_analysis, lock, shared_data) for arg, arg_i in zip(data_arguments, range(1,len(data_arguments)+1))])
+    pool.starmap(wrap_analyze_events_multiprocessing, [(arg, arg_i, event_keys, volume_standings_full, end_interval_analysis, lock, shared_data) for arg, arg_i in zip(data_arguments, range(1,len(data_arguments)+1))])
 
     # Close the pool
     pool.close()
@@ -97,8 +96,7 @@ def total_function_multiprocessing(list_time_interval_field, list_order_concentr
     print(t2-t1, ' seconds')
 
 
-def wrap_analyze_events_multiprocessing(data, data_i, list_time_interval_field, list_order_concentration, list_minutes,
-                                         list_event_buy_volume, list_event_volume, volume_standings, end_interval_analysis, lock, shared_data):
+def wrap_analyze_events_multiprocessing(data, data_i, event_keys, volume_standings_full, end_interval_analysis, lock, shared_data):
     '''
     this function summarizes the events for every field of vol_x, buy_vol_x and a list of timeframes.
     list_buy_vol --> LIST: ['buy_vol_5m, ..., 'buy_vol_1d']
@@ -112,7 +110,7 @@ def wrap_analyze_events_multiprocessing(data, data_i, list_time_interval_field, 
     '''
 
     if data_i == 1:
-        total_combinations = len(list_time_interval_field) * len(list_minutes) * len(list_event_volume) * len(list_event_buy_volume) * len(list_order_concentration)
+        total_combinations = len(event_keys)
         PERC_10 = True
         THRESHOLD_10 = total_combinations * 0.1
         PERC_25 = True
@@ -125,50 +123,39 @@ def wrap_analyze_events_multiprocessing(data, data_i, list_time_interval_field, 
 
     print(f'Slice {data_i} has started')
     temp = {}
-    for time_interval_field in list_time_interval_field:
-        buy_vol_field = "buy_vol_" + time_interval_field
-        vol_field = "vol_" + time_interval_field
-        trades_field = "trades_" + time_interval_field
-        for minutes_price_windows in list_minutes:
-            for event_buy_volume in  list_event_buy_volume:
-                for event_volume in list_event_volume:
-                    for order_concentration_level in list_order_concentration:
-                        if data_i == 1:
-                            iteration += 1
-                            if PERC_10:
-                                if iteration > THRESHOLD_10:
-                                    PERC_10 = False
-                                    print('1/10 of data analyzed')
-                            elif PERC_25:
-                                if iteration > THRESHOLD_25:
-                                    PERC_25 = False
-                                    print('1/4 of data analyzed')
-                            elif PERC_50:
-                                if iteration > THRESHOLD_50:
-                                    PERC_50 = False
-                                    print('1/2 of data analyzed')
-                            elif PERC_75:
-                                if iteration > THRESHOLD_75:
-                                    PERC_75 = False
-                                    print('3/4 of data analyzed')
-                            
-                    
-                        complete_info, nan = analyze_events(data, buy_vol_field, vol_field, trades_field, minutes_price_windows, order_concentration_level, 
-                                                            event_buy_volume, event_volume, volume_standings, end_interval_analysis)
-                    
-                        # price changes is a dict with keys regarding the volatility: {'1': [...], '2': [...], ..., '5': [...], ...}
-                        # the value of the dict[volatility] is a list of all price_changes of a particular event
-                        for volatility in complete_info:
-                            # let's define the key: all event info + volatility coin
-                            key = str(buy_vol_field) + ':' + str(event_buy_volume) + '/' + str(vol_field) + ':' + str(event_volume) + '/' + str(trades_field) + ':' + str(order_concentration_level) + '/' + 'timeframe:' + str(minutes_price_windows) + '/' + 'vlty:' + volatility
-                            temp[key] = {}
-                            temp[key]['info'] = complete_info[volatility]
-                            # temp[key]['nan'] = nan
+    for event_key in event_keys:
+        vol, vol_value, buy_vol, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
+        if data_i == 1:
+            iteration += 1
+            if PERC_10:
+                if iteration > THRESHOLD_10:
+                    PERC_10 = False
+                    print('1/10 of data analyzed')
+            elif PERC_25:
+                if iteration > THRESHOLD_25:
+                    PERC_25 = False
+                    print('1/4 of data analyzed')
+            elif PERC_50:
+                if iteration > THRESHOLD_50:
+                    PERC_50 = False
+                    print('1/2 of data analyzed')
+            elif PERC_75:
+                if iteration > THRESHOLD_75:
+                    PERC_75 = False
+                    print('3/4 of data analyzed')
+            
+    
+        complete_info = analyze_events(data, vol, vol_value, buy_vol, buy_vol_value, timeframe, lvl, volume_standings_full, end_interval_analysis)
+    
+        # price changes is a dict with keys regarding the volatility: {'1': [...], '2': [...], ..., '5': [...], ...}
+        # the value of the dict[volatility] is a list of all price_changes of a particular event
+        # let's define the key: all event info + volatility coin
+        # vol, vol_value, buy_vol, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
 
+        temp[event_key] = {}
+        temp[event_key]['info'] = complete_info
 
-    #del total_means, total_stds, events, coins, data, complete_info
     del complete_info
-    #print(f'Slice {data_i} has finished')
 
 
     # Lock Shared Variable
@@ -176,22 +163,22 @@ def wrap_analyze_events_multiprocessing(data, data_i, list_time_interval_field, 
     with lock:
         resp = json.loads(shared_data.value)
 
-        for key in list(temp.keys()):
+        for event_key in list(temp.keys()):
             
-            if key not in resp:
-                resp[key] = {}
+            if event_key not in resp:
+                resp[event_key] = {}
 
-            if 'info' in resp[key]:
+            if 'info' in resp[event_key]:
                 # update complete "info"
-                for coin in temp[key]['info']:
-                    if coin not in resp[key]['info']:
-                        resp[key]['info'][coin] = []
-                    for event in temp[key]['info'][coin]:
-                        resp[key]['info'][coin].append(event)
+                for coin in temp[event_key]['info']:
+                    if coin not in resp[event_key]['info']:
+                        resp[event_key]['info'][coin] = []
+                    for event in temp[event_key]['info'][coin]:
+                        resp[event_key]['info'][coin].append(event)
                 
             else:
-                # initialize the keys of resp[key]
-                resp[key]['info'] = temp[key]['info']
+                # initialize the event_keys of resp[event_key]
+                resp[event_key]['info'] = temp[event_key]['info']
 
         del temp
 
@@ -199,22 +186,16 @@ def wrap_analyze_events_multiprocessing(data, data_i, list_time_interval_field, 
         size_shared_data_value = int(sys.getsizeof(shared_data.value)) / 10**6
 
         n_events = 0
-        for key in resp:
-            for coin in resp[key]['info']:
-                n_events += len(resp[key]['info'][coin])
+        for event_key in resp:
+            for coin in resp[event_key]['info']:
+                n_events += len(resp[event_key]['info'][coin])
 
     #print(f'Data saved fot slice {data_i}')
     print(f'size of shared_data_value before completion of {data_i}: {size_shared_data_value} Mb; Number of events saved: {n_events}')
     #print(f'Events recorded from slice {data_i}: ')
 
-    # for var in list(locals()):
-    #     if var.startswith('__') and var.endswith('__'):
-    #         continue  # Skip built-in variables
-    #     #print(f'deleting variable {var} in "wrap_analyze_events_multiprocessing"')
-    #     del locals()[var]
 
-
-def analyze_events(data, buy_vol_field, vol_field, trades_field, minutes_price_windows, order_concentration_level, event_buy_volume, event_volume, volume_standings_full, end_interval_analysis):
+def analyze_events(data, vol, vol_value, buy_vol, buy_vol_value, timeframe, lvl, volume_standings_full, end_interval_analysis):
     '''
     This function analyzes what happens in terms of price changes after ONE specific event.
     This function is used by "wrap_analyze_events_multiprocessing" and "wrap_analyze_events"
@@ -228,13 +209,14 @@ def analyze_events(data, buy_vol_field, vol_field, trades_field, minutes_price_w
     '''
 
     complete_info = {}
-    nan = {}
     #print(data)
     # analyze for each coin
     for coin in list(data.keys()):
 
         if coin == 'EURUSDT':
             continue
+
+
         
         # initialize limit_window
         limit_window = datetime(2000,1,1)
@@ -249,23 +231,12 @@ def analyze_events(data, buy_vol_field, vol_field, trades_field, minutes_price_w
 
             # the observation must not be younger than "end_interval_analysis". The reason is explained in function "total_function_multiprocessing"
             if datetime_obs < end_interval_analysis:
-                if buy_vol_field in obs and obs[buy_vol_field] != None:
+                if buy_vol in obs and obs[buy_vol] != None:
                     # if buy_vol is greater than limit and
                     # if vol is greater than limit and
                     # if datetime_obs does not fall in a previous analysis window. (i.e. datetime_obs is greater than the limit_window set)
                     #if obs[buy_vol_field] >= event_buy_volume and obs[vol_field] > event_volume and datetime_obs > limit_window and obs[trades_field] != None:
-                    if obs[buy_vol_field] >= event_buy_volume and obs[vol_field] > event_volume and datetime_obs > limit_window:
-                        
-                        # UNCOMMENT FOR TRADE CONCENTRATIION ANALYSIS
-                        # trades_order = obs[trades_field]
-                        # order_concentration = trades_order / obs[vol_field]
-                        # if order_concentration > order_concentration_level:
-                        #     continue
-                        
-                        #print(f'buy_vol: {buy_vol_field} -> {event_buy_volume} - vol: {vol_field} -> {event_volume} - order_conc: {order_concentration_level}')
-                        
-                        # if filter_out_events(vol_field, event_volume, buy_vol_field, event_buy_volume):
-                        #     continue
+                    if obs[buy_vol] >= buy_vol_value and obs[vol] > vol_value and datetime_obs > limit_window:
 
                         # get initial price of the coin at the triggered event
                         initial_price = obs['price']
@@ -276,15 +247,13 @@ def analyze_events(data, buy_vol_field, vol_field, trades_field, minutes_price_w
                         # initialize current price_changes
                         event_price_changes = []
 
-                        # get dynamic volatility
-                        volume_standings = str(get_volume_standings(volume_standings_full, obs['_id'], coin))
+                        # get dynamic volume standings
+                        volume_standings = int(get_volume_standings(volume_standings_full, obs['_id'], coin))
+                        if lvl != None and volume_standings > lvl:
+                            continue
 
-                        # initialize "price_changes" and "events" if first time
-                        if volume_standings not in complete_info:
-                            complete_info[volume_standings] = {}
-
-                        if coin not in complete_info[volume_standings]:
-                            complete_info[volume_standings][coin] = []
+                        if coin not in complete_info:
+                            complete_info[coin] = []
 
                         max_price_change = 0
                         min_price_change = 0
@@ -292,37 +261,32 @@ def analyze_events(data, buy_vol_field, vol_field, trades_field, minutes_price_w
                         # initialize "price_changes" to fetch all changes for THIS event
                         price_changes = []
 
-                        limit_window  = datetime_obs + timedelta(minutes=minutes_price_windows)
-                        # get all the price changes in the "minutes_price_windows"
-                        for obs_event, obs_i in zip(data[coin][index:index+minutes_price_windows], range(minutes_price_windows)):
+                        limit_window  = datetime_obs + timedelta(minutes=timeframe)
+                        # get all the price changes in the "timeframe"
+                        for obs_event, obs_i in zip(data[coin][index:index+timeframe], range(timeframe)):
                             # if actual observation has occurred in the last minute and 10 seconds from last observation, let's add the price "change" in "price_changes":
                             actual_datetime = datetime.fromisoformat(data[coin][index+obs_i]['_id'])
                             if actual_datetime - datetime.fromisoformat(data[coin][index+obs_i-1]['_id']) <= timedelta(minutes=10,seconds=10):
                                 
                                 change = (obs_event['price'] - initial_price)/initial_price
-                                if not np.isnan(change):
-                                    max_price_change = max(max_price_change, change)
-                                    min_price_change = min(min_price_change, change)
+                                max_price_change = max(max_price_change, change)
+                                min_price_change = min(min_price_change, change)
 
-                                    price_changes.append(change)
-                                    event_price_changes.append(change)
-                                else:
-                                    if coin not in nan:
-                                        nan[coin] = []
-                                    nan[coin].append(timestamp_event_triggered)
+                                price_changes.append(change)
+                                event_price_changes.append(change)
 
-                        complete_info[volume_standings][coin].append({'event': timestamp_event_triggered, 'mean': round_(np.mean(event_price_changes),4), 'std': round(np.std(event_price_changes, ddof=1),4),
-                                                                'max': max_price_change, 'min': min_price_change})
+                        complete_info[coin].append({'event': timestamp_event_triggered, 'mean': round_(np.mean(event_price_changes),4), 'std': round(np.std(event_price_changes, ddof=1),4),
+                                                                'max': max_price_change, 'min': min_price_change, 'lvl': volume_standings})
             else:
                 # in case an observations of a coin goes beyond "end_interval_analysis", then I skip the whole analysis of the coin,
                 # since the obsevations are ordered chronologically
                 # print(f'Analysis for {coin} is completed: Last timestamp: {datetime_obs.isoformat()}; {index}')
                 break
 
-    return complete_info, nan
+    return complete_info
 
 
-def download_show_output(minimum_event_number, minimum_coin_number, mean_threshold, lb_threshold, frequency_threshold, group_coins=False, best_coins_volatility=None, early_validation=False, std_multiplier=3, file_path=None):
+def download_show_output(minimum_event_number, minimum_coin_number, mean_threshold, lb_threshold, frequency_threshold, early_validation=False, std_multiplier=3, file_path=None, start_analysis=datetime(2023,1,1)):
     '''
     This function takes as input data stored in analysis_json/ ans return the output available for pandas DATAFRAME. 
     This is useful to have a good visualization about what TRIGGER have a better performance
@@ -348,229 +312,144 @@ def download_show_output(minimum_event_number, minimum_coin_number, mean_thresho
     with open(file_path, 'r') as file:
         print(f'Downloading {file_path}')
         # Retrieve shared memory for JSON data and "start_interval"
-        shared_data = json.load(file)
+        analysis_json = json.load(file)
 
 
     #return shared_data
-    shared_data = shared_data['data']
+    analysis_json = analysis_json['data']
     output = {}
     complete_info = {}
-    volatility_list = {}
+    first_event = {}
+    last_event = {}
 
-    # group best keys by volatility == False
-    if not group_coins:
-        for key in list(shared_data.keys()):
-            if key != 'coins' or key != 'events':
-
-                # compute number of events
-                n_coins = len(shared_data[key]['info'])
-                n_events = 0
-                mean_list = []
-                std_list = []
-
-                # I want to get earliest and latest event
-                # intitialize first_event and last_event
-                random_coin = list(shared_data[key]['info'].keys())[0]
-                first_event = datetime.fromisoformat(shared_data[key]['info'][random_coin][0]['event'])
-                last_event =  datetime(1970,1,1)
-                
-                for coin in shared_data[key]['info']:
-                    for event in shared_data[key]['info'][coin]:
-                        if early_validation and datetime.fromisoformat(event['event']) > early_validation: 
-                            continue
-                        else:
-                            n_events += 1
-                            mean_list.append(event['mean'])
-                            std_list.append(event['std'])
-                            first_event = min(datetime.fromisoformat(event['event']), first_event)
-                            last_event = max(datetime.fromisoformat(event['event']), last_event)
-                
-                # get frequency event per month
-                time_interval_analysis = (last_event - first_event).days
-                if time_interval_analysis != 0:
-                    event_frequency_month = round_((n_events / time_interval_analysis) * 30,2)
-
-                
-                if n_events >= minimum_event_number and n_coins >= minimum_coin_number and event_frequency_month >= frequency_threshold:
-
-                    vol, vol_value, buy_vol, buy_vol_value, timeframe, lvl = getsubstring_fromkey(key)
-                    volatility = key.split('vlty:')[1]
-                    
-                    mean = round_(np.mean(np.array(mean_list))*100,2)
-                    std = round_(pooled_standard_deviation(np.array(std_list), sample_size=int(timeframe))*100,2)
-                    upper_bound = mean + std
-                    lower_bound = mean - std
-
-                    if mean > mean_threshold and lower_bound > lb_threshold and mean * std_multiplier > std:
-
-                        if best_coins_volatility:
-                            if volatility not in volatility_list:
-                                volatility_list[volatility] = [{'key': key, 'upper_bound': upper_bound}]
-                            else:
-                                volatility_list[volatility].append({'key': key, 'upper_bound': upper_bound})
-                    
-                        complete_info[key] = {'info': shared_data[key]['info'], 'coins': n_coins, 'events': n_events, 'frequency/month': event_frequency_month}
-                        output[key] = {'mean': mean, 'std': std, 'upper_bound': upper_bound, 'lower_bound': lower_bound,
-                                        'n_coins': n_coins, 'n_events': n_events, 'frequency/month': event_frequency_month}
+    for event_key in list(analysis_json.keys()):
         
-        if best_coins_volatility:
-            keys_to_keep = {}
-            for volatility in volatility_list:
-                #print(volatility_list[volatility])
-                volatility_list[volatility].sort(key=lambda x: x['upper_bound'], reverse=True)
-                volatility_list[volatility] = volatility_list[volatility][:best_coins_volatility]
-                keys_to_keep[volatility] = [x['key'] for x in volatility_list[volatility]]
+        n_coins = len(analysis_json[event_key]['info'])
+        # print(key)
+        # print(analysis_json[key].keys())
+        vol, vol_value, buy_vol, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
+        n_events = 0
+        mean_by_coin_list = []
+        std_by_coin_list = []
+        max_by_coin_list = []
+        min_by_coin_list = []
+        standings_by_coin_list = []
+        list_coins = []
+        # I want to get earliest and latest event
+        # intitialize first_event and last_event
 
-            new_output = {}
-            new_info = {}
-            for key in output:
-                volatility = key.split('vlty:')[1]
-                if key in keys_to_keep[volatility]:
-                    new_output[key] = output[key]
-                    new_info[key] = complete_info[key]
+        if event_key not in first_event and len(analysis_json[event_key]['info']) != 0:
+            random_coin = list(analysis_json[event_key]['info'].keys())[0]
+            first_event[event_key] = datetime.fromisoformat(analysis_json[event_key]['info'][random_coin][0]['event'])
+            last_event[event_key] =  datetime(1970,1,1)
 
-            del output, complete_info
-            return new_output, new_info
-        
-    # Group Event keys by volatility == True         
-    else:
-        first_event = {}
-        last_event = {}
-        for key in list(shared_data.keys()):
-            n_coins = len(shared_data[key]['info'])
-            # print(key)
-            # print(shared_data[key].keys())
-            if key != 'coins' or key != 'events':
-                vol, vol_value, buy_vol, buy_vol_value, timeframe, lvl = getsubstring_fromkey(key)
-                key_split = key.split('/vlty:')
-                key_without_volatility = key_split[0]
-                n_events = 0
-                mean_by_coin_list = []
-                std_by_coin_list = []
-                list_coins = list(shared_data[key]['info'].keys())
-                # I want to get earliest and latest event
-                # intitialize first_event and last_event
-
-                if key_without_volatility not in first_event:
-                    random_coin = list(shared_data[key]['info'].keys())[0]
-                    first_event[key_without_volatility] = datetime.fromisoformat(shared_data[key]['info'][random_coin][0]['event'])
-                    last_event[key_without_volatility] =  datetime(1970,1,1)
-
-                for coin in shared_data[key]['info']:
-                    for event in shared_data[key]['info'][coin]:
-                        if early_validation and datetime.fromisoformat(event['event']) > early_validation: 
-                            continue
-                        else:
-                            n_events += 1
-                            mean_by_coin_list.append(event['mean'])
-                            std_by_coin_list.append(event['std'])
-                            first_event[key_without_volatility] = min(datetime.fromisoformat(event['event']), first_event[key_without_volatility])
-                            last_event[key_without_volatility] = max(datetime.fromisoformat(event['event']), last_event[key_without_volatility])
-
-                if len(mean_by_coin_list) > 0:
-                    mean_by_coin = round_(np.mean(np.array(mean_by_coin_list))*100,2)
-                    median_by_coin = round_(np.median(np.array(mean_by_coin_list))*100,2)
-                    std_by_coin = round_(pooled_standard_deviation(np.array(std_by_coin_list), sample_size=int(timeframe))*100,2)
-
-                    # Start filling output and complete_info
-                    if key_without_volatility not in output:
-                        # initialize output and complete_info
-                        output[key_without_volatility] = {'mean': [(mean_by_coin,len(mean_by_coin_list))], 'std': [(std_by_coin,len(std_by_coin_list))],
-                                                           'median': [(median_by_coin,len(mean_by_coin_list))], 'n_coins': list_coins, 'n_events': n_events}
-                        #update 'info' by adding "volatility" variable
-                        complete_info[key_without_volatility] = {'info': {}, 'n_coins': list_coins, 'events': n_events}
-                        for coin in shared_data[key]['info']:
-                            if coin not in complete_info[key_without_volatility]['info']:
-                                # initialize coin in complete_info
-                                complete_info[key_without_volatility]['info'][coin] = []
-                            for event in shared_data[key]['info'][coin]:
-                                # add volatility
-                                volatility = int(key.split('/vlty:')[1])
-                                event['volatility'] = volatility
-                                complete_info[key_without_volatility]['info'][coin].append(event)
-
-                    else:
-                        # update output
-                        output[key_without_volatility]['mean'].append((mean_by_coin,len(mean_by_coin_list)))
-                        output[key_without_volatility]['std'].append((std_by_coin,len(std_by_coin_list)))
-                        output[key_without_volatility]['median'].append((median_by_coin,len(mean_by_coin_list)))
-                        output[key_without_volatility]['n_coins'] += list_coins
-                        output[key_without_volatility]['n_events'] += n_events
-                        
-                        # update complete info
-                        complete_info[key_without_volatility]['n_coins'] += list_coins
-                        complete_info[key_without_volatility]['events'] += n_events
-                        for coin in shared_data[key]['info']:
-                            if coin not in complete_info[key_without_volatility]['info']:
-                                complete_info[key_without_volatility]['info'][coin] = []
-                            for event in shared_data[key]['info'][coin]:
-                                volatility = int(key.split('/vlty:')[1])
-                                event['volatility'] = volatility
-                                complete_info[key_without_volatility]['info'][coin].append(event)
-                else:
+        for coin in analysis_json[event_key]['info']:
+            for event in analysis_json[event_key]['info'][coin]:
+                if early_validation and datetime.fromisoformat(event['event']) > early_validation: 
                     continue
+                elif start_analysis and datetime.fromisoformat(event['event']) < start_analysis:
+                    continue
+                else:
+                    if coin not in list_coins:
+                        list_coins.append(coin)
+                    n_events += 1
+                    mean_by_coin_list.append(event['mean'])
+                    std_by_coin_list.append(event['std'])
+                    max_by_coin_list.append(event['max'])
+                    min_by_coin_list.append(event['min'])
+                    standings_by_coin_list.append(int(event['lvl']))
+                    first_event[event_key] = min(datetime.fromisoformat(event['event']), first_event[event_key])
+                    last_event[event_key] = max(datetime.fromisoformat(event['event']), last_event[event_key])
 
-        delete_keys = []
-        # Filter best keys by performance
-        for key_without_volatility in output:
-            mean = sum([item[0]*item[1] for item in output[key_without_volatility]['mean']]) / sum([item[1] for item in output[key_without_volatility]['mean']] )
-            std = sum([item[0]*item[1] for item in output[key_without_volatility]['std']]) / sum([item[1] for item in output[key_without_volatility]['std']] )
-            median = sum([item[0]*item[1] for item in output[key_without_volatility]['median']]) / sum([item[1] for item in output[key_without_volatility]['median']] )
+        if len(mean_by_coin_list) > 0:
+            mean_by_coin = round_(np.mean(np.array(mean_by_coin_list))*100,2)
+            median_max_by_coin = round_(np.median(np.array(max_by_coin_list))*100,2)
+            median_min_by_coin = round_(np.median(np.array(min_by_coin_list))*100,2)
+            max_by_coin = round_(np.mean(np.array(max_by_coin_list))*100,2)
+            min_by_coin = round_(np.mean(np.array(min_by_coin_list))*100,2)
+            std_by_coin = round_(pooled_standard_deviation(np.array(std_by_coin_list), sample_size=int(timeframe))*100,2)
+            avg_standings_by_coin = round_(np.mean(np.array(standings_by_coin_list)),2)
 
-            # get frequency event per month
-            time_interval_analysis = (last_event[key_without_volatility] - first_event[key_without_volatility]).days
-            n_events = output[key_without_volatility]['n_events']
-            if time_interval_analysis != 0:
-                event_frequency_month = round_((n_events / time_interval_analysis) * 30,2)
+            # Start filling output and complete_info
+            if event_key not in output:
+                # initialize output and complete_info
+                output[event_key] = {'mean': [(mean_by_coin,len(mean_by_coin_list))], 
+                                     'std': [(std_by_coin,len(std_by_coin_list))],
+                                     'max': [(max_by_coin,len(max_by_coin_list))],
+                                     'min': [(min_by_coin,len(min_by_coin_list))],
+                                     'median_max': [(median_max_by_coin,len(mean_by_coin_list))],
+                                     'median_min': [(median_min_by_coin,len(mean_by_coin_list))],
+                                     'standings': [(avg_standings_by_coin,len(standings_by_coin_list))],
+                                       'n_coins': list_coins, 'n_events': n_events}
+                #update 'info' by adding "volatility" variable
+                complete_info[event_key] = {'info': {}, 'n_coins': list_coins, 'events': n_events}
+                for coin in analysis_json[event_key]['info']:
+                    if coin not in complete_info[event_key]['info']:
+                        # initialize coin in complete_info
+                        complete_info[event_key]['info'][coin] = []
+                    for event in analysis_json[event_key]['info'][coin]:
+                        complete_info[event_key]['info'][coin].append(event)
 
-            if output[key_without_volatility]['n_events'] >= minimum_event_number and mean > mean_threshold and mean <= std_multiplier * std and event_frequency_month >= frequency_threshold:
-                output[key_without_volatility]['mean'] = mean
-                output[key_without_volatility]['median'] = median
-                output[key_without_volatility]['std'] = std
-                output[key_without_volatility]['upper_bound'] = output[key_without_volatility]['mean'] + output[key_without_volatility]['std']
-                output[key_without_volatility]['lower_bound'] = output[key_without_volatility]['mean'] - output[key_without_volatility]['std']
-                output[key_without_volatility]['n_coins'] = len(set(output[key_without_volatility]['n_coins']))
-                output[key_without_volatility]['frequency/month'] = event_frequency_month
-                complete_info[key_without_volatility]['n_coins'] = len(set(complete_info[key_without_volatility]['n_coins']))
-                complete_info[key_without_volatility]['frequency/month'] = event_frequency_month
             else:
-                delete_keys.append(key_without_volatility)
+                # update output
+                output[event_key]['mean'].append((mean_by_coin,len(mean_by_coin_list)))
+                output[event_key]['std'].append((std_by_coin,len(std_by_coin_list)))
+                output[event_key]['max'].append((max_by_coin,len(max_by_coin_list)))
+                output[event_key]['min'].append((min_by_coin,len(min_by_coin_list)))
+                output[event_key]['median_max'].append((median_max_by_coin,len(mean_by_coin_list)))
+                output[event_key]['median_min'].append((median_min_by_coin,len(mean_by_coin_list)))
+                output[event_key]['standings'].append((avg_standings_by_coin,len(standings_by_coin_list)))
+                output[event_key]['n_coins'] += list_coins
+                output[event_key]['n_events'] += n_events
+                
+                # update complete info
+                complete_info[event_key]['n_coins'] += list_coins
+                complete_info[event_key]['events'] += n_events
+                for coin in analysis_json[event_key]['info']:
+                    if coin not in complete_info[event_key]['info']:
+                        complete_info[event_key]['info'][coin] = []
+                    for event in analysis_json[event_key]['info'][coin]:
+                        complete_info[event_key]['info'][coin].append(event)
+        else:
+            continue
 
-        for key_without_volatility in delete_keys:
-            output.pop(key_without_volatility)
-            complete_info.pop(key_without_volatility)
+    delete_keys = []
+    # Filter best keys by performance
+    for event_key in output:
+        mean = sum([item[0]*item[1] for item in output[event_key]['mean']]) / sum([item[1] for item in output[event_key]['mean']] )
+        std = sum([item[0]*item[1] for item in output[event_key]['std']]) / sum([item[1] for item in output[event_key]['std']] )
+        median_max = sum([item[0]*item[1] for item in output[event_key]['median_max']]) / sum([item[1] for item in output[event_key]['median_max']] )
+        median_min = sum([item[0]*item[1] for item in output[event_key]['median_min']]) / sum([item[1] for item in output[event_key]['median_min']] )
+        max_ = sum([item[0]*item[1] for item in output[event_key]['max']]) / sum([item[1] for item in output[event_key]['max']] )
+        min_ = sum([item[0]*item[1] for item in output[event_key]['min']]) / sum([item[1] for item in output[event_key]['min']] )
+        avg_standings = sum([item[0]*item[1] for item in output[event_key]['standings']]) / sum([item[1] for item in output[event_key]['standings']] )
 
-        # Filter the best that share the same trigger (e.g. buy_vol_6h:0.75/vol_6h:10) but different timeframe
-        # in this case "best_coins_volatility" is intended for best coins by timeframe.
+        # get frequency event per month
+        time_interval_analysis = (last_event[event_key] - first_event[event_key]).days
+        n_events = output[event_key]['n_events']
+        if time_interval_analysis != 0:
+            event_frequency_month = round_((n_events / time_interval_analysis) * 30,2)
 
-        
-        if best_coins_volatility:
-            # ORDER BY PERFORMANCE
-            keys_filtered_by_timeframe = {}
-            for key_without_volatility in output:
-                key_without_timeframe = key_without_volatility.split('/timeframe')[0]
-                if key_without_timeframe not in keys_filtered_by_timeframe:
-                    keys_filtered_by_timeframe[key_without_timeframe] = []
-                keys_filtered_by_timeframe[key_without_timeframe].append({'key': key_without_volatility, 'mean': output[key_without_volatility]['mean']})
+        if output[event_key]['n_events'] >= minimum_event_number and mean > mean_threshold and mean <= std_multiplier * std and event_frequency_month >= frequency_threshold:
+            output[event_key]['mean'] = mean
+            output[event_key]['median_max'] = median_max
+            output[event_key]['median_min'] = median_min
+            output[event_key]['std'] = std
+            output[event_key]['max'] = max_
+            output[event_key]['min'] = min_
+            output[event_key]['standings'] = avg_standings
+            output[event_key]['upper_bound'] = output[event_key]['mean'] + output[event_key]['std']
+            output[event_key]['lower_bound'] = output[event_key]['mean'] - output[event_key]['std']
+            output[event_key]['n_coins'] = len(set(output[event_key]['n_coins']))
+            output[event_key]['frequency/month'] = event_frequency_month
+            complete_info[event_key]['n_coins'] = len(set(complete_info[event_key]['n_coins']))
+            complete_info[event_key]['frequency/month'] = event_frequency_month
+        else:
+            delete_keys.append(event_key)
+
+    for event_key in delete_keys:
+        output.pop(event_key)
+        complete_info.pop(event_key)
+
+    return output, complete_info
             
-            # GET THE BEST KEYS
-            keys_to_keep = {}
-            for key_without_timeframe in keys_filtered_by_timeframe:
-                #print(volatility_list[volatility])
-                keys_filtered_by_timeframe[key_without_timeframe].sort(key=lambda x: x['mean'], reverse=True)
-                keys_filtered_by_timeframe[key_without_timeframe] = keys_filtered_by_timeframe[key_without_timeframe][:best_coins_volatility]
-                keys_to_keep[key_without_timeframe] = [x['key'] for x in keys_filtered_by_timeframe[key_without_timeframe]]
-
-            # UPDATE OUTPUT AND COMPLLETE INFO
-            new_output = {}
-            new_info = {}
-            for key_without_volatility in output:
-                key_without_timeframe = key_without_volatility.split('/timeframe')[0]
-                if key_without_volatility in keys_to_keep[key_without_timeframe]:
-                    new_output[key_without_volatility] = output[key_without_volatility]
-                    new_info[key_without_volatility] = complete_info[key_without_volatility]
-
-            del output, complete_info
-            return new_output, new_info
-            
-        
