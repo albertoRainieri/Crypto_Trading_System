@@ -173,7 +173,7 @@ if __name__ == "__main__":
     minutes_timeframe = int(extract_timeframe(event_key))
     now = datetime.now()
     yesterday = now - timedelta(days=1)
-    limit = 10
+    limit = 20
 
 
     client = DatabaseConnection()
