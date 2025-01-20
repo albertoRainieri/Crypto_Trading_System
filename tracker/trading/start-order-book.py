@@ -114,6 +114,45 @@ def update_db_order_book_record(id, event_key, db_collection, order_book_info):
         now = datetime.now().isoformat()
         print(f"{now}: Order Book update failed for {event_key} with id {id}.") 
 
+def get_current_number_of_orderbook_scripts(db, event_keys):
+    live_order_book_scripts_number = 0
+    for collection in event_keys:
+        minutes_timeframe = int(extract_timeframe(collection))
+        yesterday = datetime.now() - timedelta(minutes=minutes_timeframe)
+        query = {"_id": {"$gt": yesterday.isoformat()}} 
+        docs = list(db[collection].find(query,{'_id':1, 'coin': 1}))
+        #logger.info(docs)
+        #len_docs = len(docs)
+        #logger.info(f'{len_docs} - {collection}')
+        live_order_book_scripts_number += len(docs)
+    
+    return live_order_book_scripts_number
+
+def get_sleep_seconds(live_order_book_scripts_number, number_script, second_binance_request, limit):
+    '''
+    Based on the number of live scripts, define the appropriate sleep time, for avoiding binance api ban
+    No more than 20 polling order_book_api each minute
+    '''
+    
+    # get the number of times the number of orderbookscripts is contained in the limit
+    minute_api_trigger = live_order_book_scripts_number // limit + 1
+    # based on the number script, assign the position of the starting minute (from 0,59)
+    n_times_greater_than_limit = min(number_script // limit, minute_api_trigger -1)
+    # define the minutes range, the script is allowed to poll binance api
+    minute_range = [i for i in range(n_times_greater_than_limit,59, minute_api_trigger)]
+    now = datetime.now()
+    current_minute = now.minute
+    for i in range(len(minute_range)):
+        if i != len(minute_range) -1:
+            if current_minute >= minute_range[i] and current_minute < minute_range[i+1]:
+                # minutes remaining + seconds to 60 + second_binance_request
+                sleep_seconds = (minute_range[i+1]- current_minute - 1)*60 + (60 - now.second) + second_binance_request
+                return sleep_seconds
+        else:
+            sleep_seconds = (60 + minute_range[0]- current_minute - 1)*60 + (60 - now.second) + second_binance_request
+            return sleep_seconds
+
+
 if __name__ == "__main__":
     '''
     This Script starts an order book polling whenever an event trade is started
@@ -133,19 +172,27 @@ if __name__ == "__main__":
     RESTART = bool(int(sys.argv[5]))
     minutes_timeframe = int(extract_timeframe(event_key))
     now = datetime.now()
+    yesterday = now - timedelta(days=1)
+    limit = 10
 
 
     client = DatabaseConnection()
     db = client.get_db(DATABASE_ORDER_BOOK)
     db_collection = db[event_key]
-    event_key_docs = list(db_collection.find({}, {'_id':1,'coin':1}))
+    event_key_docs = list(db_collection.find({"_id": {"$gt": yesterday.isoformat()}} , {'_id':1,'coin':1, 'number':1}))
     logger = LoggingController.start_logging()
-    
-
-    id_volume_standings_db = now.strftime("%Y-%m-%d") 
     db_volume_standings = client.get_db(DATABASE_VOLUME_STANDINGS)
-    volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find_one({"_id": id_volume_standings_db})
-    ranking = int(volume_standings['standings'][coin]['rank'])
+
+    # at midnight (00:00 only) it is possible to have an exception due to unavailibility of the info
+    try:
+        id_volume_standings_db = now.strftime("%Y-%m-%d") 
+        volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find_one({"_id": id_volume_standings_db})
+        ranking = int(volume_standings['standings'][coin]['rank'])
+    except:
+        id_volume_standings_db_2 = yesterday.strftime("%Y-%m-%d")
+        volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find_one({"_id": id_volume_standings_db_2})
+        ranking = int(volume_standings['standings'][coin]['rank'])
+    
 
 
     INITIALIZE_DOC_ORDERBOOK = True
@@ -153,48 +200,55 @@ if __name__ == "__main__":
 
     # count the current number of live order book scripts. Limit 20
     event_keys = db.list_collection_names()
-    live_order_book_scripts = 0
-    for collection in event_keys:
-        docs = list(db[collection].find({},{'_id':1, 'coin':1}))
-        for doc in docs:
-            dt = datetime.fromisoformat(doc['_id'])
-            if dt + timedelta(minutes=minutes_timeframe) > now:
-                live_order_book_scripts += 1
-
-    if live_order_book_scripts > 20:
-        logger.info(f'Order-Book: Max Number of order_book scripts reached, skipping {event_key} for {coin}')
-        STOP_SCRIPT = True
 
     # check in the current event_key if there are current jobs
     for doc in event_key_docs:
         # If True, the event trigger has just started, otherwise the system has restarted and we are trying to resume the order book polling
         if doc['_id'] == id:
-            INITIALIZE_DOC_ORDERBOOK = False       
+            INITIALIZE_DOC_ORDERBOOK = False
+            if 'number' in doc:
+                number_script=doc['number']
+            else:
+                number_script = None       
         # In case, the script has started in the script time windows, skip
         elif doc['coin'] == coin and now < datetime.fromisoformat(doc['_id']) + timedelta(minutes=minutes_timeframe):
-            #logger.info(f'coin {coin}-{event_key} is running, skipping script')
+            logger.info(f'coin {coin}-{event_key} is running, skipping script')
             STOP_SCRIPT = True
 
     # if the event_key has a ranking threshold ("lvl") than check if ranking is in that threshold
     if not RESTART and lvl != None and ranking > lvl:
         #logger.info(f'coin {coin} has a ranking {ranking} higher than the threshold of the event_key lvl {event_key}')
         STOP_SCRIPT = True 
+    
+    live_order_book_scripts_number = get_current_number_of_orderbook_scripts(db, event_keys)
+    if not RESTART:
+        number_script = live_order_book_scripts_number
+    elif number_script == None:
+        number_script = live_order_book_scripts_number
 
     # initialize
     if not STOP_SCRIPT and INITIALIZE_DOC_ORDERBOOK and not RESTART:
-        db_collection.insert_one({"_id": id, "coin": coin, "ranking": ranking, "data": {}})
+        db_collection.insert_one({"_id": id, "coin": coin, "ranking": ranking, "data": {}, "number": live_order_book_scripts_number})
 
     if not STOP_SCRIPT:
+        logger.info(f'Order-Book: event_key {event_key} triggered for {coin} - ranking {ranking }-  orderbook-script-number: {live_order_book_scripts_number}')
+        if live_order_book_scripts_number // limit != 0:
+            sleep(get_sleep_seconds(live_order_book_scripts_number, number_script, second_binance_request, limit))
+            
         # this id is used to save the order book
-        logger.info(f'Order-Book: event_key {event_key} triggered for {coin} - ranking {ranking }-  orderbook-script-number: {live_order_book_scripts}')
-        now = datetime.now()
         stop_script_datetime = datetime.now() + timedelta(minutes=minutes_timeframe)
 
         while datetime.now() < stop_script_datetime:
             order_book_info = get_info_order_book(coin, logger)
             if order_book_info != None:
                 update_db_order_book_record(id, event_key, db_collection, order_book_info)
-            sleep(60-datetime.now().second + second_binance_request)
+
+            event_keys = db.list_collection_names()
+            live_order_book_scripts_number = get_current_number_of_orderbook_scripts(db, event_keys)
+            sleep_seconds = get_sleep_seconds(live_order_book_scripts_number, number_script, second_binance_request, limit)
+            next_iso_trigger = (datetime.now() + timedelta(seconds=sleep_seconds)).isoformat()
+            #logger.info(f'Next trigger - {next_iso_trigger} - number_script: {number_script} -live_order_book_scripts_number {live_order_book_scripts_number} -limit: {limit} ')
+            sleep(sleep_seconds)
 
     
     client.close()

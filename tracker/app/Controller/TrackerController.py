@@ -131,10 +131,6 @@ class TrackerController:
                             logger.info(msg)
                             db_logger[DATABASE_TRACKER_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
                         continue
-                    else:
-                        if now.hour == 0 and now.minute == 5:
-                            pass
-                            #logger.info(f'{coin}, : Success. Position: {data["most_traded_coins"].index(coin)}')
                 except:
                     if now.hour == 0 and now.minute == 5: 
                         msg = f'{coin}: There are not enough observations in db_benchmark. Position: {data["most_traded_coins"].index(coin)}'

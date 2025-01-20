@@ -86,6 +86,136 @@ def restart_connection():
     sleep(total_remaining_seconds)
     #sleep(70)
     ws.close()
+
+def select_coins(LIST, db_benchmark, position_threshold):
+    f = open ('/backend/json/most_traded_coins.json', "r")
+    data = json.loads(f.read())
+    #coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
+    # I AM MOVING ETHUSDT TO SECOND LIST BECAUSE I NOTED THAT SOMETIMES TRADE VOLUME IN LIST 2 IS VERY LOW AND THEREFORE THE SAVE TO DB HAPPENS TOO LATE,.
+    # THIS IS RISKY FOR THE TRACKER WHICH IS NOT ABLE TO GET THE LAST DATA
+    most_traded_coins = data["most_traded_coins"]
+
+    collection_list = db_benchmark.list_collection_names()
+    summary = {}
+    for coin in collection_list:
+        volume_benchmark_coin_doc = db_benchmark[coin].find_one()
+        volume_30_avg = volume_benchmark_coin_doc['volume_30_avg']
+        # if the coin has at least 30 days of analysis, it is eligible for deletion
+        #logger.info(coin)
+        if 'Last_30_Trades' not in volume_benchmark_coin_doc:
+            elegible_for_deletion == False
+        elif len(volume_benchmark_coin_doc['Last_30_Trades']['list_last_30_trades']) == 30:
+            elegible_for_deletion = True
+        else:
+            elegible_for_deletion = False
+        
+        summary[coin] = {"volume_30_avg": volume_30_avg, "elegible_for_deletion": elegible_for_deletion}
+    
+    
+    all_volumes = list(summary.values())
+    #logger.info(all_volumes)
+    sorted_volumes = sorted(all_volumes, key=lambda x: x['volume_30_avg'], reverse=True)
+    #logger.info(sorted_volumes)
+    #threshold_volume = sorted_volumes[position_threshold]
+    
+    most_traded_coins_first_filter = {}
+    coins_discarded = 0
+    
+    for coin in most_traded_coins:
+        
+        # these coins are most likely not traded, but there some that are new entry, I need to list them all
+        if coin not in summary:
+            most_traded_coins_first_filter[coin] = {"position":None}
+        else:
+            position = sorted_volumes.index(summary[coin]) + 1
+            # if coin not in summary, it is a new entry
+            # if position below threshold, perfect
+            # if coin does not have at least 30 obs, it is not eligible for deletion
+            if position > position_threshold and summary[coin]['elegible_for_deletion']:
+                coins_discarded += 1
+                continue
+            else:
+                most_traded_coins_first_filter[coin] = {"position":position}
+                # if LIST == 'list1' and position % 2 == 1:
+                #     coin_list.append(coin)
+                # elif LIST == 'list2' and position % 2 == 0:
+                #     coin_list.append(coin)
+    
+
+    most_traded_coins_first_filter = sort_object_by_position(most_traded_coins_first_filter)
+
+    
+    #logger.info(most_traded_coins_first_filter)
+    logger.info(f'coins discarded: {coins_discarded} for list: {LIST}')
+
+    # the coin list of list1 is made of all coins in odd position, on the contrary list2 is made of all coins in even position
+    # for balancing the volume, I put BTCUSDT in list2
+    coin_list = []
+    if LIST == 'list1':
+        coin_list = ['ETHUSDT']
+    else:
+        coin_list = ['BTCUSDT']
+    
+    coins_in_none_position = []
+    for tuple_ in most_traded_coins_first_filter:
+        coin = tuple_[0]
+        position = tuple_[1]['position']
+        if coin in ['BTCUSDT', 'ETHUSDT']:
+            continue
+        if position != None:
+            if LIST == 'list1' and position % 2 == 1:
+                coin_list.append(coin)
+            elif LIST == 'list2' and position % 2 == 0:
+                coin_list.append(coin)
+        else:
+            coins_in_none_position.append(coin)
+    
+    n_coins = len(coin_list)
+    logger.info(f'list: {LIST} - n_coins already traded in the app: {n_coins} ' )
+    
+    coins_in_none_position = sorted(coins_in_none_position)
+    for coin in coins_in_none_position:
+        position = coins_in_none_position.index(coin)
+        if LIST == 'list1' and position % 2 == 0:
+            coin_list.append(coin)
+        elif LIST == 'list2' and position % 2 == 1:
+            coin_list.append(coin)
+    
+    n_coins = len(coin_list)
+    logger.info(f'list: {LIST} - total n_coins: {n_coins}' )
+    #logger.info(coin_list)
+    return coin_list
+
+
+    # len_coins_list = len(coin_list)
+    # logger.info(coin_list)
+    # logger.info(f'Trading {len_coins_list} coins for {LIST}')
+    # return coin_list
+
+
+def sort_object_by_position(obj):
+  """
+  Sorts the child objects of a dictionary based on their 'position' key.
+
+  Args:
+    obj: A dictionary where child objects have a 'position' key.
+
+  Returns:
+    A list of tuples, where each tuple contains the key and its corresponding 
+    child object, sorted by the 'position' key. 
+    Child objects with 'position' equal to None are placed last.
+  """
+
+  def sort_key(item):
+    position = item[1].get('position')
+    return float('inf') if position is None else position
+
+  return sorted(obj.items(), key=sort_key)         
+
+
+    
+
+
     
 
 def on_open(ws):
@@ -106,24 +236,7 @@ def on_open(ws):
     msg = f'on_open: Wss Started for {LIST}'
     logger.info(msg)
 
-    f = open ('/backend/json/most_traded_coins.json', "r")
-    data = json.loads(f.read())
-    #coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
-    # I AM MOVING ETHUSDT TO SECOND LIST BECAUSE I NOTED THAT SOMETIMES TRADE VOLUME IN LIST 2 IS VERY LOW AND THEREFORE THE SAVE TO DB HAPPENS TOO LATE,.
-    # THIS IS RISKY FOR THE TRACKER WHICH IS NOT ABLE TO GET THE LAST DATA
-    if LIST == 'list1':
-        coin_list = data["most_traded_coins"][:240]
-        if 'ETHUSDT' in coin_list:
-            coin_list.remove('ETHUSDT')
-        if 'BTCUSDT' not in coin_list:
-            coin_list = ['BTCUSDT'] + coin_list
-        
-    else:
-        coin_list = data["most_traded_coins"][240:]
-        if 'ETHUSDT' not in coin_list:
-            coin_list = ['ETHUSDT'] + coin_list
-        if 'BTCUSDT' in coin_list:
-            coin_list.remove('BTCUSDT')
+    coin_list = select_coins(LIST, db_benchmark, position_threshold)
 
     logger.info(f'{LIST}: {coin_list}')
     doc_db, prices, n_list_coins = initializeVariables(coin_list)
@@ -276,7 +389,9 @@ if __name__ == "__main__":
     client = DatabaseConnection()
     db_logger = client.get_db(DATABASE_LOGGING)
     database = client.get_db(DATABASE_MARKET)
+    db_benchmark = client.get_db(DATABASE_BENCHMARK)
     logger = LoggingController.start_logging()
+    position_threshold = 299
     ws = websocket.WebSocketApp("wss://stream.binance.com:9443/stream?streams=",
                               on_open = on_open,
                               on_message = on_message,
