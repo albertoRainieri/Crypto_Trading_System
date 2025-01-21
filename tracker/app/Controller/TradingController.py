@@ -99,8 +99,17 @@ class TradingController:
                 if obs[vol_field] == None or obs[buy_vol_field] == None:
                     continue
                 
-                if obs[vol_field] >= float(vol_value) and obs[buy_vol_field] >= float(buy_vol_value):
-
+                # if vol is higher than threshold, go ahead
+                if obs[vol_field] >= float(vol_value):
+                    # if field is below 0.5, discard events whose buy_vol is strictly greater than threshold
+                    if float(buy_vol_field) < 0.5:
+                        if obs[buy_vol_field] > float(buy_vol_value):
+                            continue
+                    # if field is above 0.5, discard events whose buy_vol is strictly lesser than threshold
+                    else:
+                        if obs[buy_vol_field] < float(buy_vol_value):
+                            continue
+                    
 
                     id = datetime.now().isoformat()
                     # Start Order Book Polling
@@ -225,12 +234,14 @@ class TradingController:
                 if obs[vol_field] == None or obs[buy_vol_field] == None:
                     continue
                 
-                if obs[vol_field] >= float(vol_value) and obs[buy_vol_field] >= float(buy_vol_value):
+                                # if vol is higher than threshold, go ahead
+                if obs[vol_field] >= vol_value:
+                    # if field is below 0.5, discard events whose buy_vol is strictly greater than threshold
+                    if buy_vol_value < 0.5 and obs[buy_vol_field] <= buy_vol_value or buy_vol_value > 0.5 and obs[buy_vol_field] >= buy_vol_value:
 
-
-                    id = obs['_id']
-                    # Start Order Book Polling
-                    subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, lvl, '0'])
+                        id = obs['_id']
+                        # Start Order Book Polling
+                        subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, lvl, '0'])
 
         else:
             logger.info('risk_configuration.json is null')
