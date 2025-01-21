@@ -39,7 +39,11 @@ def on_error(ws, error):
         db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': error})
     
     if 'sell_volume' in error:
+        ws.close()
         threading.Thread(target=restart_connection).start()
+        ws.run_forever()
+        
+        
 
 
 def on_close(*args):
