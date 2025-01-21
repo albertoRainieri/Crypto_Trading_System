@@ -211,6 +211,11 @@ class TradingController:
 
                     client.close()    
     # ASYNC DISABLED. THIS IS PREFERRED CHOICE even if CPU Support is high
+
+    def get_currency_coin():
+        return ['GBUSDT', 'FDUSDUSDT', 'EURUSDT']
+    
+
     def check_event_triggering_testing(coin, obs, volatility_coin, logger, db_logger, risk_configuration):
 
         '''
@@ -220,6 +225,10 @@ class TradingController:
 
 
         risk_configuration = TradingController.returnRiskConfiguration(risk_configuration, volatility_coin)
+        
+        #skip if it is a currency coin
+        if coin in TradingController.get_currency_coin():
+            return None
         
         if risk_configuration != None:
             for event_key in risk_configuration:

@@ -14,7 +14,11 @@ import random
 
 def binance_order_book_request(coin):
     url = f"https://api.binance.com/api/v3/depth?symbol={coin}&limit=5000"
-    response = requests.get(url=url)
+    try:
+        response = requests.get(url=url)
+    except:
+        logger.info('Code Exception on requests.get api.binance.com/api/v3/depth')
+        return None, None
     headers = response.headers
     status_code = response.status_code
     if status_code == 418:
@@ -159,11 +163,13 @@ if __name__ == "__main__":
     '''
     #decide which second to make request to binance
     second_binance_request = random.randint(5, 58)
+    logger = LoggingController.start_logging()
 
     coin = sys.argv[1]
     event_key = sys.argv[2]
     id = sys.argv[3]
     lvl = sys.argv[4]
+
     if lvl == 'None':
         lvl = None
     else:
@@ -180,7 +186,6 @@ if __name__ == "__main__":
     db = client.get_db(DATABASE_ORDER_BOOK)
     db_collection = db[event_key]
     event_key_docs = list(db_collection.find({"_id": {"$gt": yesterday.isoformat()}} , {'_id':1,'coin':1, 'number':1}))
-    logger = LoggingController.start_logging()
     db_volume_standings = client.get_db(DATABASE_VOLUME_STANDINGS)
 
     # at midnight (00:00 only) it is possible to have an exception due to unavailibility of the info
@@ -212,7 +217,7 @@ if __name__ == "__main__":
                 number_script = None       
         # In case, the script has started in the script time windows, skip
         elif doc['coin'] == coin and now < datetime.fromisoformat(doc['_id']) + timedelta(minutes=minutes_timeframe):
-            logger.info(f'coin {coin}-{event_key} is running, skipping script')
+            #logger.info(f'coin {coin}-{event_key} is running, skipping script')
             STOP_SCRIPT = True
 
     # if the event_key has a ranking threshold ("lvl") than check if ranking is in that threshold
