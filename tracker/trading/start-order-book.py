@@ -58,7 +58,7 @@ def get_statistics(resp):
         cumulative_ask_volume += price_order * quantity_order
         cumulative_ask_volume_ratio = round_((cumulative_ask_volume / total_ask_volume),2)
         if cumulative_ask_volume_ratio >= next_delta_threshold:
-            summary_ask_orders.append((round_(( price_order -  current_price ) / current_price, 2), cumulative_ask_volume_ratio ))
+            summary_ask_orders.append((round_(( price_order -  current_price ) / current_price, 3), cumulative_ask_volume_ratio ))
             next_delta_threshold = cumulative_ask_volume_ratio + delta
 
     next_delta_threshold = 0 + delta
@@ -68,7 +68,7 @@ def get_statistics(resp):
         cumulative_bid_volume += price_order * quantity_order
         cumulative_bid_volume_ratio = round_((cumulative_bid_volume / total_bid_volume),2)
         if cumulative_bid_volume_ratio >= next_delta_threshold:
-            summary_bid_orders.append((round_(( price_order -  current_price ) / current_price, 2), cumulative_bid_volume_ratio ))
+            summary_bid_orders.append((round_(( price_order -  current_price ) / current_price, 3), cumulative_bid_volume_ratio ))
             next_delta_threshold = cumulative_bid_volume_ratio + delta
             #print(f'{next_delta_threshold}: {bid_order}')
 
