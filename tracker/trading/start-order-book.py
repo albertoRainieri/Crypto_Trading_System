@@ -120,17 +120,21 @@ def update_db_order_book_record(id, event_key, db_collection, order_book_info):
 
 def get_current_number_of_orderbook_scripts(db, event_keys):
     live_order_book_scripts_number = 0
+    numbers_filled = []
     for collection in event_keys:
+        
         minutes_timeframe = int(extract_timeframe(collection))
         yesterday = datetime.now() - timedelta(minutes=minutes_timeframe)
         query = {"_id": {"$gt": yesterday.isoformat()}} 
-        docs = list(db[collection].find(query,{'_id':1, 'coin': 1}))
+        docs = list(db[collection].find(query,{'_id':1, 'number': 1}))
+        for doc in docs:
+            numbers_filled.append(doc['number'])
         #logger.info(docs)
         #len_docs = len(docs)
         #logger.info(f'{len_docs} - {collection}')
         live_order_book_scripts_number += len(docs)
     
-    return live_order_book_scripts_number
+    return numbers_filled, live_order_book_scripts_number
 
 def get_sleep_seconds(live_order_book_scripts_number, number_script, second_binance_request, limit):
     '''
@@ -225,18 +229,17 @@ if __name__ == "__main__":
         #logger.info(f'coin {coin} has a ranking {ranking} higher than the threshold of the event_key lvl {event_key}')
         STOP_SCRIPT = True 
     
-    live_order_book_scripts_number = get_current_number_of_orderbook_scripts(db, event_keys)
-    if not RESTART:
-        number_script = live_order_book_scripts_number
-    elif number_script == None:
-        number_script = live_order_book_scripts_number
-
+    numbers_filled, live_order_book_scripts_number = get_current_number_of_orderbook_scripts(db, event_keys)
     # initialize
     if not STOP_SCRIPT and INITIALIZE_DOC_ORDERBOOK and not RESTART:
-        db_collection.insert_one({"_id": id, "coin": coin, "ranking": ranking, "data": {}, "number": live_order_book_scripts_number})
+        for i in range(1, live_order_book_scripts_number+2):
+            if i not in numbers_filled:
+                number_script = i
+                break
+        db_collection.insert_one({"_id": id, "coin": coin, "ranking": ranking, "data": {}, "number": number_script})
 
     if not STOP_SCRIPT:
-        logger.info(f'Order-Book: event_key {event_key} triggered for {coin} - ranking {ranking }-  orderbook-script-number: {live_order_book_scripts_number}')
+        logger.info(f'Order-Book: event_key {event_key} triggered for {coin} - ranking {ranking }-  orderbook-script-number: {number_script}/{live_order_book_scripts_number}')
         if live_order_book_scripts_number // limit != 0:
             sleep(get_sleep_seconds(live_order_book_scripts_number, number_script, second_binance_request, limit))
             
@@ -249,7 +252,7 @@ if __name__ == "__main__":
                 update_db_order_book_record(id, event_key, db_collection, order_book_info)
 
             event_keys = db.list_collection_names()
-            live_order_book_scripts_number = get_current_number_of_orderbook_scripts(db, event_keys)
+            numbers_filled, live_order_book_scripts_number = get_current_number_of_orderbook_scripts(db, event_keys)
             sleep_seconds = get_sleep_seconds(live_order_book_scripts_number, number_script, second_binance_request, limit)
             next_iso_trigger = (datetime.now() + timedelta(seconds=sleep_seconds)).isoformat()
             #logger.info(f'Next trigger - {next_iso_trigger} - number_script: {number_script} -live_order_book_scripts_number {live_order_book_scripts_number} -limit: {limit} ')
