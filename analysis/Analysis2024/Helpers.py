@@ -1084,11 +1084,12 @@ def get_full_timeseries(event_key, metadata_order_book):
     data_uploaded = False
     
     full_timeseries = {}
-    print(f'Starts updating Full Timeseries {event_key}')
+    
     for coin in create_full_timeseries_summary[event_key]:
         # check if there are full_timeseries to be created
         if len(create_full_timeseries_summary[event_key][coin]) != 0:
             if not data_uploaded:
+                print(f'Starts updating Full Timeseries')
                 f = open(path_timeseries, "r")
                 timeseries_json = json.loads(f.read())
                 f = open(path_order_book, "r")
@@ -1128,12 +1129,15 @@ def get_full_timeseries(event_key, metadata_order_book):
                         full_timeseries[coin][start_timestamp]['data'][ts][4] = ask_volume
                         full_timeseries[coin][start_timestamp]['data'][ts][5] = bid_orders
                         full_timeseries[coin][start_timestamp]['data'][ts][6] = ask_orders
-    
+        
+    if not data_uploaded:
+        print(f'Full Timeseries is up to date ')
+
     if len(full_timeseries) != 0:
         with open(path_full_timeseries, 'w') as file:
             json.dump(full_timeseries, file)
-    with open(path_full_timeseries_metadata, 'w') as file:
-        json.dump(metadata_full_timeseries, file)
+        with open(path_full_timeseries_metadata, 'w') as file:
+            json.dump(metadata_full_timeseries, file)
 
 def determine_price_levels(current_price, orders):
     pass
@@ -1199,10 +1203,10 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit):
                     ask_price_levels.append(ask_price_level)
                     if bid_actual_jump:
                         for lvl_bid in bid_price_level:
-                            ax[0].plot(dt, lvl_bid[0], 'ro', color='red', markersize=1)
+                            ax[0].plot(dt, lvl_bid[0], 'go', markersize=1)
                     if ask_actual_jump:
                         for lvl_ask in ask_price_level:
-                            ax[0].plot(dt, lvl_ask[0], 'ro', color='green', markersize=1)
+                            ax[0].plot(dt, lvl_ask[0], 'ro', markersize=1)
 
                     # this is the cumulative level (from 0 to 100) based on $limit
                     # Basically I want to get the total bid/volume with respect to the limit
@@ -1220,17 +1224,17 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit):
                     bid_ask_volume_list.append(0)
 
 
-            ax[0].plot(list_datetime, price_list, linewidth=0.5)
+            ax[0].plot(list_datetime, price_list, linewidth=0.5, color='black')
             ax[0].axvline(x=start_datetime, color='blue', linestyle='--')
             ax[0].axvline(x=end_datetime, color='blue', linestyle='--')
             ax[0].set_ylabel('Price')
             ax[0].grid(True)
             ax[0].set_title(f'{coin} -- {start_timestamp} -- Event_key: {event_key}')
 
-            ax[1].plot(list_datetime, bid_ask_volume_list, color='green', linewidth=0.5, alpha=0.8)
-            ax[1].fill_between(list_datetime, bid_ask_volume_list, bid_volume_list, alpha=0.3, color='green', label='Area Between')
-            ax[1].plot(list_datetime, bid_volume_list, color='red', linewidth=0.5, alpha=0.8)
-            ax[1].fill_between(list_datetime, bid_volume_list, 0, alpha=0.3, color='red', label='Area Under 2') # Fill to zero
+            ax[1].plot(list_datetime, bid_ask_volume_list, color='red', linewidth=0.5, alpha=0.8)
+            ax[1].fill_between(list_datetime, bid_ask_volume_list, bid_volume_list, alpha=0.3, color='red', label='Area Between')
+            ax[1].plot(list_datetime, bid_volume_list, color='green', linewidth=0.5, alpha=0.8)
+            ax[1].fill_between(list_datetime, bid_volume_list, 0, alpha=0.3, color='green', label='Area Under 2') # Fill to zero
             ax[1].axvline(x=start_datetime, color='blue', linestyle='--')
             ax[1].axvline(x=end_datetime, color='blue', linestyle='--')
             ax[1].set_ylabel('Bid-Ask Volume')
@@ -1242,8 +1246,8 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit):
             ax[2].set_ylabel('Volume')
             ax[2].grid(True)
 
-
-    return
+            plt.show()
+            plt.close()
             
     
 
@@ -1261,7 +1265,13 @@ def get_timeseries(info, check_past=1440, check_future=1440, jump=0.03, limit=0.
 
     n_event_keys = len(info)
     for event_key, event_key_i in zip(info, range(1,n_event_keys+1)):
+        print('')
+        print('')
+        print('')
+        print('#####################################################################')
         print(f'{event_key_i}/{n_event_keys} Event Key: {event_key}')
+        print('#####################################################################')
+        
         request_order_book = {event_key: {}}
         for coin in info[event_key]['info']:
             request_order_book[event_key][coin] = []
@@ -1280,8 +1290,7 @@ def get_timeseries(info, check_past=1440, check_future=1440, jump=0.03, limit=0.
 
         if plot:
             plot_timeseries(event_key, check_past, check_future, jump, limit)
-            return
-
+            
     
 
 
@@ -1973,6 +1982,7 @@ def get_price_levels(price, bid_orders, jump=0.03, limit=0.4):
     previous_level = 0
     price_levels = []
     n_decimals = count_decimals(price)
+    cumulative_level_without_jump = 0
     for level in bid_orders:
         cumulative_level = level[1]
         price_change = level[0]
@@ -1984,10 +1994,6 @@ def get_price_levels(price, bid_orders, jump=0.03, limit=0.4):
             price_levels.append(info)
         elif abs(price_change) <= limit:
             cumulative_level_without_jump = cumulative_level
-        else:
-            print('check this line in get_price_levels')
-            print(bid_orders)
-            cumulative_level_without_jump = 0
 
         previous_level = cumulative_level
     
@@ -1995,6 +2001,9 @@ def get_price_levels(price, bid_orders, jump=0.03, limit=0.4):
     if len(price_levels) == 0:
         info = (None, None, cumulative_level_without_jump, False)
         price_levels.append(info)
+    
+    if cumulative_level_without_jump == 0:
+        print(bid_orders)
     
     return price_levels
 
