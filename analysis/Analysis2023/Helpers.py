@@ -510,7 +510,7 @@ def updateAnalysisJson(shared_data_value, file_path, start_next_analysis, slice_
         json.dump(json_to_save, file)
         
 
-def getsubstring_fromkey(key):
+def getsubstring_fromkey(text):
     '''
     This simple function returns the substrings for volume, buy_volume and timeframe from "key". 
     "key" is the label that defines an event. "key" is created in the function "wrap_analyze_events_multiprocessing"
@@ -533,10 +533,10 @@ def getsubstring_fromkey(key):
             lvl = None
 
         buy_vol = 'buy_vol_' + match.group(1)
-        buy_vol_value = match.group(2)
+        buy_vol_value = float(match.group(2))
         vol = 'vol_' + match.group(3)
-        vol_value = match.group(4)
-        timeframe = match.group(5)
+        vol_value = int(match.group(4))
+        timeframe = int(match.group(5))
     
     return vol, vol_value, buy_vol, buy_vol_value, timeframe, lvl
 

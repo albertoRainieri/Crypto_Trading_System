@@ -297,11 +297,79 @@ class AnalysisController:
         final_response = {'data': response, 'msg': log_nan_replaced}
         return final_response
     
+    def get_timeseries(request):
+        '''
+        this function delivers the timeseries for a set of coins.
+        Coin, timestamp, timeframe must be given for each event
+        '''
+
+        #print(request)
+        #request = json.loads(request)
+        #let's define a limit number of events for each coin. This is to avoid responses too heavy.
+        event_key = list(request['info'].keys())[0]
+        vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
+        timeframe = request['timeframe']
+        check_past = request['check_past']
+        check_future = request['check_future']
+
+
+        client = DatabaseConnection()
+        db_tracker = client.get_db(DATABASE_TRACKER)
+
+        coins = list(request['info'][event_key].keys())
+
+        response = {'data': {}, 'msg': 'All data have been downloaded', 'retry': False}
+        STOP = False
+        n_coin = []
+        
+        n_events = 0
+        for coin in coins:
+            start_timestamp_list = request['info'][event_key][coin]
+
+            for start_timestamp in start_timestamp_list:
+                if coin not in n_coin:
+                    n_coin.append(coin)
+
+                n_events += 1
+
+                timeseries_start = datetime.fromisoformat(start_timestamp).replace(second=0, microsecond=0)
+                # datetime_start is the beginning start from which retrieving the observation
+                datetime_start = timeseries_start - timedelta(minutes=check_past)
+                datetime_end = timeseries_start + timedelta(minutes=timeframe) + timedelta(minutes=check_future)
+                # let's get the iso format timestamps for querying mongodb
+                timestamp_start = datetime_start.isoformat()
+                timestamp_end = datetime_end.isoformat()
+
+                filter_query = {'_id': 1, 'price': 1,
+                                vol_field: 1, buy_vol_field: 1}
+                
+                docs = list(db_tracker[coin].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}}, filter_query))
+                
+                if coin not in response['data']:
+                    response['data'][coin] = {}
+            
+                response['data'][coin][start_timestamp] = {'data': docs}
+
+        total_timeseries_expected = sum([1 for coin in request['info'][event_key] for start_timestamp in request['info'][event_key][coin] ])
+        total_timeseries_downloaded = sum([1 for coin in response['data'] for _ in response['data'][coin]])
+
+        if response['msg'] == 'WARNING: Request too big. Not all data have been downloaded, retry...':
+            response['msg'] = f'WARNING: Request too big. Not all data have been downloaded. {total_timeseries_downloaded}/{total_timeseries_expected}. Retry...'
+        elif total_timeseries_expected != total_timeseries_downloaded:
+            response['msg'] = f'WARNING: timeseries downloaded: {total_timeseries_downloaded}/{total_timeseries_expected}'
+        else:
+            response['msg'] = f'All data have been downloaded. {total_timeseries_downloaded}/{total_timeseries_expected}'
+
+        client.close()
+        json_string = jsonable_encoder(response)
+        return JSONResponse(content=json_string)
+    
 
     def getTimeseries(request):
         '''
         this function delivers the timeseries for a set of coins.
         Coin, timestamp, timeframe must be given for each event
+        DEPRECATED
         '''
 
         #print(request)

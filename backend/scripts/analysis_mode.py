@@ -81,25 +81,26 @@ def main():
         days_missing = now - last_timestamp_db
         logger.info(days_missing)
         
-        if DATA_RECOVERING or days_missing > timedelta(days=3):
+        if DATA_RECOVERING or days_missing > timedelta(days=DAYS*2):
             logger.info('Started Run for recovering data from Server')
             # this section we make sure that analysis/json_tracker and, analysis/json_market and db are aligned
             path_json_tracker, path_json_market, data_tracker, data_market, last_datetime_saved, timedelta_market_tracker, TRACKER, MARKET= return_most_recent_json(last_timestamp_db, last_timestamp_db_tracker, last_timestamp_db_market, TRACKER, MARKET)
+
             datetime_start = last_datetime_saved + timedelta(seconds=DELAY_SEARCH_SECONDS)
             
             # if there are more than DAYS days of missing data, keep fetching data
-            if days_missing > timedelta(days=DAYS):
+            if days_missing > timedelta(days=DAYS*2):
                 DATA_RECOVERING = True
 
             # if there are less than DAYS days of missing data, stop fetching data
-            if DATA_RECOVERING and days_missing < timedelta(days=DAYS):
+            if DATA_RECOVERING and days_missing < timedelta(days=DAYS*2):
                 DATA_RECOVERING = False
                 logger.info(f'Less than {DAYS} days of data missing. Last Run')
                 # start last data fetching from server
             
 
-            if timedelta_market_tracker != None and TRACKER and MARKET:
-                datetime_end = datetime_start + min(timedelta(days=DAYS), timedelta_market_tracker-timedelta(minutes=5))
+            if timedelta_market_tracker != None:
+                datetime_end = datetime_start + min(timedelta(days=DAYS), timedelta_market_tracker)
             else:
                 datetime_end = datetime_start + timedelta(days=DAYS)
             
@@ -108,6 +109,11 @@ def main():
             #     datetime_end = datetime_start + timedelta(days=0.5)
 
             datetime_start_iso = datetime_start.isoformat()
+
+            # THIS IS A WORKAROUND IN CASE DB IS NOT ALIGNED AND FILESYSTEM IS, 
+            # IT CAN HAPPEN IF IN PRODUCTION, TRACKER HAS MISSED DATA, BUT MARKET IS OK
+            if datetime_end < datetime_start:
+                datetime_end = datetime_start + timedelta(days=DAYS)
             datetime_end_iso = datetime_end.isoformat()
 
             if TRACKER and MARKET:
@@ -166,17 +172,17 @@ def main():
 
             if response_tracker != None and response_market != None and tracker_status_code == 200 and market_status_code == 200:
                 logger.info('Uploading both Market and Tracker Data')
-                update_data_json(response_tracker, response_market, data_tracker, data_market, path_json_tracker, path_json_market, db_tracker, db_market, TRACKER, MARKET, DAYS, datetime_end, timedelta_market_tracker)
+                update_data_json(response_tracker, response_market, data_tracker, data_market, path_json_tracker, path_json_market, db_tracker, db_market, TRACKER, MARKET, DAYS, datetime_end, datetime_start)
                 del data_tracker, data_market
                 sleep(10)
             elif response_tracker != None and tracker_status_code == 200:
                 logger.info('Uploading Tracker Data to DB and Filesystem')
-                update_data_json(response_tracker, response_market, data_tracker, data_market, path_json_tracker, path_json_market, db_tracker, db_market, TRACKER, MARKET, DAYS, datetime_end, timedelta_market_tracker)
+                update_data_json(response_tracker, response_market, data_tracker, data_market, path_json_tracker, path_json_market, db_tracker, db_market, TRACKER, MARKET, DAYS, datetime_end, datetime_start)
                 del data_tracker, data_market
                 sleep(10)
             elif response_market != None and market_status_code == 200:
                 logger.info('Uploading Market Data to DB and Filesystem')
-                update_data_json(response_tracker, response_market, data_tracker, data_market, path_json_tracker, path_json_market, db_tracker, db_market, TRACKER, MARKET, DAYS, datetime_end, timedelta_market_tracker)
+                update_data_json(response_tracker, response_market, data_tracker, data_market, path_json_tracker, path_json_market, db_tracker, db_market, TRACKER, MARKET, DAYS, datetime_end, datetime_start)
                 del data_tracker, data_market
                 sleep(10)
             else:
@@ -201,7 +207,7 @@ def areSameTimestamps(timestamp_a, timestamp_b):
     else:
         return False
             
-def update_data_json(response_tracker, response_market, data_tracker, data_market, path_json_tracker, path_json_market, db_tracker, db_market, TRACKER, MARKET, DAYS, datetime_end, timedelta_market_tracker):
+def update_data_json(response_tracker, response_market, data_tracker, data_market, path_json_tracker, path_json_market, db_tracker, db_market, TRACKER, MARKET, DAYS, datetime_end, datetime_start):
     '''
     this function updates the most recent json in analysis/json/
     it also updates the mongodb_analysis
@@ -232,9 +238,12 @@ def update_data_json(response_tracker, response_market, data_tracker, data_marke
         if len(coin_obs) > 0:
             logger.info(coin_obs[-1])
 
-        if btc_obs == 0:
+        if btc_obs == 0 and (datetime_end - datetime_start) >= timedelta(days=DAYS) - timedelta(minutes=1):
             datetime_creation = (datetime.fromisoformat(data_tracker['data']['BTCUSDT'][-1]['_id']) + timedelta(days=DAYS))
             datetime_creation = (pytz.utc.localize(datetime_creation)).isoformat()
+        elif btc_obs == 0:
+            print(datetime_end.isoformat())
+            datetime_creation = datetime_end.isoformat()
         else:
             datetime_creation = datetime.fromisoformat(data_tracker['data']['BTCUSDT'][-1]['_id'])
             datetime_creation = (pytz.utc.localize(datetime_creation)).isoformat()
@@ -278,9 +287,12 @@ def update_data_json(response_tracker, response_market, data_tracker, data_marke
         if len(coin_obs) > 0:
             logger.info(coin_obs[-1])
 
-        if btc_obs == 0:
+        if btc_obs == 0 and datetime_end - datetime_start >= timedelta(days=DAYS) - timedelta(minutes=1):
+            datetime_creation = (datetime.fromisoformat(data_tracker['data']['BTCUSDT'][-1]['_id']) + timedelta(days=DAYS))
+            datetime_creation = (pytz.utc.localize(datetime_creation)).isoformat()
+        elif btc_obs == 0:
 
-            datetime_creation = datetime_end.isoformat()
+            datetime_creation = datetime_end
         else:
             datetime_creation = datetime.fromisoformat(data_market['data']['BTCUSDT'][-1]['_id'])
             datetime_creation = (pytz.utc.localize(datetime_creation)).isoformat()

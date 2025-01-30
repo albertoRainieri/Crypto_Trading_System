@@ -38,6 +38,8 @@ def on_error(ws, error):
         logger.error(f'error is: {error}')
         db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': error})
     
+    # condition added because of bug error on 21/01/2025, the thread was stuck on "sell_volume" error...
+    #  something wrong happened in variable initialization and this condition helps restarting the script in case of this error.
     if 'sell_volume' in error:
         ws.close()
         threading.Thread(target=restart_connection).start()

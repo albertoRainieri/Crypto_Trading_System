@@ -31,8 +31,8 @@ async def getBenchmarkInfo():#, request: Request = Depends(Authorization.get_cur
     return AnalysisController.getBenchmarkInfo()
 
 @router.post("/get-timeseries")
-async def getTimeseries(obj: dict = Body(...)):#, request: Request = Depends(Authorization.get_current_active_user)):
-    return AnalysisController.getTimeseries(obj)
+async def get_timeseries(obj: dict = Body(...)):#, request: Request = Depends(Authorization.get_current_active_user)):
+    return AnalysisController.get_timeseries(obj)
 
 @router.post("/riskmanagement-configuration")
 async def riskmanagement_configuration(obj: dict = Body(...)):#, request: Request = Depends(Authorization.get_current_active_user)):
