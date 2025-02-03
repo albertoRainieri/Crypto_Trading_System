@@ -10,15 +10,12 @@ then
     echo 'Analysis Mode On'
     /bin/bash /backend/scripts/analysis_mode.sh &
 else
-    /bin/bash /backend/scripts/wss_python_process.sh &
-    sleep 5
+    for i in $(seq 1 "${SETS_WSS_BACKEND}"); do  # Double quotes are important!
+        echo "starting wss-python list${i}"
+        /bin/bash /backend/scripts/wss_python_process.sh list${i} &
+        sleep 2
+    done
 
-    # Start the third process
-    /bin/bash /backend/scripts/wss_python_process_2.sh &
-#     sleep 5
-#     /bin/bash /backend/scripts/wss_python_process_3.sh &
-#     sleep 5
-#     /bin/bash /backend/scripts/wss_python_process_4.sh &
 fi
 
 

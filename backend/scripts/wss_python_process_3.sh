@@ -1,1 +1,0 @@
-python3 /backend/scripts/wss-python-2.py 'list1-extra'

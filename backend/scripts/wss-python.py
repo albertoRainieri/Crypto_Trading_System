@@ -16,11 +16,16 @@ import sys
 
 
 LIST = sys.argv[1]
+LIST_N = int(LIST[-1])
 TIME = "T"
 PRICE = "p"
 QUANTITY = "q"
 ORDER = "m"
 METHOD = 'aggTrades'
+LOST_CONNECTION = []
+MAX_CONNECTION_LOST = int(os.getenv('MAX_CONNECTION_LOST')) #2
+CHECK_PERIOD_MINUTES = int(os.getenv('CHECK_PERIOD_MINUTES')) #60
+SLEEP_LAST_LIST = int(os.getenv('SLEEP_LAST_LIST')) #60
 
 
 
@@ -37,6 +42,25 @@ def on_error(ws, error):
     else:
         logger.error(f'error is: {error}')
         db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': error})
+        if 'Connection to remote host was lost' in error and LIST_N == SETS_WSS_BACKEND:
+            ts = datetime.now().isoformat()
+            LOST_CONNECTION.append(ts)
+            discard_ts = []
+            conn_lost = 0
+            for ts in LOST_CONNECTION:
+                if datetime.fromisoformat(ts) > datetime.now() - timedelta(minutes=CHECK_PERIOD_MINUTES):
+                    conn_lost += 1
+                else:
+                    discard_ts.append(ts)
+            
+            for ts in discard_ts:
+                LOST_CONNECTION.remove(ts)
+            if conn_lost >= MAX_CONNECTION_LOST:
+                msg = f'Sleep {LIST} for {SLEEP_LAST_LIST} minutes'
+                logger.info(msg)
+                sleep(60*SLEEP_LAST_LIST)
+
+
     
     # condition added because of bug error on 21/01/2025, the thread was stuck on "sell_volume" error...
     #  something wrong happened in variable initialization and this condition helps restarting the script in case of this error.
@@ -53,14 +77,10 @@ def on_close(*args):
         del os.environ['NOW']
     
         
-    sleep(10)
+    sleep(10*LIST_N)
     msg = f"on_close: Closing Wss Connection {LIST}"
     db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
     logger.info(msg)
-
-    if LIST == 'list2':
-        extra_seconds_list_2 = 60
-        sleep(extra_seconds_list_2)
 
     threading.Thread(target=restart_connection).start()
     ws.run_forever()
@@ -145,36 +165,27 @@ def select_coins(LIST, db_benchmark, position_threshold):
                 continue
             else:
                 most_traded_coins_first_filter[coin] = {"position":position}
-                # if LIST == 'list1' and position % 2 == 1:
-                #     coin_list.append(coin)
-                # elif LIST == 'list2' and position % 2 == 0:
-                #     coin_list.append(coin)
-    
 
     most_traded_coins_first_filter = sort_object_by_position(most_traded_coins_first_filter)
 
     
-    #logger.info(most_traded_coins_first_filter)
-    logger.info(f'coins discarded: {coins_discarded} for list: {LIST}')
+    #logger.info(f'coins discarded: {coins_discarded} for list: {LIST}')
 
-    # the coin list of list1 is made of all coins in odd position, on the contrary list2 is made of all coins in even position
-    # for balancing the volume, I put BTCUSDT in list2
     coin_list = []
-    if LIST == 'list1':
-        coin_list = ['ETHUSDT']
-    else:
-        coin_list = ['BTCUSDT']
+
+    best_coins = [tuple_[0] for tuple_ in most_traded_coins_first_filter[:SETS_WSS_BACKEND]]
     
     coins_in_none_position = []
     for tuple_ in most_traded_coins_first_filter:
         coin = tuple_[0]
         position = tuple_[1]['position']
-        if coin in ['BTCUSDT', 'ETHUSDT']:
+        if coin in best_coins:
+            position_best_coin = best_coins.index(coin) + 1
+            if position_best_coin == legend_list[LIST]['best_coin']:
+                coin_list.append(coin)
             continue
         if position != None:
-            if LIST == 'list1' and position % 2 == 1:
-                coin_list.append(coin)
-            elif LIST == 'list2' and position % 2 == 0:
+            if position % SETS_WSS_BACKEND == legend_list[LIST]['position']:
                 coin_list.append(coin)
         else:
             coins_in_none_position.append(coin)
@@ -185,21 +196,13 @@ def select_coins(LIST, db_benchmark, position_threshold):
     coins_in_none_position = sorted(coins_in_none_position)
     for coin in coins_in_none_position:
         position = coins_in_none_position.index(coin)
-        if LIST == 'list1' and position % 2 == 0:
-            coin_list.append(coin)
-        elif LIST == 'list2' and position % 2 == 1:
+        if position % SETS_WSS_BACKEND == legend_list[LIST]['position']:
             coin_list.append(coin)
     
     n_coins = len(coin_list)
     logger.info(f'list: {LIST} - total n_coins: {n_coins}' )
-    #logger.info(coin_list)
     return coin_list
 
-
-    # len_coins_list = len(coin_list)
-    # logger.info(coin_list)
-    # logger.info(f'Trading {len_coins_list} coins for {LIST}')
-    # return coin_list
 
 
 def sort_object_by_position(obj):
@@ -346,11 +349,8 @@ def getStatisticsOnTrades(trade, instrument_name, doc_db, prices):
 @timer_func
 def saveTrades_toDB(prices, doc_db, database):
 
-    # read last prices if path exists already
-    if LIST == 'list1':
-        path = '/backend/info/prices1.json'
-    else:
-        path = '/backend/info/prices2.json'
+    
+    path = legend_list[LIST]['path']
         
     if os.path.exists(path):
         f = open (path, "r")
@@ -396,11 +396,21 @@ def saveTrades_toDB(prices, doc_db, database):
 
 if __name__ == "__main__":
     client = DatabaseConnection()
+    SETS_WSS_BACKEND = int(os.getenv('SETS_WSS_BACKEND'))
     db_logger = client.get_db(DATABASE_LOGGING)
     database = client.get_db(DATABASE_MARKET)
     db_benchmark = client.get_db(DATABASE_BENCHMARK)
     logger = LoggingController.start_logging()
     position_threshold = int(os.getenv('COINS_TRADED'))
+
+    legend_list = {}
+    x = [i for i in range(1,SETS_WSS_BACKEND+1)]
+    for i in range(1,SETS_WSS_BACKEND+1):
+        list_name = f'list{i}'
+        legend_list[list_name] = {'position': i % SETS_WSS_BACKEND,
+                                  'best_coin': x[-i],
+                                  'path': f'/backend/info/prices{i}.json'}
+    
     ws = websocket.WebSocketApp("wss://stream.binance.com:9443/stream?streams=",
                               on_open = on_open,
                               on_message = on_message,
@@ -409,5 +419,6 @@ if __name__ == "__main__":
                               )
     threading.Thread(target=restart_connection).start()
     ws.run_forever()
+
 
 
