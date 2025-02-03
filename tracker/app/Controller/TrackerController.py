@@ -111,7 +111,7 @@ class TrackerController:
                 if avg_volume_1_month == None or avg_volume_1_month == 0:
                     if now.hour == 0 and now.minute == 5: 
                         msg = f'{coin} has a volume average == None or equal to zero. Computation in tracker will be skipped. Position: {data["most_traded_coins"].index(coin)}'
-                        logger.info(msg)
+                        #logger.info(msg)
                         db_logger[DATABASE_TRACKER_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
                     continue
 
@@ -128,13 +128,13 @@ class TrackerController:
                     if sum(list_last_2w_trades) < benchmark_days:
                         if now.hour == 0 and now.minute == 5: 
                             msg = f'{coin} has not always been in most_traded_coins in the last {benchmark_days} days. Position: {data["most_traded_coins"].index(coin)}'
-                            logger.info(msg)
+                            #logger.info(msg)
                             db_logger[DATABASE_TRACKER_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
                         continue
                 except:
                     if now.hour == 0 and now.minute == 5: 
                         msg = f'{coin}: There are not enough observations in db_benchmark. Position: {data["most_traded_coins"].index(coin)}'
-                        logger.info(msg)
+                        #logger.info(msg)
                         db_logger[DATABASE_TRACKER_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
                     continue
 
@@ -144,7 +144,7 @@ class TrackerController:
             else:
                 if now.hour == 0 and now.minute == 5:
                     msg = f'{coin} does not have a volume average. Computation in tracker will be skipped. Position: {data["most_traded_coins"].index(coin)}'
-                    logger.info(msg)
+                    #logger.info(msg)
                     db_logger[DATABASE_TRACKER_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
                 continue
 

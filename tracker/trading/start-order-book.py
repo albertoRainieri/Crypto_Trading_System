@@ -11,7 +11,8 @@ from constants.constants import *
 from database.DatabaseConnection import DatabaseConnection
 from app.Controller.LoggingController import LoggingController
 from signal import SIGKILL
-import random
+from numpy import linspace
+#import random
 
 
 def binance_order_book_request(coin):
@@ -99,7 +100,7 @@ def get_statistics(resp):
     )
 
 
-def get_info_order_book(coin, logger):
+def get_info_order_book(coin):
     response, status_code = binance_order_book_request(coin)
     if status_code == 200:
         return get_statistics(response)
@@ -162,9 +163,7 @@ def get_current_number_of_orderbook_scripts(db, event_keys):
     return numbers_filled, live_order_book_scripts_number
 
 
-def get_sleep_seconds(
-    live_order_book_scripts_number, number_script, second_binance_request, limit
-):
+def get_sleep_seconds( live_order_book_scripts_number, number_script, second_binance_request, limit ):
     """
     Based on the number of live scripts, define the appropriate sleep time, for avoiding binance api ban
     No more than 20 polling order_book_api each minute
@@ -175,31 +174,32 @@ def get_sleep_seconds(
     # based on the number script, assign the position of the starting minute (from 0,59)
     n_times_greater_than_limit = min(number_script // limit, minute_api_trigger - 1)
     # define the minutes range, the script is allowed to poll binance api
-    minute_range = [
-        i for i in range(n_times_greater_than_limit, 59, minute_api_trigger)
-    ]
+    minute_range = [ i for i in range(n_times_greater_than_limit, 60, minute_api_trigger) ]
     now = datetime.now()
     current_minute = now.minute
+
+    if current_minute in minute_range:
+        correct_minute = True
+    else:
+        correct_minute = False
+
     for i in range(len(minute_range)):
         if i != len(minute_range) - 1:
-            if (
-                current_minute >= minute_range[i]
-                and current_minute < minute_range[i + 1]
-            ):
+            if ( current_minute >= minute_range[i] and current_minute < minute_range[i + 1] ):
                 # minutes remaining + seconds to 60 + second_binance_request
                 sleep_seconds = (
                     (minute_range[i + 1] - current_minute - 1) * 60
                     + (60 - now.second)
                     + second_binance_request
                 )
-                return sleep_seconds
+                return sleep_seconds, correct_minute
         else:
             sleep_seconds = (
                 (60 + minute_range[0] - current_minute - 1) * 60
                 + (60 - now.second)
                 + second_binance_request
             )
-            return sleep_seconds
+            return sleep_seconds, correct_minute
 
 
 if __name__ == "__main__":
@@ -207,7 +207,9 @@ if __name__ == "__main__":
     This Script starts an order book polling whenever an event trade is started
     """
     # decide which second to make request to binance
-    second_binance_request = random.randint(5, 58)
+    #second_binance_request = random.randint(5, 58)
+    LIMIT = 20
+    range_second_trigger = [round_(i,2) for i in linspace(7,58,20)]
     logger = LoggingController.start_logging()
 
     coin = sys.argv[1]
@@ -224,36 +226,27 @@ if __name__ == "__main__":
     minutes_timeframe = int(extract_timeframe(event_key))
     now = datetime.now()
     yesterday = now - timedelta(days=1)
-    limit = 20
 
     client = DatabaseConnection()
     db = client.get_db(DATABASE_ORDER_BOOK)
     db_collection = db[event_key]
-    event_key_docs = list(
-        db_collection.find(
-            {"_id": {"$gt": yesterday.isoformat()}}, {"_id": 1, "coin": 1, "number": 1}
-        )
-    )
+    event_key_docs = list( db_collection.find( {"_id": {"$gt": yesterday.isoformat()}}, {"_id": 1, "coin": 1, "number": 1} ) )
     db_volume_standings = client.get_db(DATABASE_VOLUME_STANDINGS)
 
     # at midnight (00:00 only) it is possible to have an exception due to unavailibility of the info
     try:
         id_volume_standings_db = now.strftime("%Y-%m-%d")
-        volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find_one(
-            {"_id": id_volume_standings_db}
-        )
+        volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find_one( {"_id": id_volume_standings_db} )
         ranking = int(volume_standings["standings"][coin]["rank"])
     except:
         id_volume_standings_db_2 = yesterday.strftime("%Y-%m-%d")
-        volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find_one(
-            {"_id": id_volume_standings_db_2}
-        )
+        volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find_one({"_id": id_volume_standings_db_2})
         ranking = int(volume_standings["standings"][coin]["rank"])
 
     INITIALIZE_DOC_ORDERBOOK = True
     STOP_SCRIPT = False
 
-    # count the current number of live order book scripts. Limit 20
+    # count the current number of live order book scripts. LIMIT 20
     event_keys = db.list_collection_names()
 
     # check in the current event_key if there are current jobs
@@ -261,14 +254,11 @@ if __name__ == "__main__":
         # If True, the event trigger has just started, otherwise the system has restarted and we are trying to resume the order book polling
         if doc["_id"] == id:
             INITIALIZE_DOC_ORDERBOOK = False
-            if "number" in doc:
-                number_script = doc["number"]
-            else:
-                number_script = None
+            number_script = doc["number"]
+            second_binance_request = range_second_trigger[number_script % LIMIT]
+
         # In case, the script has started in the script time windows, skip
-        elif doc["coin"] == coin and now < datetime.fromisoformat(
-            doc["_id"]
-        ) + timedelta(minutes=minutes_timeframe):
+        elif doc["coin"] == coin and now < datetime.fromisoformat( doc["_id"] ) + timedelta(minutes=minutes_timeframe):
             # logger.info(f'coin {coin}-{event_key} is running, skipping script')
             STOP_SCRIPT = True
 
@@ -277,62 +267,51 @@ if __name__ == "__main__":
         # logger.info(f'coin {coin} has a ranking {ranking} higher than the threshold of the event_key lvl {event_key}')
         STOP_SCRIPT = True
 
-    numbers_filled, live_order_book_scripts_number = (
-        get_current_number_of_orderbook_scripts(db, event_keys)
-    )
+    numbers_filled, live_order_book_scripts_number = get_current_number_of_orderbook_scripts(db, event_keys)
     # initialize
     if not STOP_SCRIPT and INITIALIZE_DOC_ORDERBOOK and not RESTART:
-        for i in range(1, live_order_book_scripts_number + 2):
+        for i in range(live_order_book_scripts_number + 1):
             if i not in numbers_filled:
                 number_script = i
                 break
-        db_collection.insert_one(
-            {
-                "_id": id,
-                "coin": coin,
-                "ranking": ranking,
-                "data": {},
-                "number": number_script,
-            }
-        )
+        
+
+        second_binance_request = range_second_trigger[number_script % LIMIT]
+        db_collection.insert_one( { "_id": id, "coin": coin, "ranking": ranking, "data": {},  "number": number_script, } )
 
     if not STOP_SCRIPT:
-        logger.info(
-            f"Order-Book: event_key {event_key} triggered for {coin} - ranking {ranking }-  orderbook-script-number: {number_script}/{live_order_book_scripts_number}"
-        )
-        sleep_seconds = get_sleep_seconds(
-            live_order_book_scripts_number, number_script, second_binance_request, limit
-        )
-        is_same_minute = datetime.now().minute == (datetime.now() + timedelta(seconds=sleep_seconds)).minute
-        if live_order_book_scripts_number // limit != 0 or is_same_minute :
-            sleep(
-                sleep_seconds
-            )
+        current_number_script = number_script + 1
+        total_scripts_live = live_order_book_scripts_number + 1
+        logger.info( f"Order-Book: event_key {event_key} triggered for {coin} - ranking {ranking }-  orderbook-script-number: {current_number_script}/{total_scripts_live}")
+        sleep_seconds, correct_minute = get_sleep_seconds( live_order_book_scripts_number, number_script, second_binance_request, LIMIT )
+        if live_order_book_scripts_number // LIMIT != 0 and not correct_minute: # or is_same_minute :
+            #logger.info(f'sleep second: {sleep_seconds}')
+            sleep( sleep_seconds )
 
         # this id is used to save the order book
-        stop_script_datetime = datetime.now() + timedelta(minutes=minutes_timeframe)
+        stop_script_datetime = datetime.fromisoformat(id) + timedelta(minutes=minutes_timeframe)
 
         while datetime.now() < stop_script_datetime:
-            order_book_info = get_info_order_book(coin, logger)
+            logger.info(f'{number_script}')
+            order_book_info = get_info_order_book(coin)
             if order_book_info != None:
-                update_db_order_book_record(
-                    id, event_key, db_collection, order_book_info
-                )
+                update_db_order_book_record( id, event_key, db_collection, order_book_info )
 
             event_keys = db.list_collection_names()
-            numbers_filled, live_order_book_scripts_number = (
-                get_current_number_of_orderbook_scripts(db, event_keys)
-            )
-            sleep_seconds = get_sleep_seconds(
-                live_order_book_scripts_number,
-                number_script,
-                second_binance_request,
-                limit,
-            )
-            next_iso_trigger = (
-                datetime.now() + timedelta(seconds=sleep_seconds)
-            ).isoformat()
-            # logger.info(f'Next trigger - {next_iso_trigger} - number_script: {number_script} -live_order_book_scripts_number {live_order_book_scripts_number} -limit: {limit} ')
+            numbers_filled, live_order_book_scripts_number = ( get_current_number_of_orderbook_scripts(db, event_keys) )
+            times_in_live_order_book_scripts_number = live_order_book_scripts_number // LIMIT
+            sleep_seconds, correct_minute = get_sleep_seconds(  live_order_book_scripts_number, number_script, second_binance_request, LIMIT)
+            next_iso_trigger = (  datetime.now() + timedelta(seconds=sleep_seconds) ).isoformat()
+            # logger.info(f'Next trigger - {next_iso_trigger} - number_script: {number_script} -live_order_book_scripts_number {live_order_book_scripts_number} -LIMIT: {LIMIT} ')
             sleep(sleep_seconds)
+
+            # this step is necessary in case, the number of live scripts has increased and the minute trigger has shifted, so sleep_seconds need to be adjusted
+            # va "correct_minute" is a boolean and if the minute trigger is shifted, but this minute is in minute_range, then do not sleep
+            numbers_filled, live_order_book_scripts_number = get_current_number_of_orderbook_scripts(db, event_keys)
+            NEXT_times_in_live_order_book_scripts_number = live_order_book_scripts_number // LIMIT
+            sleep_seconds, correct_minute = get_sleep_seconds(  live_order_book_scripts_number, number_script, second_binance_request, LIMIT)
+            if times_in_live_order_book_scripts_number != NEXT_times_in_live_order_book_scripts_number and not correct_minute:
+                #logger.info(f'{number_script} switch')
+                sleep(sleep_seconds)
 
     client.close()
