@@ -28,6 +28,7 @@ services:
       - TZ=$TIME_ZONE
       - PRODUCTION=$PRODUCTION
       - ANALYSIS=$ANALYSIS
+      - COINS_TRADED=$COINS_TRADED
     networks:
       - crypto-net
 

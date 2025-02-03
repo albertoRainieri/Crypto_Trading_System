@@ -400,7 +400,7 @@ if __name__ == "__main__":
     database = client.get_db(DATABASE_MARKET)
     db_benchmark = client.get_db(DATABASE_BENCHMARK)
     logger = LoggingController.start_logging()
-    position_threshold = 299
+    position_threshold = int(os.getenv('COINS_TRADED'))
     ws = websocket.WebSocketApp("wss://stream.binance.com:9443/stream?streams=",
                               on_open = on_open,
                               on_message = on_message,
