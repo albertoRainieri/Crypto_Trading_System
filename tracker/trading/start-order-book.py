@@ -209,7 +209,7 @@ if __name__ == "__main__":
     # decide which second to make request to binance
     #second_binance_request = random.randint(5, 58)
     LIMIT = 20
-    range_second_trigger = [round_(i,2) for i in linspace(7,58,20)]
+    range_second_trigger = [round_(i,2) for i in linspace(10,58,20)]
     logger = LoggingController.start_logging()
 
     coin = sys.argv[1]
