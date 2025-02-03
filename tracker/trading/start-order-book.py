@@ -292,7 +292,7 @@ if __name__ == "__main__":
         stop_script_datetime = datetime.fromisoformat(id) + timedelta(minutes=minutes_timeframe)
 
         while datetime.now() < stop_script_datetime:
-            logger.info(f'{number_script}')
+            #logger.info(f'{number_script}')
             order_book_info = get_info_order_book(coin)
             if order_book_info != None:
                 update_db_order_book_record( id, event_key, db_collection, order_book_info )
