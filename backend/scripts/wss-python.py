@@ -171,7 +171,9 @@ def select_coins(LIST, db_benchmark, position_threshold):
     
     #logger.info(f'coins discarded: {coins_discarded} for list: {LIST}')
 
-    coin_list = []
+    coin_list = {}
+    for i in range(1,SETS_WSS_BACKEND+1):
+        coin_list[f'list{str(i)}'] = []
 
     best_coins = [tuple_[0] for tuple_ in most_traded_coins_first_filter[:SETS_WSS_BACKEND]]
     
@@ -182,25 +184,49 @@ def select_coins(LIST, db_benchmark, position_threshold):
         if coin in best_coins:
             position_best_coin = best_coins.index(coin) + 1
             if position_best_coin == legend_list[LIST]['best_coin']:
-                coin_list.append(coin)
+                coin_list[LIST].append(coin)
             continue
         if position != None:
-            if position % SETS_WSS_BACKEND == legend_list[LIST]['position']:
-                coin_list.append(coin)
+            #logger.info(f'{coin} - {position}')
+            for list_name in legend_list:
+                if position % SETS_WSS_BACKEND == legend_list[list_name]['position']:
+                    coin_list[list_name].append(coin)
         else:
             coins_in_none_position.append(coin)
     
-    n_coins = len(coin_list)
+    n_coins = len(coin_list[LIST])
     logger.info(f'list: {LIST} - n_coins already traded in the app: {n_coins} ' )
     
     coins_in_none_position = sorted(coins_in_none_position)
     for coin in coins_in_none_position:
         position = coins_in_none_position.index(coin)
-        if position % SETS_WSS_BACKEND == legend_list[LIST]['position']:
-            coin_list.append(coin)
+        for list_name in legend_list:
+                if position % SETS_WSS_BACKEND == legend_list[list_name]['position']:
+                    coin_list[list_name].append(coin)
     
-    n_coins = len(coin_list)
+    n_coins = len(coin_list[LIST])
     logger.info(f'list: {LIST} - total n_coins: {n_coins}' )
+
+    # Convert lists to sets
+    all_lists = []
+    for list_name in coin_list:
+        all_lists.append(coin_list[list_name])
+    
+    common_pairs = {}
+    # Iterate through each pair of lists
+    for i in range(len(all_lists)):
+        for j in range(i + 1, len(all_lists)):
+            # Find common elements between the pair of lists
+            common = set(all_lists[i]).intersection(all_lists[j])
+            # Store the result in the dictionary
+            common_pairs[(i, j)] = common
+        # Check for common elements across all three sets
+    
+    for pair, common in common_pairs.items():
+        logger.info(f"Common elements between list{pair[0] + 1} and list{pair[1] + 1}: {common}")
+    
+    coin_list = coin_list[LIST]
+
     return coin_list
 
 
