@@ -313,5 +313,11 @@ if __name__ == "__main__":
             if times_in_live_order_book_scripts_number != NEXT_times_in_live_order_book_scripts_number and not correct_minute:
                 #logger.info(f'{number_script} switch')
                 sleep(sleep_seconds)
+        
+        pid = os.getpid()
+        logger.info(f'DONE: {number_script} - {coin} - killing pid {pid}')
+            
 
     client.close()
+    pid = os.getpid()
+    os.kill(pid, SIGKILL)
