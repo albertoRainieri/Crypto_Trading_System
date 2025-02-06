@@ -1158,6 +1158,7 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit):
     for coin in full_timeseries:
         for start_timestamp in full_timeseries[coin]:
             start_datetime = datetime.fromisoformat(start_timestamp)
+            start_datetime = start_datetime.replace(second=0).replace(microsecond=0)
             end_datetime = start_datetime + timedelta(minutes=int(timeframe))
             prestart_datetime = start_datetime - timedelta(minutes=check_past)
             postend_datetime = end_datetime + timedelta(minutes=check_future)
@@ -1165,6 +1166,7 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit):
             data = full_timeseries[coin][start_timestamp]['data']
             list_ts = list(data.keys())
             price_list = []
+            max_min_price_list = []
             vol_list = []
             buy_vol_list = []
             bid_volume_list = []
@@ -1177,11 +1179,14 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit):
             ask_order_distribution_list = []
             bid_color_list = []
             ask_color_list = []
+            bid_volume_wrt_total = []
+            ask_volume_wrt_total = []
             previous_dt = datetime.fromisoformat(list_ts[0])
             
-            fig, ax = plt.subplots(4, 1, sharex=True, figsize=(20, 10))
+            fig, ax = plt.subplots(5, 1, sharex=True, figsize=(20, 10))
             for ts in list_ts:
                 dt = datetime.fromisoformat(ts)
+
                 if dt < previous_dt:
                     continue
                 else:
@@ -1196,6 +1201,13 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit):
                 vol_list.append(data[ts][1])
                 buy_vol_list.append(data[ts][2])
 
+                if start_datetime == dt.replace(second=0):
+                    initial_price = price
+                
+                if dt <= end_datetime and dt >= start_datetime:
+                    max_min_price_list.append(price)
+                    max_price = max(max_min_price_list)
+                    min_price = min(max_min_price_list)
 
                 bid_orders = data[ts][5]
                 ask_orders = data[ts][6]
@@ -1211,9 +1223,11 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit):
                     if bid_actual_jump:
                         for lvl_bid in bid_price_level:
                             ax[0].plot(dt, lvl_bid[0], 'go', markersize=1)
+                            ax[1].plot(dt, lvl_bid[0], 'go', markersize=1)
                     if ask_actual_jump:
                         for lvl_ask in ask_price_level:
                             ax[0].plot(dt, lvl_ask[0], 'ro', markersize=1)
+                            ax[1].plot(dt, lvl_ask[0], 'ro', markersize=1)
                     if len(bid_order_distribution) != 0:
                         for lvl_bid in bid_order_distribution:
                             for lvl_col in order_distribution_color_legend:
@@ -1233,17 +1247,26 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit):
                     # this is the cumulative level (from 0 to 100) based on $limit
                     # Basically I want to get the total bid/volume with respect to the limit
                     
-                    limit_cumulative_bid_level = bid_price_level[-1][2]
-                    limit_cumulative_ask_level = ask_price_level[-1][2]
-                    bid = data[ts][3] * limit_cumulative_bid_level
-                    ask = data[ts][4] * limit_cumulative_ask_level
+                    bid = data[ts][3] * bid_cumulative_level
+                    ask = data[ts][4] * ask_cumulative_level
                     bid_volume_list.append(bid)
                     ask_volume_list.append(ask)
+                    bid_volume_wrt_total.append(bid_cumulative_level)
+                    ask_volume_wrt_total.append(ask_cumulative_level)
                     bid_ask_volume_list.append(bid + ask)
                 else:
                     bid_volume_list.append(0)
                     ask_volume_list.append(0)
                     bid_ask_volume_list.append(0)
+                    bid_volume_wrt_total.append(0)
+                    ask_volume_wrt_total.append(0)
+            
+            mean_price = np.mean(price_list)
+            max_change = round_((max_price - initial_price)*100 / initial_price, 2)
+            min_change = round_((min_price - initial_price)*100 / initial_price, 2)
+
+            dt_max_price = list_datetime[price_list.index(max_price)]
+            dt_min_price = list_datetime[price_list.index(min_price)]
 
 
             ax[0].plot(list_datetime, price_list, linewidth=0.5, color='black')
@@ -1251,21 +1274,27 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit):
             ax[0].axvline(x=end_datetime, color='blue', linestyle='--')
             ax[0].set_ylabel('Price')
             ax[0].grid(True)
-            ax[0].set_title(f'{coin} -- {start_timestamp} -- Event_key: {event_key}')
+            ax[0].annotate(f'Max Change: {max_change}%', xy=(dt_max_price, max_price),
+                                xytext=(dt_max_price, max_price*(1-((max_change/100)/2))),
+                                textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
+            ax[0].annotate(f'Min Change: {min_change}%', xy=(dt_min_price, min_price),
+                                xytext=(dt_min_price, min_price*(1-((min_change/100)/2))),
+                                textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
+
+            ax[0].set_title(f'{coin} -- {start_timestamp} -- Event_key: {event_key} -- Initial Price: {initial_price} - Max: {max_change}% - Min: {min_change}%')
+            y0_min, y0_max = ax[0].get_ylim()
 
             if len(bid_order_distribution_list) > 0:
-                bid_linecoll = matcoll.LineCollection(bid_order_distribution_list, colors=bid_color_list, zorder=2)
-                ask_linecoll = matcoll.LineCollection(ask_order_distribution_list, colors=ask_color_list, zorder=2)
+                bid_linecoll = matcoll.LineCollection(bid_order_distribution_list, colors=bid_color_list, zorder=0)
+                ask_linecoll = matcoll.LineCollection(ask_order_distribution_list, colors=ask_color_list, zorder=0)
                 ax[1].add_collection(bid_linecoll)
                 ax[1].add_collection(ask_linecoll)
                 ax[1].plot(list_datetime, price_list, linewidth=1.5, color='black')
                 ax[1].axvline(x=start_datetime, color='blue', linestyle='--')
                 ax[1].axvline(x=end_datetime, color='blue', linestyle='--')
                 ax[1].set_ylabel('Price')
-                ax[1].grid(True, zorder=1)
-                ax[1].set_title(f'{coin} -- {start_timestamp} -- Event_key: {event_key}')
-
-
+                ax[1].grid(True, zorder=2)
+                ax[1].set_ylim(y0_min, y0_max)
 
 
             ax[2].plot(list_datetime, bid_ask_volume_list, color='red', linewidth=0.5, alpha=0.8)
@@ -1274,14 +1303,25 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit):
             ax[2].fill_between(list_datetime, bid_volume_list, 0, alpha=0.3, color='green', label='Area Under 2') # Fill to zero
             ax[2].axvline(x=start_datetime, color='blue', linestyle='--')
             ax[2].axvline(x=end_datetime, color='blue', linestyle='--')
-            ax[2].set_ylabel('Bid-Ask Volume')
+            ax[2].set_ylabel(f'Bid-Ask Abs Vol ({limit*100}%')
             ax[2].grid(True)
-            
-            ax[3].plot(list_datetime, vol_list, linewidth=0.5)
-            ax[3].axvline(x=datetime.fromisoformat(start_timestamp), color='blue', linestyle='--')
+
+            for dt,bid,ask in zip(list_datetime, bid_volume_wrt_total, ask_volume_wrt_total):
+                if bid != 0:
+                    ax[3].plot(dt, bid, 'go', markersize=1)
+                if ask != 0:
+                    ax[3].plot(dt, ask, 'ro', markersize=1)
+
+            ax[3].axvline(x=start_datetime, color='blue', linestyle='--')
             ax[3].axvline(x=end_datetime, color='blue', linestyle='--')
-            ax[3].set_ylabel('Volume')
+            ax[3].set_ylabel(f'Bid-Ask Rel {limit*100}%')
             ax[3].grid(True)
+
+            ax[4].plot(list_datetime, vol_list, linewidth=0.5)
+            ax[4].axvline(x=datetime.fromisoformat(start_timestamp), color='blue', linestyle='--')
+            ax[4].axvline(x=end_datetime, color='blue', linestyle='--')
+            ax[4].set_ylabel('Volume')
+            ax[4].grid(True)
 
             plt.show()
             plt.close()
@@ -1292,7 +1332,7 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit):
 
             
 
-def get_timeseries(info, check_past=1440, check_future=1440, jump=0.03, limit=0.15, plot=False):
+def get_timeseries(info, check_past=1440, check_future=1440, jump=0.03, limit=0.15, event_keys_filter = [], plot=False):
     '''
     check_past: minutes before event trigger
     check_future: minutes after the end of event (usually after 1 days from event trigger)
@@ -1302,6 +1342,8 @@ def get_timeseries(info, check_past=1440, check_future=1440, jump=0.03, limit=0.
 
     n_event_keys = len(info)
     for event_key, event_key_i in zip(info, range(1,n_event_keys+1)):
+        if event_keys_filter != [] and event_key not in event_keys_filter:
+            continue
         print('')
         print('')
         print('')
@@ -2010,11 +2052,20 @@ def filter_complete_info_by_current_eventkeys(output, complete_info):
 
 def get_price_levels(price, bid_orders, cumulative_volume_jump=0.03, price_change_limit=0.4, price_change_jump=0.025):
     '''
-    this function outputs the pricelevels (tuple: 4 elements)
-    [1] : absolute price_level
-    [2] : relative price_level (percentage from current price)
-    [3] : cumulative_level (from 0 to 100, which percentage of bid/ask total volume this level corresponds to)
-    [4] : distance from previous level (from 0 to 100, gt > "$jump")
+    this function outputs the pricelevels (tuple: 4 elements), order_distribution, cumulative_level
+    price_levels (TUPLE):
+        [1] : absolute price_level
+        [2] : relative price_level (percentage from current price)
+        [3] : cumulative_level (from 0 to 100, which percentage of bid/ask total volume this level corresponds to) (NOT USED)
+        [4] : this is the JUMP. distance from previous level (from 0 to 100, gt > "$jump")
+    order_distribution (OBJ): (KEYS: price_change; VALUES: density of this price level
+      (i.e. 5% of the bid/ask volume is concentrated in the first 2.5% price range, considering ONLY the "price_change_limit" (e.g. 40% price range from current price) ))
+        {0.025: 0.05,
+         0.05:  0.02,
+         ...
+         }
+    previous_cumulative_level: it is the percentage of the bid/ask volume considering only the "price_change_limit" (e.g. 40% price range from current price)
+                                with respect to the total bid/ask volume
     '''
     previous_level = 0
     price_levels = []
