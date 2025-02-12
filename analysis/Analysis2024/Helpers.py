@@ -1134,10 +1134,121 @@ def get_full_timeseries(event_key, metadata_order_book):
         with open(path_full_timeseries_metadata, 'w') as file:
             json.dump(metadata_full_timeseries, file)
 
-def determine_price_levels(current_price, orders):
+def hit_jump_price_levels_range(current_price, dt, bid_price_levels, neighborhood_of_price_jump = 0.005, distance_jump_to_current_price=0.01):
+    '''
+    This function defines all the historical level whereas a jump price change was existent
+    Since it can happen that price_jump_level are not always in the same point (price) I check if the jump price is in the neighboorhood of the historical jump price (average with np.mean)
+
+    # THIS IS THE INPUT OF BID_PRICE_LEVELS
+    Structure of bid price_levels: IT IS A LIST OF LISTS
+    - bid_price_levels: e.g. [[13.978], [13.958], [13.958], [13.978], [13.949, 12.942], [13.97], [13.939, 12.933], [14.053]]
+      EACH SUBLIST containes the jump prices at dt
+
+    # THIS THE STRUCTURE OF SUMMARY_JUMP_PRICE
+    [LIST [TUPLES]]
+        [ (average price jump level, list_of_jump_price_levels )]
+    '''
+
+
+
+    summary_jump_price_level = {}
+    # iterate throgh 
+    for bid_price_levels_dt_info in bid_price_levels:
+        dt = bid_price_levels_dt_info[1]
+        bid_price_levels_dt = bid_price_levels_dt_info[0]
+
+        for abs_price in bid_price_levels_dt:
+            if abs_price == None:
+                continue
+            if len(summary_jump_price_level) != 0:
+                IS_NEW_X = True
+                for x in summary_jump_price_level:
+                    historical_price_level = summary_jump_price_level[x][0]
+                    historical_price_level_list = summary_jump_price_level[x][1]
+                    #print(historical_price_level, abs_price)
+                    if abs_price <= historical_price_level * (1 + neighborhood_of_price_jump) and abs_price >= historical_price_level * (1 - neighborhood_of_price_jump):
+                        historical_price_level_list.append(abs_price)
+                        historical_price_level = np.mean(historical_price_level_list)
+                        summary_jump_price_level[x] = (historical_price_level, historical_price_level_list)
+                        IS_NEW_X = False
+                        break
+                if IS_NEW_X:
+                    list_x = [int(i) for i in list(summary_jump_price_level.keys())]
+                    new_x = str(max(list_x) + 1)
+                    summary_jump_price_level[new_x] = (abs_price, [abs_price])
+            else:
+                #print(abs_price)
+                summary_jump_price_level['1'] = (abs_price, [abs_price])
+            
+    #print(summary_jump_price_level)
+    for x in summary_jump_price_level:
+        if abs((current_price - summary_jump_price_level[x][0] ) / current_price ) <= distance_jump_to_current_price:
+            return True
+            #print(current_price, dt)
+    return False
+
+
+
+
+
+
+def simulate_entry_position(price_list, list_datetime, start_datetime,
+                             bid_price_levels, ask_order_distribution, price_change_jump,
+                               price_drop_limit=0.05, distance_jump_to_current_price = 0.03, max_ask_order_distribution_level = 0.2):
+    
+    '''
+    INPUT DESCRIPTION
+    - bid_price_levels: e.g. [[13.978], [13.958], [13.958], [13.978], [13.949, 12.942], [13.97], [13.939, 12.933], [14.053]]
+    - price_drop_limit: (PHASE 1) THRESHOLD OF price drop. if current price drop is higher than go to PHASE 2
+    - distance_from_jump_levels: (PHASE 2) It is the DISTANCE between current price and historical jump levels
+    - max_ask_order_distribution_level: (PHASE 3) LIMIT of the cumulative volume. if the nearest price ranges (0-2.5% - 2.5-5%) have a lower cumulative volume than here is the opportunity
+    '''
+    
+    # get price_list, datetime_list from start_datetime
+    #return
+    dt = list_datetime[-1]
+    ts = dt.isoformat()
+    price = price_list[-1]
+    position_start_datetime = list_datetime.index(start_datetime)
+    price_list = price_list[position_start_datetime:]
+    list_datetime = list_datetime[position_start_datetime:]
+
+    # PHASE 1
+    # DEFINE PRICE DROP (price drop from initial price or from max price)
+    max_price = max(price_list)
+    max_datetime = list_datetime[price_list.index(max_price)]
+    current_timedelta_from_max = dt - max_datetime
+
+    current_price_drop = abs( (price - max_price) / max_price )
+    if current_price_drop >= price_drop_limit:
+        #print(f'Price Drop at {ts} of {round_(current_price_drop,4)*100}%')
+        
+        # PHASE 2
+        # DEFINE HOW CLOSE THE PRICE IS TO HISTORICAL JUMP LEVELS
+        is_jump_price_level = hit_jump_price_levels_range(current_price=price, dt=dt, bid_price_levels=bid_price_levels,
+                                                           distance_jump_to_current_price=distance_jump_to_current_price)
+
+        if is_jump_price_level:
+            if ask_order_distribution[str(price_change_jump)] < max_ask_order_distribution_level:
+                buy_price = price
+                dt_price = dt
+                info_buy = (price, dt)
+                print(price, dt, ask_order_distribution[str(price_change_jump)], ask_order_distribution[str(price_change_jump+price_change_jump)])
+                return info_buy
+    return None
+
+
+    # DETERMINE THE CURRENT_ORDER_DISTRIBUTION ON THE ASK-LEVEL
+
     pass
 
-def plot_timeseries(event_key, check_past, check_future, jump, limit):
+def plot_timeseries(event_key, check_past, check_future, jump, limit, price_change_jump=0.025):
+    '''
+    INPUT DESCRITION
+    "jump" is used to see there are jumps in the order book. E.g. from -5% and -9% (price change) there are not orders (THIS IS A JUMP)
+    "limit" is the price window range, where order books are checked. if limit = 0.4, then only the order books within the 40% price range are analyzed
+    "price_change_jump" is used for the orde
+    '''
 
     vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
     file_name = event_key.replace(':', '_').replace('/', '_')
@@ -1147,13 +1258,21 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit):
     Colors = [['#0400ff', '#FF0000'],
           ['#09ff00', '#ff8c00']]
     
+    dark_violet = "#9400D3"
     violet = '#EE82EE'
     red = '#FF0000' 
     light_red = '#FFB6C1'
-    light_orange = '#FFA07A'
     light_yellow = '#FFFFE0'
     white = '#FFFFFF'
-    order_distribution_color_legend = {(0,0.025): white, (0.025,0.05): light_yellow, (0.05,0.1): light_red, (0.1,0.15): light_orange, (0.15,0.2): red, (0.2,1): violet}
+    dark_orange_hex = "#E67A00"
+
+    order_colors = [white, light_yellow, light_red, violet, dark_orange_hex, red, dark_violet]
+    price_range_colors = [(0,0.025), (0.025, 0.05), (0.05, 0.1), (0.1, 0.15), (0.15, 0.2), (0.2, 0.3), (0.3, 1)]
+    assert len(order_colors) == len(price_range_colors)
+    order_distribution_color_legend = {}
+
+    for color, price_range in zip(order_colors,price_range_colors):
+        order_distribution_color_legend[price_range] = color
 
     for coin in full_timeseries:
         for start_timestamp in full_timeseries[coin]:
@@ -1184,6 +1303,8 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit):
             previous_dt = datetime.fromisoformat(list_ts[0])
             
             fig, ax = plt.subplots(5, 1, sharex=True, figsize=(20, 10))
+            info_buy = None
+            SELL = False
             for ts in list_ts:
                 dt = datetime.fromisoformat(ts)
 
@@ -1212,34 +1333,47 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit):
                 bid_orders = data[ts][5]
                 ask_orders = data[ts][6]
                 if bid_orders != None:
-                    bid_price_level, bid_order_distribution, bid_cumulative_level = get_price_levels(price, bid_orders, jump, limit)
-                    ask_price_level, ask_order_distribution, ask_cumulative_level = get_price_levels(price, ask_orders, jump, limit)
-                    
-                    # this is a boolean, check if there a was a jump, otherwise just the get the cumulative volume at the limit price change
+                    bid_price_level, bid_order_distribution, bid_cumulative_level = get_price_levels(price, bid_orders, jump, limit, price_change_jump)
+                    ask_price_level, ask_order_distribution, ask_cumulative_level = get_price_levels(price, ask_orders, jump, limit, price_change_jump)
+                    #print(bid_order_distribution)
+
+                    # bid/ask_actual_jump can be a number or False, it checks if there a was a jump, otherwise just the get the cumulative volume at the limit price change
                     bid_actual_jump = bid_price_level[0][3]
                     ask_actual_jump = ask_price_level[0][3]
-                    bid_price_levels.append(bid_price_level)
-                    ask_price_levels.append(ask_price_level)
+
+                    # for each jump level, just retrieve the absolute price
+                    bid_price_levels_dt = [] #all bid price levels at dt
+                    ask_price_levels_dt = [] #all ask price levels at dt
+                    for lvl in bid_price_level:
+                        bid_price_levels_dt.append(lvl[0])
+                    for lvl in ask_price_level:
+                        ask_price_levels_dt.append(lvl[0])
+                    bid_price_levels.append((bid_price_levels_dt, dt)) #this is a list of lists. each sublist contains all prices where a jump has occurred 
+                    ask_price_levels.append((ask_price_levels_dt, dt))
+
+                    # plot the jump prices
                     if bid_actual_jump:
-                        for lvl_bid in bid_price_level:
-                            ax[0].plot(dt, lvl_bid[0], 'go', markersize=1)
-                            ax[1].plot(dt, lvl_bid[0], 'go', markersize=1)
+                        for lvl_bid in bid_price_levels_dt:
+                            ax[0].plot(dt, lvl_bid, 'go', markersize=1)
+                            ax[1].plot(dt, lvl_bid, 'go', markersize=1)
                     if ask_actual_jump:
-                        for lvl_ask in ask_price_level:
-                            ax[0].plot(dt, lvl_ask[0], 'ro', markersize=1)
-                            ax[1].plot(dt, lvl_ask[0], 'ro', markersize=1)
+                        for lvl_ask in ask_price_levels_dt:
+                            ax[0].plot(dt, lvl_ask, 'ro', markersize=1)
+                            ax[1].plot(dt, lvl_ask, 'go', markersize=1)
+
+                    # plot the order book distribution
                     if len(bid_order_distribution) != 0:
                         for lvl_bid in bid_order_distribution:
                             for lvl_col in order_distribution_color_legend:
                                 if bid_order_distribution[lvl_bid] >= lvl_col[0] and bid_order_distribution[lvl_bid] < lvl_col[1]:
-                                    order_distribution_dt = [(mdates.date2num(dt), price * (1-float(lvl_bid)+jump)), (mdates.date2num(dt), price * (1-float(lvl_bid)))]
+                                    order_distribution_dt = [(mdates.date2num(dt), price * (1-float(lvl_bid)+price_change_jump)), (mdates.date2num(dt), price * (1-float(lvl_bid)))]
                                     bid_order_distribution_list.append(order_distribution_dt)
                                     bid_color_list.append(order_distribution_color_legend[lvl_col])
                                     break
                         for lvl_ask in ask_order_distribution:
                             for lvl_col in order_distribution_color_legend:
                                 if ask_order_distribution[lvl_ask] >= lvl_col[0] and ask_order_distribution[lvl_ask] < lvl_col[1]:
-                                    order_distribution_dt = [(mdates.date2num(dt), price * (1+float(lvl_ask)-jump)), (mdates.date2num(dt), price * (1+float(lvl_ask)))]
+                                    order_distribution_dt = [(mdates.date2num(dt), price * (1+float(lvl_ask)-price_change_jump)), (mdates.date2num(dt), price * (1+float(lvl_ask)))]
                                     ask_order_distribution_list.append(order_distribution_dt)
                                     ask_color_list.append(order_distribution_color_legend[lvl_col])
                                     break
@@ -1260,7 +1394,17 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit):
                     bid_ask_volume_list.append(0)
                     bid_volume_wrt_total.append(0)
                     ask_volume_wrt_total.append(0)
+                
+                if dt > start_datetime and dt < end_datetime and info_buy == None:
+                    info_buy = simulate_entry_position(price_list, list_datetime, start_datetime, bid_price_levels, ask_order_distribution, price_change_jump)
+                elif info_buy != None and dt >= end_datetime and not SELL:
+                    SELL = True
+                    sell_price = price
+                    buy_price = info_buy[0]
+                    gain = round_((( sell_price - buy_price ) / buy_price ) * 100,2)
+                    print(f'Gain: {gain} - buy-price = {buy_price} - sell-price = {sell_price}')
             
+            #print(bid_price_levels)
             mean_price = np.mean(price_list)
             max_change = round_((max_price - initial_price)*100 / initial_price, 2)
             min_change = round_((min_price - initial_price)*100 / initial_price, 2)
@@ -1274,22 +1418,38 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit):
             ax[0].axvline(x=end_datetime, color='blue', linestyle='--')
             ax[0].set_ylabel('Price')
             ax[0].grid(True)
-            ax[0].annotate(f'Max Change: {max_change}%', xy=(dt_max_price, max_price),
-                                xytext=(dt_max_price, max_price*(1-((max_change/100)/2))),
+            ax[0].annotate(f'+{max_change}%', xy=(dt_max_price, max_price),
+                                xytext=(dt_max_price, max_price*(1-((max_change/100)))),
                                 textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
-            ax[0].annotate(f'Min Change: {min_change}%', xy=(dt_min_price, min_price),
-                                xytext=(dt_min_price, min_price*(1-((min_change/100)/2))),
+            ax[0].annotate(f'-{min_change}%', xy=(dt_min_price, min_price),
+                                xytext=(dt_min_price, min_price*(1-((max_change/100)))),
                                 textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
 
-            ax[0].set_title(f'{coin} -- {start_timestamp} -- Event_key: {event_key} -- Initial Price: {initial_price} - Max: {max_change}% - Min: {min_change}%')
+            title = f'{coin} -- {start_timestamp} -- Event_key: {event_key} -- Initial Price: {initial_price} - Max: {max_change}% - Min: {min_change}%'
+            print(title)
+            ax[0].set_title(title)
             y0_min, y0_max = ax[0].get_ylim()
 
             if len(bid_order_distribution_list) > 0:
+                #create legend
+                for color, price_range_color in zip(order_colors, price_range_colors):
+                    label = '> ' + str(price_range_color[0]*100) + '%'
+                    ax[1].plot([], [], color=color, label=label)
+                
+                ax[1].legend(loc='upper right')
+
+                for lvl in np.arange(price_change_jump,limit+price_change_jump,price_change_jump*2):
+                    ax[1].annotate(f'-{round_(lvl*100,1)}%', xy=(start_datetime, initial_price*(1-lvl)),
+                                    xytext=(start_datetime- timedelta(hours=1), initial_price*(1-lvl)),
+                                    textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
+                    ax[1].annotate(f'+{round_(lvl*100,1)}%', xy=(start_datetime, initial_price*(1+lvl)),
+                                    xytext=(start_datetime- timedelta(hours=1), initial_price*(1+lvl)),
+                                    textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
                 bid_linecoll = matcoll.LineCollection(bid_order_distribution_list, colors=bid_color_list, zorder=0)
                 ask_linecoll = matcoll.LineCollection(ask_order_distribution_list, colors=ask_color_list, zorder=0)
                 ax[1].add_collection(bid_linecoll)
                 ax[1].add_collection(ask_linecoll)
-                ax[1].plot(list_datetime, price_list, linewidth=1.5, color='black')
+                ax[1].plot(list_datetime, price_list, linewidth=1.5, color='grey')
                 ax[1].axvline(x=start_datetime, color='blue', linestyle='--')
                 ax[1].axvline(x=end_datetime, color='blue', linestyle='--')
                 ax[1].set_ylabel('Price')
@@ -1306,16 +1466,31 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit):
             ax[2].set_ylabel(f'Bid-Ask Abs Vol ({limit*100}%')
             ax[2].grid(True)
 
+            # consider the cumulative price different from zero
+            list_mean_bid_volume_wrt_total = []
+            list_mean_ask_volume_wrt_total = []
             for dt,bid,ask in zip(list_datetime, bid_volume_wrt_total, ask_volume_wrt_total):
                 if bid != 0:
                     ax[3].plot(dt, bid, 'go', markersize=1)
+                    list_mean_bid_volume_wrt_total.append(bid)
                 if ask != 0:
                     ax[3].plot(dt, ask, 'ro', markersize=1)
+                    list_mean_ask_volume_wrt_total.append(ask)
+            
+            mean_bid_volume_wrt_total = round_(np.mean(list_mean_bid_volume_wrt_total)*100,2)
+            mean_ask_volume_wrt_total = round_(np.mean(list_mean_ask_volume_wrt_total)*100,2)
 
             ax[3].axvline(x=start_datetime, color='blue', linestyle='--')
             ax[3].axvline(x=end_datetime, color='blue', linestyle='--')
             ax[3].set_ylabel(f'Bid-Ask Rel {limit*100}%')
             ax[3].grid(True)
+            ax[3].annotate(f'avg {mean_bid_volume_wrt_total}%', xy=(end_datetime, mean_bid_volume_wrt_total/100),
+                    xytext=(end_datetime+timedelta(hours=2), mean_bid_volume_wrt_total/100),
+                    textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
+            ax[3].annotate(f'avg {mean_ask_volume_wrt_total}%', xy=(end_datetime, mean_ask_volume_wrt_total/100),
+                    xytext=(end_datetime+timedelta(hours=2), mean_ask_volume_wrt_total/100),
+                    textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
+
 
             ax[4].plot(list_datetime, vol_list, linewidth=0.5)
             ax[4].axvline(x=datetime.fromisoformat(start_timestamp), color='blue', linestyle='--')
@@ -1940,32 +2115,32 @@ def get_currency_coin():
 
 def frequency_events_analysis(complete_info):
 
+    
+
     summary = {}
     for event_key in complete_info:
-        summary[event_key] = {}
         for coin in complete_info[event_key]['info']:
             for event in complete_info[event_key]['info'][coin]:
                 year_month_datetime = datetime.fromisoformat(event['event'])
                 year_month = f"{year_month_datetime.year}-{year_month_datetime.month:02d}"
                 year_month = year_month[2:]
-                if year_month not in summary[event_key]:
-                    summary[event_key][year_month] = 1
+                if year_month not in summary:
+                    summary[year_month] = 1
                 else:
-                    summary[event_key][year_month] += 1
+                    summary[year_month] += 1
 
     cols = 2
     rows = int(len(summary) / cols + 1)
-    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(15, 15))
-    for event_key, i in zip(summary, range(len(summary))):
-        y = i % cols
-        x = i // cols
-        sorted_data = dict(sorted(summary[event_key].items()))
-        months = list(sorted_data.keys())
-        values = list(sorted_data.values())
-        #plt.figure(figsize=(10, 6))
-        axes[x,y].bar(months, values, color='skyblue')
-        axes[x,y].set_xticks(months[::2]) 
-        axes[x,y].set_title(event_key)
+    fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(15, 15))
+    # y = i % cols
+    # x = i // cols
+    sorted_data = dict(sorted(summary.items()))
+    months = list(sorted_data.keys())
+    values = list(sorted_data.values())
+    #plt.figure(figsize=(10, 6))
+    axes.bar(months, values, color='skyblue')
+    axes.set_xticks(months[::2]) 
+    axes.set_title(event_key)
     # Adjust spacing between subplots
     plt.tight_layout()
     # Show the plot
@@ -2032,7 +2207,7 @@ def filter_complete_info_by_current_eventkeys(output, complete_info):
     '''
     This function filters complete_info with the event_keys that are used in production
     '''
-    path_riskmanagement = '/Users/albertorainieri/Personal/backend/riskmanagement/riskmanagement.json'
+    path_riskmanagement = '/Users/albertorainieri/Personal/analysis/Analysis2024/analysis_json_production/riskmanagement.json'
     new_complete_info = {}
     new_output = {}
     with open(path_riskmanagement, 'r') as f:
@@ -2057,7 +2232,7 @@ def get_price_levels(price, bid_orders, cumulative_volume_jump=0.03, price_chang
         [1] : absolute price_level
         [2] : relative price_level (percentage from current price)
         [3] : cumulative_level (from 0 to 100, which percentage of bid/ask total volume this level corresponds to) (NOT USED)
-        [4] : this is the JUMP. distance from previous level (from 0 to 100, gt > "$jump")
+        [4] : this is the JUMP. distance from previous level (from 0 to 100, gt > "$jump"). Only if greater than "cumulative_volume_jump"
     order_distribution (OBJ): (KEYS: price_change; VALUES: density of this price level
       (i.e. 5% of the bid/ask volume is concentrated in the first 2.5% price range, considering ONLY the "price_change_limit" (e.g. 40% price range from current price) ))
         {0.025: 0.05,
@@ -2105,7 +2280,7 @@ def get_price_levels(price, bid_orders, cumulative_volume_jump=0.03, price_chang
                 order_distribution[str(price_change_level)] = cumulative_level
 
         # here, I discover the jumps, the info is stored in "price_levels"
-        if cumulative_level - previous_level >= cumulative_volume_jump and abs(price_change) < price_change_limit:
+        if cumulative_level - previous_level >= cumulative_volume_jump and abs(price_change) <= price_change_limit and abs(price_change) >= 0.01:
             actual_jump = round_(cumulative_level - previous_level,3)
             price_level = price * (1+price_change)
             info = (round_(price_level,n_decimals), price_change, cumulative_level, actual_jump)
@@ -2149,3 +2324,42 @@ def count_decimals(num):
   except ValueError:
     # If no decimal point is found, it's an integer
     return 1
+
+def get_analysis():
+  import sys
+  sys.path.insert(0,'..')
+  from Functions import download_show_output
+  from Helpers import filter_complete_info_by_current_eventkeys
+  import pandas as pd
+  from datetime import datetime
+  pd.set_option('display.max_rows', None)
+
+  minimum_event_number = 1
+  minimum_event_number_list = [minimum_event_number]
+  mean_threshold = -10
+  frequency_threshold = 0
+  std_multiplier = 10
+  early_validation = False
+  # file_paths = ["/Users/albertorainieri/Personal/analysis/Analysis2024/analysis_json/analysis-buy-50-150-450.json",
+  #              "/Users/albertorainieri/Personal/analysis/Analysis2024/analysis_json/analysis-sell-50-150-450.json",
+  #              "/Users/albertorainieri/Personal/analysis/Analysis2024/analysis_json/analysis-buy-sell-10-250-highfrequency.json"]
+
+  file_paths = ["/Users/albertorainieri/Personal/analysis/Analysis2024/analysis_json_production/analysis.json"]
+  start_analysis= datetime(2025,1,1)
+  early_validation = datetime(2026,1,1)
+  xth_percentile=100
+  filter_field='mean' #mean, std, max, min
+  output, complete_info = download_show_output(minimum_event_number=minimum_event_number,mean_threshold=mean_threshold, frequency_threshold=frequency_threshold,
+                                                early_validation=early_validation, std_multiplier=std_multiplier, file_paths=file_paths,
+                                                  start_analysis=start_analysis, DELETE_99_PERCENTILE=True, filter_field=filter_field, xth_percentile=xth_percentile)
+
+
+  output, complete_info = filter_complete_info_by_current_eventkeys(output, complete_info)
+
+  df = pd.DataFrame(output).transpose()
+  n_event_keys = len(df['mean'])
+  print(f'Number of event_keys: {n_event_keys}')
+  daily_frequency_all_events = int(sum(df['frequency/month']) / 30)
+  print(f'Daily frequency of events: {daily_frequency_all_events}')
+
+  return output, complete_info
