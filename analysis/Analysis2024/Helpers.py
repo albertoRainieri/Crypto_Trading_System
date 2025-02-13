@@ -1191,9 +1191,8 @@ def hit_jump_price_levels_range(current_price, dt, bid_price_levels, neighborhoo
 
 
 
-
 def simulate_entry_position(price_list, list_datetime, start_datetime,
-                             bid_price_levels, ask_order_distribution, price_change_jump,
+                             bid_price_levels, ask_order_distribution, price_change_jump, max_limit=0.2,
                                price_drop_limit=0.05, distance_jump_to_current_price = 0.03, max_ask_order_distribution_level = 0.2):
     
     '''
@@ -1209,18 +1208,23 @@ def simulate_entry_position(price_list, list_datetime, start_datetime,
     dt = list_datetime[-1]
     ts = dt.isoformat()
     price = price_list[-1]
+    max_price = max(price_list)
     position_start_datetime = list_datetime.index(start_datetime)
     price_list = price_list[position_start_datetime:]
     list_datetime = list_datetime[position_start_datetime:]
 
     # PHASE 1
     # DEFINE PRICE DROP (price drop from initial price or from max price)
-    max_price = max(price_list)
+    max_change = ( max_price - price_list[0] ) / price_list[0]
     max_datetime = list_datetime[price_list.index(max_price)]
     current_timedelta_from_max = dt - max_datetime
 
     current_price_drop = abs( (price - max_price) / max_price )
-    if current_price_drop >= price_drop_limit:
+    
+    if max_limit == None:
+        max_limit = 100
+
+    if current_price_drop >= price_drop_limit and max_change <= max_limit:
         #print(f'Price Drop at {ts} of {round_(current_price_drop,4)*100}%')
         
         # PHASE 2
@@ -1230,10 +1234,8 @@ def simulate_entry_position(price_list, list_datetime, start_datetime,
 
         if is_jump_price_level:
             if ask_order_distribution[str(price_change_jump)] < max_ask_order_distribution_level:
-                buy_price = price
-                dt_price = dt
                 info_buy = (price, dt)
-                print(price, dt, ask_order_distribution[str(price_change_jump)], ask_order_distribution[str(price_change_jump+price_change_jump)])
+                #print(price, dt, ask_order_distribution[str(price_change_jump)], ask_order_distribution[str(price_change_jump+price_change_jump)])
                 return info_buy
     return None
 
@@ -1242,14 +1244,24 @@ def simulate_entry_position(price_list, list_datetime, start_datetime,
 
     pass
 
-def plot_timeseries(event_key, check_past, check_future, jump, limit, price_change_jump=0.025):
+def plot_timeseries(event_key, check_past, check_future, jump, limit, price_change_jump=0.025, plot=False):
     '''
     INPUT DESCRITION
     "jump" is used to see there are jumps in the order book. E.g. from -5% and -9% (price change) there are not orders (THIS IS A JUMP)
     "limit" is the price window range, where order books are checked. if limit = 0.4, then only the order books within the 40% price range are analyzed
     "price_change_jump" is used for the orde
     '''
-
+    # get result strategy is exists
+    path_strategy = ROOT_PATH + '/strategy/strategy_1/result.json'
+    if os.path.exists(path_strategy):
+        with open(path_strategy, 'r') as file:
+            strategy_result = json.load(file)
+    else:
+        strategy_result = {}
+    
+    if event_key not in strategy_result:
+        strategy_result[event_key] = {}
+    
     vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
     file_name = event_key.replace(':', '_').replace('/', '_')
     path_full_timeseries = ROOT_PATH + '/full_timeseries/' + file_name + '.json'
@@ -1275,7 +1287,15 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit, price_chan
         order_distribution_color_legend[price_range] = color
 
     for coin in full_timeseries:
+        if coin not in strategy_result[event_key]:
+            strategy_result[event_key][coin] = {}
+
         for start_timestamp in full_timeseries[coin]:
+            if start_timestamp not in strategy_result[event_key][coin]:
+                strategy_result[event_key][coin][start_timestamp] = {}
+            elif plot == False:
+                continue
+
             start_datetime = datetime.fromisoformat(start_timestamp)
             start_datetime = start_datetime.replace(second=0).replace(microsecond=0)
             end_datetime = start_datetime + timedelta(minutes=int(timeframe))
@@ -1302,7 +1322,8 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit, price_chan
             ask_volume_wrt_total = []
             previous_dt = datetime.fromisoformat(list_ts[0])
             
-            fig, ax = plt.subplots(5, 1, sharex=True, figsize=(20, 10))
+            if plot:
+                fig, ax = plt.subplots(5, 1, sharex=True, figsize=(20, 10))
             info_buy = None
             SELL = False
             for ts in list_ts:
@@ -1332,6 +1353,7 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit, price_chan
 
                 bid_orders = data[ts][5]
                 ask_orders = data[ts][6]
+
                 if bid_orders != None:
                     bid_price_level, bid_order_distribution, bid_cumulative_level = get_price_levels(price, bid_orders, jump, limit, price_change_jump)
                     ask_price_level, ask_order_distribution, ask_cumulative_level = get_price_levels(price, ask_orders, jump, limit, price_change_jump)
@@ -1352,17 +1374,17 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit, price_chan
                     ask_price_levels.append((ask_price_levels_dt, dt))
 
                     # plot the jump prices
-                    if bid_actual_jump:
+                    if bid_actual_jump and plot:
                         for lvl_bid in bid_price_levels_dt:
                             ax[0].plot(dt, lvl_bid, 'go', markersize=1)
                             ax[1].plot(dt, lvl_bid, 'go', markersize=1)
-                    if ask_actual_jump:
+                    if ask_actual_jump and plot:
                         for lvl_ask in ask_price_levels_dt:
                             ax[0].plot(dt, lvl_ask, 'ro', markersize=1)
                             ax[1].plot(dt, lvl_ask, 'go', markersize=1)
 
                     # plot the order book distribution
-                    if len(bid_order_distribution) != 0:
+                    if len(bid_order_distribution) != 0 and plot:
                         for lvl_bid in bid_order_distribution:
                             for lvl_col in order_distribution_color_legend:
                                 if bid_order_distribution[lvl_bid] >= lvl_col[0] and bid_order_distribution[lvl_bid] < lvl_col[1]:
@@ -1395,111 +1417,133 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit, price_chan
                     bid_volume_wrt_total.append(0)
                     ask_volume_wrt_total.append(0)
                 
-                if dt > start_datetime and dt < end_datetime and info_buy == None:
+
+                if bid_orders != None and dt > start_datetime and dt < end_datetime and info_buy == None:
                     info_buy = simulate_entry_position(price_list, list_datetime, start_datetime, bid_price_levels, ask_order_distribution, price_change_jump)
-                elif info_buy != None and dt >= end_datetime and not SELL:
+
+                if info_buy != None and dt >= end_datetime and not SELL:
                     SELL = True
                     sell_price = price
                     buy_price = info_buy[0]
+                    dt_buy = info_buy[1]
+                    dt_buy_isoformat = dt_buy.isoformat()
                     gain = round_((( sell_price - buy_price ) / buy_price ) * 100,2)
-                    print(f'Gain: {gain} - buy-price = {buy_price} - sell-price = {sell_price}')
+                    print(f'Gain: {gain} - buy-price = {buy_price} - sell-price = {sell_price} -dt_buy: {dt_buy_isoformat}')
             
-            #print(bid_price_levels)
-            mean_price = np.mean(price_list)
+
             max_change = round_((max_price - initial_price)*100 / initial_price, 2)
             min_change = round_((min_price - initial_price)*100 / initial_price, 2)
-
             dt_max_price = list_datetime[price_list.index(max_price)]
             dt_min_price = list_datetime[price_list.index(min_price)]
 
+            if SELL:
+                performance_doc = {'initial_price': initial_price, 'max_change': max_change, 'min_change': min_change,
+                                'buy_price': buy_price, 'sell_price': sell_price,
+                                  'gain': gain, 'datetime_buy': dt_buy.isoformat(), 'datetime_sell': end_datetime.isoformat()}
+                strategy_result[event_key][coin][start_timestamp] = performance_doc
+                with open(path_strategy, 'w') as f:
+                    json.dump(strategy_result, f, indent=4)
+            else:
+                with open(path_strategy, 'w') as f:
+                    json.dump(strategy_result, f, indent=4)
 
-            ax[0].plot(list_datetime, price_list, linewidth=0.5, color='black')
-            ax[0].axvline(x=start_datetime, color='blue', linestyle='--')
-            ax[0].axvline(x=end_datetime, color='blue', linestyle='--')
-            ax[0].set_ylabel('Price')
-            ax[0].grid(True)
-            ax[0].annotate(f'+{max_change}%', xy=(dt_max_price, max_price),
-                                xytext=(dt_max_price, max_price*(1-((max_change/100)))),
-                                textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
-            ax[0].annotate(f'-{min_change}%', xy=(dt_min_price, min_price),
-                                xytext=(dt_min_price, min_price*(1-((max_change/100)))),
-                                textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
-
-            title = f'{coin} -- {start_timestamp} -- Event_key: {event_key} -- Initial Price: {initial_price} - Max: {max_change}% - Min: {min_change}%'
-            print(title)
-            ax[0].set_title(title)
-            y0_min, y0_max = ax[0].get_ylim()
-
-            if len(bid_order_distribution_list) > 0:
-                #create legend
-                for color, price_range_color in zip(order_colors, price_range_colors):
-                    label = '> ' + str(price_range_color[0]*100) + '%'
-                    ax[1].plot([], [], color=color, label=label)
-                
-                ax[1].legend(loc='upper right')
-
-                for lvl in np.arange(price_change_jump,limit+price_change_jump,price_change_jump*2):
-                    ax[1].annotate(f'-{round_(lvl*100,1)}%', xy=(start_datetime, initial_price*(1-lvl)),
-                                    xytext=(start_datetime- timedelta(hours=1), initial_price*(1-lvl)),
-                                    textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
-                    ax[1].annotate(f'+{round_(lvl*100,1)}%', xy=(start_datetime, initial_price*(1+lvl)),
-                                    xytext=(start_datetime- timedelta(hours=1), initial_price*(1+lvl)),
-                                    textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
-                bid_linecoll = matcoll.LineCollection(bid_order_distribution_list, colors=bid_color_list, zorder=0)
-                ask_linecoll = matcoll.LineCollection(ask_order_distribution_list, colors=ask_color_list, zorder=0)
-                ax[1].add_collection(bid_linecoll)
-                ax[1].add_collection(ask_linecoll)
-                ax[1].plot(list_datetime, price_list, linewidth=1.5, color='grey')
-                ax[1].axvline(x=start_datetime, color='blue', linestyle='--')
-                ax[1].axvline(x=end_datetime, color='blue', linestyle='--')
-                ax[1].set_ylabel('Price')
-                ax[1].grid(True, zorder=2)
-                ax[1].set_ylim(y0_min, y0_max)
-
-
-            ax[2].plot(list_datetime, bid_ask_volume_list, color='red', linewidth=0.5, alpha=0.8)
-            ax[2].fill_between(list_datetime, bid_ask_volume_list, bid_volume_list, alpha=0.3, color='red', label='Area Between')
-            ax[2].plot(list_datetime, bid_volume_list, color='green', linewidth=0.5, alpha=0.8)
-            ax[2].fill_between(list_datetime, bid_volume_list, 0, alpha=0.3, color='green', label='Area Under 2') # Fill to zero
-            ax[2].axvline(x=start_datetime, color='blue', linestyle='--')
-            ax[2].axvline(x=end_datetime, color='blue', linestyle='--')
-            ax[2].set_ylabel(f'Bid-Ask Abs Vol ({limit*100}%')
-            ax[2].grid(True)
-
-            # consider the cumulative price different from zero
-            list_mean_bid_volume_wrt_total = []
-            list_mean_ask_volume_wrt_total = []
-            for dt,bid,ask in zip(list_datetime, bid_volume_wrt_total, ask_volume_wrt_total):
-                if bid != 0:
-                    ax[3].plot(dt, bid, 'go', markersize=1)
-                    list_mean_bid_volume_wrt_total.append(bid)
-                if ask != 0:
-                    ax[3].plot(dt, ask, 'ro', markersize=1)
-                    list_mean_ask_volume_wrt_total.append(ask)
             
-            mean_bid_volume_wrt_total = round_(np.mean(list_mean_bid_volume_wrt_total)*100,2)
-            mean_ask_volume_wrt_total = round_(np.mean(list_mean_ask_volume_wrt_total)*100,2)
+            if plot:
 
-            ax[3].axvline(x=start_datetime, color='blue', linestyle='--')
-            ax[3].axvline(x=end_datetime, color='blue', linestyle='--')
-            ax[3].set_ylabel(f'Bid-Ask Rel {limit*100}%')
-            ax[3].grid(True)
-            ax[3].annotate(f'avg {mean_bid_volume_wrt_total}%', xy=(end_datetime, mean_bid_volume_wrt_total/100),
-                    xytext=(end_datetime+timedelta(hours=2), mean_bid_volume_wrt_total/100),
-                    textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
-            ax[3].annotate(f'avg {mean_ask_volume_wrt_total}%', xy=(end_datetime, mean_ask_volume_wrt_total/100),
-                    xytext=(end_datetime+timedelta(hours=2), mean_ask_volume_wrt_total/100),
-                    textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
+                ax[0].plot(list_datetime, price_list, linewidth=0.5, color='black')
+                ax[0].axvline(x=start_datetime, color='blue', linestyle='--')
+                ax[0].axvline(x=end_datetime, color='blue', linestyle='--')
+                ax[0].set_ylabel('Price')
+                ax[0].grid(True)
+                ax[0].annotate(f'+{max_change}%', xy=(dt_max_price, max_price),
+                                    xytext=(dt_max_price, max_price*(1-((max_change/100)))),
+                                    textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
+                ax[0].annotate(f'-{min_change}%', xy=(dt_min_price, min_price),
+                                    xytext=(dt_min_price, min_price*(1-((max_change/100)))),
+                                    textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
+                if SELL:
+                    ax[0].annotate(f'buy: {buy_price}', xy=(dt_buy, buy_price),
+                                        xytext=(dt_buy, buy_price*(1.05)),
+                                        textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
+                    ax[0].annotate(f'sell: {sell_price}', xy=(end_datetime, sell_price),
+                                        xytext=(end_datetime, sell_price*(0.95)),
+                                        textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
+
+                title = f'{coin} -- {start_timestamp} -- Event_key: {event_key} -- Initial Price: {initial_price} - Max: {max_change}% - Min: {min_change}%'
+                print(title)
+                ax[0].set_title(title)
+                y0_min, y0_max = ax[0].get_ylim()
+
+                if len(bid_order_distribution_list) > 0:
+                    #create legend
+                    for color, price_range_color in zip(order_colors, price_range_colors):
+                        label = '> ' + str(price_range_color[0]*100) + '%'
+                        ax[1].plot([], [], color=color, label=label)
+                    
+                    ax[1].legend(loc='upper right')
+
+                    for lvl in np.arange(price_change_jump,limit+price_change_jump,price_change_jump*2):
+                        ax[1].annotate(f'-{round_(lvl*100,1)}%', xy=(start_datetime, initial_price*(1-lvl)),
+                                        xytext=(start_datetime- timedelta(hours=1), initial_price*(1-lvl)),
+                                        textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
+                        ax[1].annotate(f'+{round_(lvl*100,1)}%', xy=(start_datetime, initial_price*(1+lvl)),
+                                        xytext=(start_datetime- timedelta(hours=1), initial_price*(1+lvl)),
+                                        textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
+                    bid_linecoll = matcoll.LineCollection(bid_order_distribution_list, colors=bid_color_list, zorder=0)
+                    ask_linecoll = matcoll.LineCollection(ask_order_distribution_list, colors=ask_color_list, zorder=0)
+                    ax[1].add_collection(bid_linecoll)
+                    ax[1].add_collection(ask_linecoll)
+                    ax[1].plot(list_datetime, price_list, linewidth=1.5, color='grey')
+                    ax[1].axvline(x=start_datetime, color='blue', linestyle='--')
+                    ax[1].axvline(x=end_datetime, color='blue', linestyle='--')
+                    ax[1].set_ylabel('Price')
+                    ax[1].grid(True, zorder=2)
+                    ax[1].set_ylim(y0_min, y0_max)
 
 
-            ax[4].plot(list_datetime, vol_list, linewidth=0.5)
-            ax[4].axvline(x=datetime.fromisoformat(start_timestamp), color='blue', linestyle='--')
-            ax[4].axvline(x=end_datetime, color='blue', linestyle='--')
-            ax[4].set_ylabel('Volume')
-            ax[4].grid(True)
+                ax[2].plot(list_datetime, bid_ask_volume_list, color='red', linewidth=0.5, alpha=0.8)
+                ax[2].fill_between(list_datetime, bid_ask_volume_list, bid_volume_list, alpha=0.3, color='red', label='Area Between')
+                ax[2].plot(list_datetime, bid_volume_list, color='green', linewidth=0.5, alpha=0.8)
+                ax[2].fill_between(list_datetime, bid_volume_list, 0, alpha=0.3, color='green', label='Area Under 2') # Fill to zero
+                ax[2].axvline(x=start_datetime, color='blue', linestyle='--')
+                ax[2].axvline(x=end_datetime, color='blue', linestyle='--')
+                ax[2].set_ylabel(f'Bid-Ask Abs Vol ({limit*100}%')
+                ax[2].grid(True)
 
-            plt.show()
-            plt.close()
+                # consider the cumulative price different from zero
+                list_mean_bid_volume_wrt_total = []
+                list_mean_ask_volume_wrt_total = []
+                for dt,bid,ask in zip(list_datetime, bid_volume_wrt_total, ask_volume_wrt_total):
+                    if bid != 0:
+                        ax[3].plot(dt, bid, 'go', markersize=1)
+                        list_mean_bid_volume_wrt_total.append(bid)
+                    if ask != 0:
+                        ax[3].plot(dt, ask, 'ro', markersize=1)
+                        list_mean_ask_volume_wrt_total.append(ask)
+                
+                mean_bid_volume_wrt_total = round_(np.mean(list_mean_bid_volume_wrt_total)*100,2)
+                mean_ask_volume_wrt_total = round_(np.mean(list_mean_ask_volume_wrt_total)*100,2)
+
+                ax[3].axvline(x=start_datetime, color='blue', linestyle='--')
+                ax[3].axvline(x=end_datetime, color='blue', linestyle='--')
+                ax[3].set_ylabel(f'Bid-Ask Rel {limit*100}%')
+                ax[3].grid(True)
+                ax[3].annotate(f'avg {mean_bid_volume_wrt_total}%', xy=(end_datetime, mean_bid_volume_wrt_total/100),
+                        xytext=(end_datetime+timedelta(hours=2), mean_bid_volume_wrt_total/100),
+                        textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
+                ax[3].annotate(f'avg {mean_ask_volume_wrt_total}%', xy=(end_datetime, mean_ask_volume_wrt_total/100),
+                        xytext=(end_datetime+timedelta(hours=2), mean_ask_volume_wrt_total/100),
+                        textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
+
+
+                ax[4].plot(list_datetime, vol_list, linewidth=0.5)
+                ax[4].axvline(x=datetime.fromisoformat(start_timestamp), color='blue', linestyle='--')
+                ax[4].axvline(x=end_datetime, color='blue', linestyle='--')
+                ax[4].set_ylabel('Volume')
+                ax[4].grid(True)
+
+                plt.show()
+                plt.close()
             
     
 
@@ -1507,7 +1551,7 @@ def plot_timeseries(event_key, check_past, check_future, jump, limit, price_chan
 
             
 
-def get_timeseries(info, check_past=1440, check_future=1440, jump=0.03, limit=0.15, event_keys_filter = [], plot=False):
+def get_timeseries(info, check_past=1440, check_future=1440, jump=0.03, limit=0.15, event_keys_filter = [], analyze=True, plot=False):
     '''
     check_past: minutes before event trigger
     check_future: minutes after the end of event (usually after 1 days from event trigger)
@@ -1542,400 +1586,9 @@ def get_timeseries(info, check_past=1440, check_future=1440, jump=0.03, limit=0.
         # get fulltimeseries (mix of orderbook and timeseries)
         get_full_timeseries(event_key, metadata_order_book)
 
-        if plot:
-            plot_timeseries(event_key, check_past, check_future, jump, limit)
+        if analyze:
+            plot_timeseries(event_key, check_past, check_future, jump, limit, plot=plot)
             
-    
-
-
-
-def getTimeseries(info, check_past=False, look_for_newdata=False, plot=False):
-    '''
-    This function retrieves the timeseries based on "info" and "key"
-    "info" is the output of function "download_show_output" and key is the name of event list (e.g. "buy_vol_5m:0.65/vol_24h:8/timeframe:1440/vlty:1")
-    It downloads the data from server if not exists. otherwise the data is downloaded from "/timeseries_json"
-
-    if "check_past" is not False, it is an Integer. It is used to retrieve all the observations occurred before the Event. It is expressed in minutes.
-    "look_for_newdata" is a boolean. if True, it looks for NEW timeseries (triggered by an event) in the db server.
-    '''
-    n_event_keys = len(info)
-    for key, key_i in zip(info, range(1,n_event_keys+1)):
-        print(f'{key_i}/{n_event_keys} Event Key: {key}')
-        msg = f'{key_i}/{n_event_keys} - {key}'
-        request_order_book = {key: {}}
-        for coin in info[key]['info']:
-            request_order_book[key][coin] = []
-            for event in info[key]['info'][coin]:
-                request_order_book[key][coin].append(event['event'])
-                
-        metadata_order_book = get_order_book(request_order_book)
-        with open(ROOT_PATH + "/timeseries_json/ + metadata.json", 'r') as file:
-            metadata_timeseries = json.load(file)
-
-        # load from local or from server
-        key_json = key.replace(':', '_')
-        key_json = key_json.replace('/', '_')
-        url = 'http://localhost/analysis/get-timeseries'
-
-        path = ROOT_PATH + "/timeseries_json/"
-        timeseries_list = os.listdir(path)
-        timeseries_key = []
-
-        for timeseries_path in timeseries_list:
-            if key_json in timeseries_path:
-                timeseries_key.append(path + timeseries_path)
-        
-        if len(timeseries_key) == 1:
-            file_path = timeseries_key[0]
-            PATH_EXISTS = True
-        elif len(timeseries_key) == 0:
-            file_path = path + key_json + '.json'
-            PATH_EXISTS = False
-
-        vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(key)
-        fields = [vol_field, buy_vol_field, timeframe, buy_vol_value, vol_value, lvl]
-
-        if PATH_EXISTS:
-            timeseries = load_timeseries(key_json)
-
-            if look_for_newdata:
-                request = info[key]
-                request = filter_request_with_orderbook_available(request, metadata_order_book,  key)
-                if request == None:
-                    continue
-                request['timeframe'] = int(timeframe)
-                if not check_past:
-                    pass
-                else:
-                    request['check_past'] = check_past
-                
-                request['last_timestamp'] = {}
-                # define for each from which timestamp new events should be discovered
-                for coin in timeseries:
-                    #get most recent timestamp
-                    timestamp_list = list(timeseries[coin].keys())
-                    # Convert the ISO format timestamps to datetime objects
-                    datetime_list = [datetime.fromisoformat(timestamp) for timestamp in timestamp_list]
-                    # Find the most recent timestamp using the min function
-                    most_recent_timestamp = max(datetime_list).isoformat()
-                    request['last_timestamp'][coin] = most_recent_timestamp
-
-
-                # send request
-                print('Sending the request for get-timeseries')
-                response = requests.post(url, json = request)
-                print('Status Code is : ', response.status_code)
-                response = json.loads(response.text)
-                new_timeseries = response['data']
-                msg = response['msg']
-                retry = response['retry']
-                print(msg)
-
-                # if file size is greater than 800MB, lets create a new one
-                if os.path.getsize(file_path) > 800000000:
-                    # check if the current file part has already PART substring. 
-                    # In this case thre is not, rename the path with PART substring
-                    if '_PART' not in file_path:
-                        file_path1 = path + key_json + '_PART1' '.json'
-                        os.rename(file_path, file_path1)
-                        max_part_number = 1
-                    else:
-                        file_path_split = file_path.split('PART')
-                        max_part_number = int(file_path_split[1][0])
-
-                    # DEFINE THE NEW PATH JSON
-                    new_part_number = max_part_number + 1
-                    part_string = '_PART' + str(new_part_number)
-                    new_file_path = path + key_json + part_string + '.json'
-
-                    n_events = 0
-
-                    for coin in new_timeseries:
-                        for timestamp_start in list(new_timeseries[coin].keys()):
-                            n_events += 1
-
-                    print(f'{n_events} new events for {key}')
-                    print(f'Creating {file_path}')
-                    with open(new_file_path, 'w') as file:
-                        json.dump(new_timeseries, file)
-                else:
-
-                    # I re load timeseries, since I want to fetch not all events, but only those saved in the last PART
-                    if len(timeseries_key) > 1:
-                        del timeseries
-                        with open(file_path, 'r') as file:
-                            timeseries = json.load(file)
-
-                    n_events = 0
-                    # let's update "timeseries" with the new events occurred in "new_timeseries"
-                    for coin in new_timeseries:
-                        # iterate through NEW each event of the coin
-                        for timestamp_start in list(new_timeseries[coin].keys()):
-                            # if coin does not exist in timeseries (an event has never occurred before). let's create this key in "timeseries"
-                            n_events += 1
-                            if coin not in timeseries:
-                                timeseries[coin] = {}
-                            if timestamp_start not in timeseries[coin]:
-                                timeseries[coin][timestamp_start] = new_timeseries[coin][timestamp_start]
-                            else:
-                                print(f'WARNING: {timestamp_start} is already present for {coin}. {key_json}. Should not be happening')
-                            
-                    print(f'{n_events} new events for {key}')
-
-                    print(f'Overwriting {file_path}')
-                    with open(file_path, 'w') as file:
-                        json.dump(timeseries, file)
-
-                del new_timeseries
-                
-
-                    
-        else:
-            print('File does not exist, Download from server...')
-
-            # build the request body
-            request = info[key]
-            request = filter_request_with_orderbook_available(request, metadata_order_book, key)
-            if request == None:
-                continue
-            request['timeframe'] = int(timeframe)
-
-            if not check_past:
-                pass
-            else:
-                request['check_past'] = check_past
-
-            response = requests.post(url, json = request)
-            print('Status Code is : ', response.status_code)
-            response = json.loads(response.text)
-            timeseries = response['data']
-
-            n_events = 0
-
-            for coin in timeseries:
-                for timestamp_start in list(timeseries[coin].keys()):
-                    n_events += 1
-            print(f'{n_events} new events for {key} at the first download')
-
-            msg = response['msg']
-            retry = response['msg']
-            print(msg)
-
-            with open(file_path, 'w') as file:
-                json.dump(timeseries, file)
-        
-        plotTimeseries(timeseries, key, fields, check_past, plot)
-
-
-def plotTimeseries(timeseries, event_key, fields, check_past, plot, filter_start=False, filter_best=False):
-
-    vol_field = fields[0]
-    buy_vol_field = fields[1]
-    timeframe = fields[2]
-    buy_vol_value = fields[3]
-    vol_value = fields[4]
-
-    event_key_path = event_key.replace(":", "_").replace("/", "_")
-    path_order_book_event_key = f'{ROOT_PATH}/order_book/{event_key_path}.json'
-    if os.path.exists(path_order_book_event_key):
-        f = open(path_order_book_event_key, "r")
-        data_order_book_event_key = json.loads(f.read())
-    else:
-        print(f"no json at {path_order_book_event_key} was found")
-        return
-
-    # iterate through each coin
-    timeseries_skipped = 0
-    for coin in timeseries:
-        #print(coin)
-        # iterate through each event of the coin
-        for timestamp_start in list(timeseries[coin].keys()):
-            
-            # skip if you want to plot only live timeseries
-            if filter_start and datetime.fromisoformat(timestamp_start) < filter_start:
-                continue
-            
-            if coin not in data_order_book_event_key:
-                #print(f"Skipping {event_key} - {coin} - {timestamp_start}")
-                timeseries_skipped += 1
-                continue
-
-            if timestamp_start not in data_order_book_event_key[coin]:
-                #print(f"Skipping {event_key} - {coin} - {timestamp_start}")
-                timeseries_skipped += 1
-                continue
-
-            if len(data_order_book_event_key[coin][timestamp_start]) == 0:
-                #print(f"Skipping {event_key} - {coin} - {timestamp_start}")
-                timeseries_skipped += 1
-                continue
-                
-            order_book_event = data_order_book_event_key[coin][timestamp_start]
-
-            #print(timestamp_start)
-            timeframe = timeseries[coin][timestamp_start]['statistics']['timeframe']
-            #print('statistic: ', timeseries[coin][timestamp_start]['statistics'])
-            timestamp_end = datetime.fromisoformat(timestamp_start) + timedelta(minutes=timeframe)
-            # get mean and std of event
-            mean = timeseries[coin][timestamp_start]['statistics']['mean']
-            std = timeseries[coin][timestamp_start]['statistics']['std']
-
-            datetime_list = []
-            price_list = []
-            vol_list = []
-            buy_vol_list = []
-            # number of observation per event
-            
-
-            # label x-axis every "interval" minutes
-            interval = int(timeframe / 6)
-            current_price, volume_event, buy_volume_event = get_event_info(timeseries[coin][timestamp_start]['data'], timestamp_start, vol_field, buy_vol_field)
-
-            volume_event = (datetime.fromisoformat(timestamp_start), volume_event)
-            buy_volume_event = (datetime.fromisoformat(timestamp_start), buy_volume_event)
-            if plot:
-                print(f'Event occurred at {timestamp_start}')
-                print(f'Purchase Price: {current_price} - {buy_vol_field}: {buy_volume_event[1]} - {vol_field}: {volume_event[1]} ')
-
-            # get max price and min price
-            max_price = (datetime.fromisoformat(timestamp_start), current_price)
-            min_price = (datetime.fromisoformat(timestamp_start), current_price)
-
-            if check_past != False:
-                skip_timeseries = False
-                #print('1')
-                start_price = current_price
-                one_day_before_price = timeseries[coin][timestamp_start]['data'][0]['price']
-                six_hour_before_price_flag = True
-                three_hour_before_price_flag = True
-                one_hour_before_price_flag = True
-                final_price_price_flag = True
-
-
-                ante_performance_one_day = round_((start_price - one_day_before_price ) / one_day_before_price,2)
-                #print(start_price)
-
-                max_change = 0
-                min_change = 0
-                #print('2')
-                
-                iterator = 0
-                for obs in timeseries[coin][timestamp_start]['data']:
-                    if six_hour_before_price_flag and datetime.fromisoformat(timestamp_start) - datetime.fromisoformat(obs['_id']) < timedelta(hours=6):
-                        ante_performance_six_hour = round_((start_price - obs['price'] ) / obs['price'],2)
-                        six_hour_before_price_flag = False
-                    
-                    if three_hour_before_price_flag and datetime.fromisoformat(timestamp_start) - datetime.fromisoformat(obs['_id']) < timedelta(hours=3):
-                        ante_performance_three_hour = round_((start_price - obs['price'] ) / obs['price'],2)
-                        three_hour_before_price_flag = False
-                    
-                    if one_hour_before_price_flag and datetime.fromisoformat(timestamp_start) - datetime.fromisoformat(obs['_id']) < timedelta(hours=1):
-                        ante_performance_one_hour = round_((start_price - obs['price'] ) / obs['price'],2)
-                        one_hour_before_price_flag = False
-
-                    if final_price_price_flag and datetime.fromisoformat(obs['_id']) - datetime.fromisoformat(timestamp_start) > timedelta(minutes=timeframe):
-                        final_performance_timeseries = round_((obs['price'] - start_price) / start_price,2)
-                        # skip timeseries if you want to filter only the best performance
-                        if filter_best and max_change < filter_best:
-                            skip_timeseries = True
-                        final_price_price_flag = False
-                                            
-                    
-                    #print('3')
-                    datetime_list.append(datetime.fromisoformat(obs['_id']))
-                    price_list.append(obs['price'])
-                    vol_list.append(obs[vol_field])
-                    buy_vol_list.append(obs[buy_vol_field])
-
-                    if datetime.fromisoformat(obs['_id']) > datetime.fromisoformat(timestamp_start) and datetime.fromisoformat(obs['_id']) < timestamp_end:
-                            
-                        if obs['price'] > max_price[1]:
-                            max_price = (datetime.fromisoformat(obs['_id']), obs['price'])
-                            max_change = round_(((max_price[1] - start_price) / start_price)*100,2)
-                        elif obs['price'] < min_price[1]:
-                            min_price = (datetime.fromisoformat(obs['_id']), obs['price'])
-                            min_change = round_(((min_price[1] - start_price) / start_price)*100,2)
-            else:
-                start_price = timeseries[coin][timestamp_start]['data'][0]['price']
-                max_change = 0
-                min_change = 0
-
-                for obs in timeseries[coin][timestamp_start]['data']:
-                    datetime_list.append(datetime.fromisoformat(obs['_id']))
-                    price_list.append(obs['price'])
-                    vol_list.append(obs[vol_field])
-                    buy_vol_list.append(obs[buy_vol_field])
-                    
-                    if obs['price'] > max_price[1]:
-                        max_price = (datetime.fromisoformat(obs['_id']), obs['price'])
-                        max_change = round_(((max_price[1] - start_price) / start_price)*100,2)
-                    if obs['price'] < min_price[1]:
-                        min_price = (datetime.fromisoformat(obs['_id']), obs['price'])
-                        min_change = round_(((min_price[1] - start_price) / start_price)*100,2)
-            
-            if plot:
-                print(f'Max price occurred at {max_price[0]}: {max_price[1]} ({max_change})')
-                print(f'Min price occurred at {min_price[0]}: {min_price[1]} ({min_change})')
-                print(f'Performance 1 day at the triggering event {ante_performance_one_day}')
-                print(f'Performance 6 hours at the triggering event {ante_performance_six_hour}')
-                print(f'Performance 3 hours at the triggering event {ante_performance_three_hour}')
-                print(f'Performance 1 hour at the triggering event {ante_performance_one_hour}')
-                print(f'Performance at the end of timeseries {final_performance_timeseries}')
-
-                
-
-                #print('ok')
-                fig, ax = plt.subplots(3, 1, sharex=True, figsize=(20, 10))
-
-                # Plotting the first time series
-                ax[0].plot(datetime_list, price_list)
-                ax[0].set_ylabel('Price')
-                
-                ax[0].set_title(f'{coin} -- {timestamp_start} -- Mean: {mean}, Std: {std}')
-                #print('title')
-                ax[0].annotate(f'Max Change: {max_change}%', xy=(max_price[0], max_price[1]),
-                                xytext=(max_price[0], max_price[1]*(1-((max_change/100)/2))),
-                                textcoords='data', ha='center', va='top',arrowprops=dict(arrowstyle='->'))
-                ax[0].annotate(f'Min Change: {min_change}%', xy=(min_price[0], min_price[1]),
-                                xytext=(min_price[0], min_price[1]*(1+((min_change/100)/2))),
-                                textcoords='data', ha='center', va='bottom',arrowprops=dict(arrowstyle='->'))
-                ax[0].axvline(x=datetime.fromisoformat(timestamp_start), color='blue', linestyle='--')
-                ax[0].axvline(x=timestamp_end, color='blue', linestyle='--')
-                ax[0].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval))
-                ax[0].xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-                ax[0].grid(True)
-
-
-                # Plotting the second time series
-                ax[1].plot(datetime_list, vol_list)
-                ax[1].set_ylabel(f'{vol_field}:{vol_value}')
-                ax[1].axvline(x=datetime.fromisoformat(timestamp_start), color='blue', linestyle='--')
-                ax[1].axvline(x=timestamp_end, color='blue', linestyle='--')
-                ax[1].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval))
-                ax[1].xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-                ax[1].annotate(f'Volume event: {volume_event[1]}', xy=(volume_event[0], volume_event[1]),
-                                xytext=(volume_event[0], volume_event[1]),
-                                textcoords='data', ha='center', va='bottom',arrowprops=dict(arrowstyle='->'))
-                ax[1].grid(True)
-
-                # Plotting the third time series
-                ax[2].plot(datetime_list, buy_vol_list)
-                ax[2].set_ylabel(f'{buy_vol_field}:{buy_vol_value}')
-                ax[2].axhline(y=0.5, color='red', linestyle='--')
-                ax[2].axvline(x=datetime.fromisoformat(timestamp_start), color='blue', linestyle='--')
-                ax[2].axvline(x=timestamp_end, color='blue', linestyle='--')
-                ax[2].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval))
-                ax[2].xaxis.set_major_formatter(mdates.DateFormatter(' %H:%M'))
-                ax[2].annotate(f'Volume event: {buy_volume_event[1]}', xy=(buy_volume_event[0], buy_volume_event[1]),
-                                xytext=(buy_volume_event[0], buy_volume_event[1]),
-                                textcoords='data', ha='center', va='bottom',arrowprops=dict(arrowstyle='->'))
-                ax[2].grid(True)
-
-                # Display the graph
-                plt.show()
-                plt.close()
-            
-            print(f'{timeseries_skipped} timeseries have not been shown because of lack of data of orderbooks')
 
 def get_event_info(observations, timestamp_start, vol_field, buy_vol_field):
     '''
@@ -2295,7 +1948,10 @@ def get_price_levels(price, bid_orders, cumulative_volume_jump=0.03, price_chang
     
     # scale order_distribution to [0,100] range
     for lvl in order_distribution:
-        order_distribution[lvl] = round_(order_distribution[lvl] / previous_cumulative_level,3)    
+        if previous_cumulative_level != 0:
+            order_distribution[lvl] = round_(order_distribution[lvl] / previous_cumulative_level,3)
+        else:
+            order_distribution[lvl] = 0
     
     # if there are not jumps, at least I want to get the cumulative volume at the limit price level
     if len(price_levels) == 0:
@@ -2363,3 +2019,92 @@ def get_analysis():
   print(f'Daily frequency of events: {daily_frequency_all_events}')
 
   return output, complete_info
+
+
+
+def plot_strategy_result():
+
+    path = '/Users/albertorainieri/Personal/analysis/Analysis2024/strategy/strategy_1/result.json'
+    with open(path, 'r') as file:
+        result = json.load(file)
+
+    events = 0
+    initial_investment = 1000
+    current_investment = initial_investment
+    current_investment_2 = initial_investment
+    events_list = []
+    events_list_wt_orderbook_strategy = []
+    dt_buy_sell_list = []
+    dt_list = []
+    gain_list = []
+    gain_wt_list = []
+
+    for event_key in result:
+        for coin in result[event_key]:
+            for start_timestamp in result[event_key][coin]:
+                if result[event_key][coin][start_timestamp] == {}:
+                    continue
+                else:
+                    events += 1
+                    gain = result[event_key][coin][start_timestamp]['gain'] / 100
+                    initial_price = result[event_key][coin][start_timestamp]['initial_price']
+                    sell_price = result[event_key][coin][start_timestamp]['sell_price']
+                    gain_wt_orderbook_strategy = ( sell_price - initial_price ) / initial_price
+                    datetime_buy = datetime.fromisoformat(result[event_key][coin][start_timestamp]['datetime_buy'])
+                    datetime_sell = datetime.fromisoformat(result[event_key][coin][start_timestamp]['datetime_sell'])
+                    events_list.append((datetime_buy, datetime_sell, gain))
+                    events_list_wt_orderbook_strategy.append((datetime_buy, datetime_sell, gain_wt_orderbook_strategy))     
+                    dt_buy_sell_list.append((datetime_buy, 'buy'))
+                    dt_buy_sell_list.append((datetime_sell, 'sell'))
+                    #start_amount += (investment_per_event + gain) - investment_per_event
+
+    print(events)
+    events_list_ascending_order = sorted(events_list, key=lambda item: item[0])
+    events_list_wt_ascending_order = sorted(events_list_wt_orderbook_strategy, key=lambda item: item[0])
+    dt_buy_sell_list_ascending_order = sorted(dt_buy_sell_list, key=lambda item: item[0])
+
+    n = 0
+    dt_list = []
+    current_number_orders = []
+    for dt in dt_buy_sell_list_ascending_order:
+        dt_list.append(dt[0])
+        if dt[1] == 'buy':
+            n += 1
+        else:
+            n -= 1
+        current_number_orders.append(n)
+
+    max_cuncurrent_orders = max(current_number_orders)
+    investment_per_order = initial_investment / max_cuncurrent_orders
+    plt.plot(dt_list, current_number_orders)
+    plt.gcf().autofmt_xdate() # Automatically rotate the date labels
+    plt.tight_layout()
+    plt.title('Number of Cuncurrent Orders')
+    plt.show()
+
+
+    dt_list = []
+    total_commission = 0
+    for event, event_wt in zip(events_list_ascending_order, events_list_wt_ascending_order):
+        dt_list.append(event[0])
+        commission = investment_per_order*0.0007125*2
+        total_commission += commission
+        current_investment += event[2]*investment_per_order - commission
+        current_investment_2 += event_wt[2]*investment_per_order - commission
+        gain_list.append(current_investment)
+        gain_wt_list.append(current_investment_2)
+    
+
+    #print(start_amount)
+    plt.plot(dt_list, gain_list, label="order_book_strategy")
+    plt.plot(dt_list, gain_wt_list, label="volume strategy")
+    plt.title('Gain')
+    plt.gcf().autofmt_xdate() # Automatically rotate the date labels
+    plt.tight_layout()
+    plt.legend()  # Display the legend
+    plt.show()
+    print(f'Commission: {round_(total_commission,2)} euro')
+    profit = round_(current_investment - initial_investment,2)
+    n_orders = len(gain_list)
+    print(f'Profit: {profit} euro')
+    print(f'Number of orders: {n_orders}')
