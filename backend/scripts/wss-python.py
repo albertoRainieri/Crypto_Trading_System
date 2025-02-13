@@ -35,14 +35,18 @@ def on_error(ws, error):
     if error == "\'data\'":
         msg = f'{LIST} Started'
         logger.info(msg)
-        db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+        #db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
         if datetime.now().second > 5:
             sleep(60 - datetime.now().second)
         
     else:
-        logger.error(f'error is: {error}')
-        db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': error})
-        if 'Connection to remote host was lost' in error and LIST_N == SETS_WSS_BACKEND:
+        logger.error(f'{LIST}: error is: {error}')
+        # db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': error})
+        #sleep(10)
+
+        # In case there are too many lost connections, suspend last list for 1 hour, so you can preserve  the other n-1 lists
+        if 'Connection to remote host was lost' in error and LIST_N % 2 == 1:
+            
             ts = datetime.now().isoformat()
             LOST_CONNECTION.append(ts)
             discard_ts = []
@@ -52,12 +56,15 @@ def on_error(ws, error):
                     conn_lost += 1
                 else:
                     discard_ts.append(ts)
-            
+
+            logger.error(f'{conn_lost}th LOST CONNECTION for {LIST}')
+
             for ts in discard_ts:
                 LOST_CONNECTION.remove(ts)
             if conn_lost >= MAX_CONNECTION_LOST:
-                msg = f'Sleep {LIST} for {SLEEP_LAST_LIST} minutes'
+                msg = f'SLEEP {LIST} for {SLEEP_LAST_LIST} minutes'
                 logger.info(msg)
+                ws.close()
                 sleep(60*SLEEP_LAST_LIST)
 
 
@@ -195,7 +202,7 @@ def select_coins(LIST, db_benchmark, position_threshold):
             coins_in_none_position.append(coin)
     
     n_coins = len(coin_list[LIST])
-    logger.info(f'list: {LIST} - n_coins already traded in the app: {n_coins} ' )
+    logger.info(f'{LIST} - n_coins already traded in the app: {n_coins} ' )
     
     coins_in_none_position = sorted(coins_in_none_position)
     for coin in coins_in_none_position:
@@ -205,7 +212,7 @@ def select_coins(LIST, db_benchmark, position_threshold):
                     coin_list[list_name].append(coin)
     
     n_coins = len(coin_list[LIST])
-    logger.info(f'list: {LIST} - total n_coins: {n_coins}' )
+    logger.info(f'{LIST} - total n_coins: {n_coins}' )
 
     # Convert lists to sets
     all_lists = []
@@ -299,6 +306,11 @@ def on_message(ws, message):
     global n_list_coins
     
     data = json.loads(message)
+
+    # LOCAL TEST
+    # if datetime.now().minute == 45:
+    #     raise ValueError("Connection to remote host was lost")
+        
 
     #get data and symbol
     
