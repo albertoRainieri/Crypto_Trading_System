@@ -286,14 +286,16 @@ class TradingController:
             
             db = client.get_db(DATABASE_ORDER_BOOK)
             db_collection = db[event_key]
-            docs = list(db_collection.find({}, {"_id": 1, "coin":1}))
+            now = datetime.now()
+            yesterday = now - timedelta(minutes=minutes_timeframe)
+            docs = list(db_collection.find({"_id": {"$gt": yesterday.isoformat()}}, {"_id": 1, "coin":1}))
             for doc in docs:
                 id = doc['_id']
                 # if event trigger time window is still open
-                if datetime.now() <  datetime.fromisoformat(id) + timedelta(minutes=minutes_timeframe):
-                    coin = doc['coin']
-                    logger.info(f'Resuming Order Book for coin {coin}, event_key {event_key} and id {id}')
-                    subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, 'None', RESTART])
+                #if datetime.now() <  datetime.fromisoformat(id) + timedelta(minutes=minutes_timeframe):
+                coin = doc['coin']
+                logger.info(f'Resuming Order Book for coin {coin}, event_key {event_key} and id {id}')
+                subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, 'None', RESTART])
         client.close()
 
 
