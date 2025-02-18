@@ -286,7 +286,7 @@ class TradingController:
             
             db = client.get_db(DATABASE_ORDER_BOOK)
             db_collection = db[event_key]
-            docs = list(db_collection.find({}, {"_id": 1}))
+            docs = list(db_collection.find({}, {"_id": 1, "coin":1}))
             for doc in docs:
                 id = doc['_id']
                 # if event trigger time window is still open
