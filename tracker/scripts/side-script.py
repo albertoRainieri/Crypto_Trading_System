@@ -32,7 +32,7 @@ def main(client, logger, db_logger, user_configuration):
             BinanceController.main_sort_pairs_list(client=client, logger=logger, db_logger=db_logger)
             logger.info("list of instruments updated from 'BinanceController.main_sort_pairs_list'")
 
-        if minute == 0 and second == 20 and hour == 0:
+        if minute == 59 and second == 30 and hour == 23:
             Benchmark.computeVolumeAverage(client=client)
             logger.info("volumes have been updated from 'Benchmark.computeVolumeAverage'")
         
