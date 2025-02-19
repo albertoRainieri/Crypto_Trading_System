@@ -58,7 +58,7 @@ class Benchmark:
         logger.info(f'len of coin_list_subset in benchmark: {len_coin_list_subset}')
         #coin_list_subset = ['BTC_USD']
 
-        now_datetime = datetime.now()
+        now_datetime = datetime.now() + timedelta(minutes=1)
         now = now_datetime.isoformat()
         today = now.split('T')[0]
 
@@ -306,7 +306,8 @@ class Benchmark:
         volume_standings = Benchmark.sort_and_rank_by_volume(volume_list)
 
         print(volume_standings)
-        id_volume_standings_doc = datetime.now().strftime("%Y-%m-%d") 
+        now = datetime.now() + timedelta(minutes=1)
+        id_volume_standings_doc = now.strftime("%Y-%m-%d") 
 
         db_volume_standings[COLLECTION_VOLUME_STANDINGS].insert_one({'_id': id_volume_standings_doc, 'standings': volume_standings})
 
