@@ -1134,7 +1134,7 @@ def get_full_timeseries(event_key, metadata_order_book):
         with open(path_full_timeseries_metadata, 'w') as file:
             json.dump(metadata_full_timeseries, file)
 
-def hit_jump_price_levels_range(current_price, dt, bid_price_levels, neighborhood_of_price_jump = 0.005, distance_jump_to_current_price=0.01):
+def hit_jump_price_levels_range(current_price, dt, bid_price_levels, neighborhood_of_price_jump = 0.005, distance_jump_to_current_price=0.01, min_n_obs_jump_level=5):
     '''
     This function defines all the historical level whereas a jump price change was existent
     Since it can happen that price_jump_level are not always in the same point (price) I check if the jump price is in the neighboorhood of the historical jump price (average with np.mean)
@@ -1182,7 +1182,7 @@ def hit_jump_price_levels_range(current_price, dt, bid_price_levels, neighborhoo
             
     #print(summary_jump_price_level)
     for x in summary_jump_price_level:
-        if abs((current_price - summary_jump_price_level[x][0] ) / current_price ) <= distance_jump_to_current_price:
+        if abs((current_price - summary_jump_price_level[x][0] ) / current_price ) <= distance_jump_to_current_price and len(summary_jump_price_level[x][1]) >= min_n_obs_jump_level:
             return True
             #print(current_price, dt)
     return False
@@ -1194,7 +1194,7 @@ def hit_jump_price_levels_range(current_price, dt, bid_price_levels, neighborhoo
 def simulate_entry_position(price_list, list_datetime, start_datetime,
                              bid_price_levels, ask_order_distribution_list, price_change_jump, max_limit=0.1,
                                price_drop_limit=0.05, distance_jump_to_current_price = 0.03,
-                                 max_ask_order_distribution_level = 0.2, last_i_ask_order_distribution=1):
+                                 max_ask_order_distribution_level = 0.2, last_i_ask_order_distribution=1, min_n_obs_jump_level=5):
     
     '''
     INPUT DESCRIPTION
@@ -1231,7 +1231,8 @@ def simulate_entry_position(price_list, list_datetime, start_datetime,
         # PHASE 2
         # DEFINE HOW CLOSE THE PRICE IS TO HISTORICAL JUMP LEVELS
         is_jump_price_level = hit_jump_price_levels_range(current_price=price, dt=dt, bid_price_levels=bid_price_levels,
-                                                           distance_jump_to_current_price=distance_jump_to_current_price)
+                                                           distance_jump_to_current_price=distance_jump_to_current_price,
+                                                           min_n_obs_jump_level=min_n_obs_jump_level)
 
         if is_jump_price_level:
             # get keys of ask_order_distribution [0.025, 0.05, 0.075, ...]
@@ -1272,7 +1273,7 @@ def simulate_entry_position(price_list, list_datetime, start_datetime,
 
 def analyze_timeseries(event_key, check_past, check_future, jump, limit, price_change_jump,
                                 max_limit, price_drop_limit, distance_jump_to_current_price,
-                        max_ask_order_distribution_level, last_i_ask_order_distribution, strategy_result,
+                        max_ask_order_distribution_level, last_i_ask_order_distribution, min_n_obs_jump_level, strategy_result,
                         save_plot):
     '''
     INPUT DESCRITION
@@ -1470,7 +1471,7 @@ def analyze_timeseries(event_key, check_past, check_future, jump, limit, price_c
                     info_buy = simulate_entry_position(price_list, list_datetime, start_datetime,
                                                         bid_price_levels, ask_order_distribution_list, price_change_jump,
                                                         max_limit, price_drop_limit, distance_jump_to_current_price,
-                                                          max_ask_order_distribution_level, last_i_ask_order_distribution)
+                                                          max_ask_order_distribution_level, last_i_ask_order_distribution, min_n_obs_jump_level)
 
                 if info_buy != None and dt >= end_datetime and not SELL:
                     SELL = True
@@ -1621,7 +1622,7 @@ def print_event_key(event_key_i, n_event_keys, event_key):
 
 def get_timeseries(info, check_past=1440, check_future=1440, jump=0.03, limit=0.15, event_keys_filter = [],
                    price_change_jump = 0.025, max_limit = 0.1, price_drop_limit = 0.05, distance_jump_to_current_price = 0.03,
-                        max_ask_order_distribution_level = 0.2, last_i_ask_order_distribution= 1,
+                        max_ask_order_distribution_level = 0.2, last_i_ask_order_distribution= 1, min_n_obs_jump_level=5,
                         save_plot=False, analyze=True):
     '''
     check_past: minutes before event trigger
@@ -1631,7 +1632,7 @@ def get_timeseries(info, check_past=1440, check_future=1440, jump=0.03, limit=0.
     '''
 
     name_strategy = f'strategy_jump={jump}_limit={limit}_price_change_jump={price_change_jump}_max_limit={max_limit}_price_drop_limit={price_drop_limit}'
-    name_strategy += f'_distance_jump_to_current_price={distance_jump_to_current_price}_max_ask_order_distribution_level={max_ask_order_distribution_level}_last_i_ask_order_distribution={last_i_ask_order_distribution}'
+    name_strategy += f'_distance_jump_to_current_price={distance_jump_to_current_price}_max_ask_order_distribution_level={max_ask_order_distribution_level}_last_i_ask_order_distribution={last_i_ask_order_distribution}_min_n_obs_jump_level={min_n_obs_jump_level}'
 
     n_event_keys = len(info)
     for event_key, event_key_i in zip(info, range(1,n_event_keys+1)):
@@ -1689,7 +1690,7 @@ def get_timeseries(info, check_past=1440, check_future=1440, jump=0.03, limit=0.
         # Execute the function "wrap_analyze_events_multiprocessing" in parallel
         pool.starmap(wrap_analyze_timeseries, [(event_keys, check_past, check_future, jump, limit, price_change_jump,
                                 max_limit, price_drop_limit, distance_jump_to_current_price,
-                                max_ask_order_distribution_level, last_i_ask_order_distribution,
+                                max_ask_order_distribution_level, last_i_ask_order_distribution, min_n_obs_jump_level,
                                 save_plot, lock, result_json) for event_keys in event_keys_lists ])
 
         # Close the pool
@@ -1707,7 +1708,7 @@ def get_timeseries(info, check_past=1440, check_future=1440, jump=0.03, limit=0.
 
 def wrap_analyze_timeseries(event_keys, check_past, check_future, jump, limit, price_change_jump,
                                 max_limit, price_drop_limit, distance_jump_to_current_price,
-                                max_ask_order_distribution_level, last_i_ask_order_distribution,
+                                max_ask_order_distribution_level, last_i_ask_order_distribution, min_n_obs_jump_level,
                                 save_plot, lock, result_json):
         
         tmp = {}
@@ -1715,7 +1716,7 @@ def wrap_analyze_timeseries(event_keys, check_past, check_future, jump, limit, p
             print(f'Event Key: {event_key}')
             result_tmp = analyze_timeseries(event_key, check_past, check_future, jump, limit, price_change_jump,
                                 max_limit, price_drop_limit, distance_jump_to_current_price,
-                        max_ask_order_distribution_level, last_i_ask_order_distribution, result_json,
+                        max_ask_order_distribution_level, last_i_ask_order_distribution, min_n_obs_jump_level, result_json,
                         save_plot)
             tmp[event_key] = result_tmp
         
@@ -2201,7 +2202,7 @@ def get_analysis():
 def get_plots(min_gain, max_gain):
     from IPython.display import Image, display
     n = 0
-    path = '/Users/albertorainieri/Personal/analysis/Analysis2024/strategy/strategy_1/result.json'
+    path = '/Users/albertorainieri/Personal/analysis/Analysis2024/strategy/strategy_jump=0.04_limit=0.25_price_change_jump=0.025_max_limit=0.2_price_drop_limit=0.05_distance_jump_to_current_price=0.03_max_ask_order_distribution_level=0.05_last_i_ask_order_distribution=1/result.json'
     paths_png = []
     with open(path, 'r') as file:
         result = json.load(file)
@@ -2237,8 +2238,20 @@ def get_plots(min_gain, max_gain):
     
 
 def plot_strategy_result():
+    strategy_jump='strategy_jump=0.04'
+    limit='limit=0.25'
+    price_change_jump='price_change_jump=0.025'
+    max_limit='max_limit=0.2'
+    price_drop_limit='price_drop_limit=0.05'
+    distance_jump_to_current_price='distance_jump_to_current_price=0.01'
+    max_ask_order_distribution_level='max_ask_order_distribution_level=0.1'
+    last_i_ask_order_distribution='last_i_ask_order_distribution=1'
+    min_n_obs_jump_level='min_n_obs_jump_level=5'
 
-    path = '/Users/albertorainieri/Personal/analysis/Analysis2024/strategy/strategy_jump=0.04_limit=0.25_price_change_jump=0.025_max_limit=0.2_price_drop_limit=0.05_distance_jump_to_current_price=0.03_max_ask_order_distribution_level=0.2_last_i_ask_order_distribution=1/result.json'
+
+    strategy = f'{strategy_jump}_{limit}_{price_change_jump}_{max_limit}_{price_drop_limit}_{distance_jump_to_current_price}_{max_ask_order_distribution_level}_{last_i_ask_order_distribution}_{min_n_obs_jump_level}'
+    path = f'/Users/albertorainieri/Personal/analysis/Analysis2024/strategy/{strategy}/result.json'
+    print(f'Strategy: {strategy}')
     
     output, complete_info = get_analysis()
 
@@ -2422,8 +2435,6 @@ def plot_strategy_result():
 
     total_commission = 0
     x_commission = 0
-    print(len(buy_events_list_ascending_order))
-    print(len(total_events_list_ascending_order))
     for event in buy_events_list_ascending_order:
 
         datetime_buy = event[0]
@@ -2502,7 +2513,9 @@ def plot_strategy_result():
     print(f'Total Investment {round_(n_orders*investment_per_order,2)}')
     print(f'Average Profit per event: {average_profit_per_event}%')
     print(f'Profit: {profit} euro')
-    print(f'Number of orders: {n_orders}')
+    print(f'Total Observations Under Analysis: {len(total_events_list_ascending_order)}')
+    print(f'Total Events triggered by strategy: {len(buy_events_list_ascending_order)}')
+    print(len(total_events_list_ascending_order))
 
     pd.set_option('display.max_rows', 10000)
     df_events_overview = pd.DataFrame({'Timestamp Buy': ts_buy_list, 'Timestamp Sell': ts_sell_list, 'Coin': coin_list, 'Profit': profit_event, 'Profit_vol_strat': profit_wt_event,
