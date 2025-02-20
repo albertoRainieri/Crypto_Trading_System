@@ -1272,7 +1272,7 @@ def simulate_entry_position(price_list, list_datetime, start_datetime,
 
 def analyze_timeseries(event_key, check_past, check_future, jump, limit, price_change_jump,
                                 max_limit, price_drop_limit, distance_jump_to_current_price,
-                        max_ask_order_distribution_level, last_i_ask_order_distribution, name_strategy,
+                        max_ask_order_distribution_level, last_i_ask_order_distribution, strategy_result,
                         save_plot):
     '''
     INPUT DESCRITION
@@ -1282,25 +1282,13 @@ def analyze_timeseries(event_key, check_past, check_future, jump, limit, price_c
     '''
     # get result strategy is exists
 
-
-    path_strategy = ROOT_PATH + f'/strategy/{name_strategy}'
+    strategy_result = json.loads(strategy_result.value)
     event_key_path = event_key.replace(':', '_').replace('/', '_')
     path_plot_root = f'{ROOT_PATH}/plot_timeseries/{event_key_path}'
     if not os.path.exists(path_plot_root):
         os.makedirs(path_plot_root)
     
-
-    if os.path.exists(path_strategy):
-        path_strategy = path_strategy + '/result.json'
-        with open(path_strategy, 'r') as file:
-            strategy_result = json.load(file)
-    else:
-        os.mkdir(path_strategy)
-        path_strategy = path_strategy + '/result.json'
-        strategy_result = {}
-    
-    if event_key not in strategy_result:
-        strategy_result[event_key] = {}
+    tmp_strategy_result = {}
     
     vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
     path_full_timeseries = ROOT_PATH + '/full_timeseries/' + event_key_path + '.json'
@@ -1328,20 +1316,23 @@ def analyze_timeseries(event_key, check_past, check_future, jump, limit, price_c
         if not os.path.exists(path_plot_coin):
             os.makedirs(path_plot_coin)
 
-        if coin not in strategy_result[event_key]:
-            strategy_result[event_key][coin] = {}
-
         for start_timestamp in full_timeseries[coin]:
             start_timestamp_path = start_timestamp.replace(':', '-').split('.')[0]
             path_plot = f'{path_plot_coin}/{start_timestamp_path}.png'
             plot_exists = os.path.exists(path_plot)
             
-            if start_timestamp not in strategy_result[event_key][coin]:
-                strategy_result[event_key][coin][start_timestamp] = {}
+            if event_key not in strategy_result or coin not in strategy_result[event_key] or start_timestamp not in strategy_result[event_key][coin]:
+                if coin not in tmp_strategy_result:
+                    tmp_strategy_result[coin] = {}
+
+                tmp_strategy_result[coin][start_timestamp] = {}
+
             elif save_plot == False:
                 continue
             elif plot_exists:
                 continue
+                
+            
 
             start_datetime = datetime.fromisoformat(start_timestamp)
             start_datetime = start_datetime.replace(second=0).replace(microsecond=0)
@@ -1505,9 +1496,7 @@ def analyze_timeseries(event_key, check_past, check_future, jump, limit, price_c
                     'datetime_buy': dt_buy.isoformat(), 'datetime_sell': datetime_sell.isoformat(), 'datetime_end': end_datetime.isoformat(),
                     'ask_order_distribution': ask_order_distribution_buy, 'path_png': path_plot}
 
-                strategy_result[event_key][coin][start_timestamp] = performance_doc
-                with open(path_strategy, 'w') as f:
-                    json.dump(strategy_result, f, indent=4)
+
             else:
                 performance_doc = {
                     'initial_price': initial_price, 'final_price': final_price, 'buy_price': None, 'sell_price': None,
@@ -1515,10 +1504,8 @@ def analyze_timeseries(event_key, check_past, check_future, jump, limit, price_c
                     'datetime_buy': None, 'datetime_sell': None, 'datetime_end': end_datetime.isoformat(),
                     'ask_order_distribution': None, 'path_png': path_plot
                 }
-                strategy_result[event_key][coin][start_timestamp] = performance_doc
-                with open(path_strategy, 'w') as f:
-                    json.dump(strategy_result, f, indent=4)
-
+            
+            tmp_strategy_result[coin][start_timestamp] = performance_doc
             
             if save_plot:
 
@@ -1620,10 +1607,16 @@ def analyze_timeseries(event_key, check_past, check_future, jump, limit, price_c
                 #plt.show()
                 plt.close()
             
-    
+    return tmp_strategy_result
+            
 
-
-
+def print_event_key(event_key_i, n_event_keys, event_key):
+    print('')
+    print('')
+    print('')
+    print('#####################################################################')
+    print(f'{event_key_i}/{n_event_keys} Event Key: {event_key}')
+    print('#####################################################################')
             
 
 def get_timeseries(info, check_past=1440, check_future=1440, jump=0.03, limit=0.15, event_keys_filter = [],
@@ -1644,12 +1637,7 @@ def get_timeseries(info, check_past=1440, check_future=1440, jump=0.03, limit=0.
     for event_key, event_key_i in zip(info, range(1,n_event_keys+1)):
         if event_keys_filter != [] and event_key not in event_keys_filter:
             continue
-        print('')
-        print('')
-        print('')
-        print('#####################################################################')
-        print(f'{event_key_i}/{n_event_keys} Event Key: {event_key}')
-        print('#####################################################################')
+        print_event_key(event_key_i, n_event_keys, event_key)
         
         request_order_book = {event_key: {}}
         for coin in info[event_key]['info']:
@@ -1666,13 +1654,118 @@ def get_timeseries(info, check_past=1440, check_future=1440, jump=0.03, limit=0.
         get_timeseries_from_server(request_order_book, check_past, check_future)
         # get fulltimeseries (mix of orderbook and timeseries)
         get_full_timeseries(event_key, metadata_order_book)
+    
 
-        if analyze:
-            analyze_timeseries(event_key, check_past, check_future, jump, limit, price_change_jump,
+    if analyze:
+        event_keys = list(info.keys())
+        # get data slices for multiprocessing. .e.g divide the data in batches for allowing multiprocessing
+        event_keys_lists = event_keys_preparation(event_keys, n_processes = 8)
+
+        # initialize Manager for "shared_data". Used for multiprocessing
+        manager = Manager()
+        
+        # initialize lock for processing shared variable between multiple processes
+        lock = Manager().Lock()
+
+        # Create a multiprocessing Pool
+        pool = Pool()
+
+        #initialize shared_data
+        path_strategy = ROOT_PATH + f'/strategy/{name_strategy}'
+        if os.path.exists(path_strategy):
+            path_strategy = path_strategy + '/result.json'
+            with open(path_strategy, 'r') as file:
+                result = json.load(file)
+        else:
+            os.mkdir(path_strategy)
+            path_strategy = path_strategy + '/result.json'
+            result = {}
+        result_json = manager.Value(str, json.dumps(result))
+
+        print('')
+        print('START ANALYSIS')
+        print('')
+
+        # Execute the function "wrap_analyze_events_multiprocessing" in parallel
+        pool.starmap(wrap_analyze_timeseries, [(event_keys, check_past, check_future, jump, limit, price_change_jump,
                                 max_limit, price_drop_limit, distance_jump_to_current_price,
-                        max_ask_order_distribution_level, last_i_ask_order_distribution, name_strategy,
+                                max_ask_order_distribution_level, last_i_ask_order_distribution,
+                                save_plot, lock, result_json) for event_keys in event_keys_lists ])
+
+        # Close the pool
+        pool.close()
+        print('pool closed')
+        pool.join()
+        print('pool joined')
+
+        result_json = json.loads(result_json.value)
+        with open(path_strategy, 'w') as f:
+            json.dump(result_json, f, indent=4)
+
+
+
+
+def wrap_analyze_timeseries(event_keys, check_past, check_future, jump, limit, price_change_jump,
+                                max_limit, price_drop_limit, distance_jump_to_current_price,
+                                max_ask_order_distribution_level, last_i_ask_order_distribution,
+                                save_plot, lock, result_json):
+        
+        tmp = {}
+        for event_key in event_keys:
+            print(f'Event Key: {event_key}')
+            result_tmp = analyze_timeseries(event_key, check_past, check_future, jump, limit, price_change_jump,
+                                max_limit, price_drop_limit, distance_jump_to_current_price,
+                        max_ask_order_distribution_level, last_i_ask_order_distribution, result_json,
                         save_plot)
+            tmp[event_key] = result_tmp
+        
+        with lock:
+            result = json.loads(result_json.value)
+
+            for event_key in tmp:
+                if event_key not in result:
+                    result[event_key] = {}
+
+                for coin in tmp[event_key]:
+                    for start_timestamp in tmp[event_key][coin]:
+                        if coin not in result[event_key]:
+                            result[event_key][coin] = {}
+                        result[event_key][coin][start_timestamp] = tmp[event_key][coin][start_timestamp]
             
+            result_json.value = json.dumps(result)
+
+        
+        
+
+
+
+
+
+def event_keys_preparation(event_keys, n_processes):
+    n_event_keys = len(event_keys)
+    event_keys_per_iteration = n_event_keys // n_processes
+    remainder = n_event_keys % n_processes
+    slice_start = 0
+    slice_end = slice_start + event_keys_per_iteration
+    remainder_event_keys = event_keys[-remainder:]
+
+    event_key_lists = []
+    for _ in range(n_processes):
+        event_key_list = []
+        for event_key in event_keys[slice_start:slice_end]:
+            event_key_list.append(event_key)
+        event_key_lists.append(event_key_list)
+        slice_start = slice_end
+        slice_end += event_keys_per_iteration
+    
+    if remainder != 0:
+       for event_key, index in zip(remainder_event_keys, range(len(remainder_event_keys))):
+           event_key_lists[index].append(event_key)
+    
+    print(event_key_lists)
+    return event_key_lists
+
+
 
 def get_event_info(observations, timestamp_start, vol_field, buy_vol_field):
     '''
@@ -2085,7 +2178,7 @@ def get_analysis():
   #              "/Users/albertorainieri/Personal/analysis/Analysis2024/analysis_json/analysis-buy-sell-10-250-highfrequency.json"]
 
   file_paths = ["/Users/albertorainieri/Personal/analysis/Analysis2024/analysis_json_production/analysis.json"]
-  start_analysis= datetime(2025,1,1)
+  start_analysis= datetime(2025,1,15)
   early_validation = datetime(2026,1,1)
   xth_percentile=100
   filter_field='mean' #mean, std, max, min
@@ -2145,7 +2238,10 @@ def get_plots(min_gain, max_gain):
 
 def plot_strategy_result():
 
-    path = '/Users/albertorainieri/Personal/analysis/Analysis2024/strategy/strategy_jump=0.04_limit=0.25_price_change_jump=0.025_max_limit=0.2_price_drop_limit=0.05_distance_jump_to_current_price=0.03_max_ask_order_distribution_level=0.1_last_i_ask_order_distribution=1/result.json'
+    path = '/Users/albertorainieri/Personal/analysis/Analysis2024/strategy/strategy_jump=0.04_limit=0.25_price_change_jump=0.025_max_limit=0.2_price_drop_limit=0.05_distance_jump_to_current_price=0.03_max_ask_order_distribution_level=0.2_last_i_ask_order_distribution=1/result.json'
+    
+    output, complete_info = get_analysis()
+
     with open(path, 'r') as file:
         result = json.load(file)
 
@@ -2163,15 +2259,30 @@ def plot_strategy_result():
     coin_list = []
     gain_list = []
     gain_wt_list = []
-    gain_distribution = {(-1,-0.4):0, (-0.4, -0.3):0, (-0.3,-0.2):0, (-0.2,-0.1):0, (-0.1,-0.05):0, (-0.05,0):0, (0,0.05):0, (0.05,0.1):0, (0.1,0.2):0, (0.2,0.3):0, (0.3,0.4):0, (0.4,10):0} 
+    gain_distribution = {(-1,-0.4):0, (-0.4, -0.3):0, (-0.3,-0.2):0, (-0.2,-0.1):0, (-0.1,-0.05):0, (-0.05,0):0, (0,0.05):0, (0.05,0.1):0, (0.1,0.2):0, (0.2,0.3):0, (0.3,0.4):0, (0.4,10):0}
+    event_keys_overview = {}
+    n_events_per_event_keys = {}
+    df_event_keys_overview = {'event_keys': [], 'n_events': [], 'gain': [], 'max': [], 'min': []}
+
 
     for event_key in result:
+        gains_per_event_key = {}
+        max_per_event_key = {}
+        min_per_event_key = {}
+        gain_no_strategy_overview = {}
+
+        total_gain = []
+        total_max = []
+        total_min = []
         for coin in result[event_key]:
+            if result[event_key][coin] == {}:
+                continue
             for start_timestamp in result[event_key][coin]:
                 if result[event_key][coin][start_timestamp] == {}:
                     continue
                 else:
                     events += 1
+        
                     if result[event_key][coin][start_timestamp]['gain'] != None:
                         is_buy_event = True
                     else:
@@ -2181,6 +2292,9 @@ def plot_strategy_result():
                     final_price = result[event_key][coin][start_timestamp]['final_price']
                     max_change = result[event_key][coin][start_timestamp]['max_change']
                     min_change = result[event_key][coin][start_timestamp]['min_change']
+                    max_price = initial_price * ( 1 + (max_change / 100))
+                    min_price = initial_price * ( 1 - (min_change / 100))
+                    gain_no_strategy = ((((min_price + max_price + final_price ) / 3) - initial_price ) / initial_price) * 100
                     gain_wt_orderbook_strategy = ( final_price - initial_price ) / initial_price
                     datetime_start = datetime.fromisoformat(start_timestamp)
                     datetime_end = datetime.fromisoformat(start_timestamp) + timedelta(days=1)
@@ -2191,11 +2305,25 @@ def plot_strategy_result():
                                             max_change, min_change, gain_wt_orderbook_strategy,
                                             coin, initial_price, final_price))
 
-
+                    month_year = datetime.fromisoformat(start_timestamp).strftime("%Y-%m")
+                    if month_year not in gains_per_event_key:
+                        gains_per_event_key[month_year] = []
+                        max_per_event_key[month_year] = []
+                        min_per_event_key[month_year] = []
+                        gain_no_strategy_overview[month_year] = []
                     if is_buy_event:
+                        gain = result[event_key][coin][start_timestamp]['gain']
+
+                        gains_per_event_key[month_year].append(gain)
+                        max_per_event_key[month_year].append(max_change)
+                        min_per_event_key[month_year].append(min_change)
+                        gain_no_strategy_overview[month_year].append(gain_wt_orderbook_strategy*100)
+                        total_gain.append(gain)
+                        total_max.append(max_change)
+                        total_min.append(min_change)
+
                         buy_price = result[event_key][coin][start_timestamp]['buy_price']
                         sell_price = result[event_key][coin][start_timestamp]['sell_price']
-                        gain = result[event_key][coin][start_timestamp]['gain']
                         datetime_buy = datetime.fromisoformat(result[event_key][coin][start_timestamp]['datetime_buy'])
                         datetime_sell = datetime.fromisoformat(result[event_key][coin][start_timestamp]['datetime_sell'])
                         ask_order_distribution = result[event_key][coin][start_timestamp]['ask_order_distribution']
@@ -2209,7 +2337,31 @@ def plot_strategy_result():
                             if gain/100 >= gain_range[0] and gain/100 < gain_range[1]:
                                 gain_distribution[gain_range] += 1
                                 break
+        
+        df_event_keys_overview['event_keys'].append(event_key)
+        df_event_keys_overview['gain'].append(round_(np.mean(total_gain),2))
+        df_event_keys_overview['max'].append(round_(np.mean(total_max),2))
+        df_event_keys_overview['min'].append(round_(np.mean(total_min),2))
+        df_event_keys_overview['n_events'].append(len(total_gain))
 
+        for month_year in gains_per_event_key:
+            if month_year not in df_event_keys_overview:
+                df_event_keys_overview[month_year] = []
+            
+            if len(gains_per_event_key[month_year]) > 0:
+                gain_strategy = round_(np.mean(gains_per_event_key[month_year]),2)
+                gain_no_strategy = round_(np.mean(gain_no_strategy_overview[month_year]),2)
+                max_ = round_(np.mean(max_per_event_key[month_year]),2)
+                min_ = round_(np.mean(min_per_event_key[month_year]),2)
+                n_events = len(gains_per_event_key[month_year])
+                performance = f'{str(gain_strategy)} vs {str(gain_no_strategy)} / max:{max_} / min:{min_} / n:{n_events}'
+            else:
+                performance = None
+
+            df_event_keys_overview[month_year].append(performance)
+
+
+    
     bin_edges = sorted(list(set([k[0] for k in gain_distribution.keys()] + [k[1] for k in gain_distribution.keys()]))) #Extract all unique values and sort them
     frequencies = [gain_distribution[k] for k in sorted(gain_distribution.keys())] #Extract frequencies in the same order as bin edges
     bin_edges[-1] = 0.5
@@ -2243,7 +2395,7 @@ def plot_strategy_result():
             n -= 1
         total_current_number_orders.append(n)
 
-
+    #print(buy_current_number_orders)
     max_cuncurrent_orders = max(buy_current_number_orders)
     investment_per_order = initial_investment / max_cuncurrent_orders
     plt.plot(dt_buy_list, buy_current_number_orders)
@@ -2324,7 +2476,7 @@ def plot_strategy_result():
 
     #print(start_amount)
     plt.plot(dt_buy_list, gain_list, label="order_book_strategy")
-    plt.plot(dt_buy_list, gain_wt_list, label="volume strategy")
+    plt.plot(dt_buy_list, gain_wt_list, label="volume strategy") # sono gli eventi
     plt.plot(dt_total_list, total_gain_list, label="total")
     plt.title('Gain')
     plt.gcf().autofmt_xdate() # Automatically rotate the date labels
@@ -2353,7 +2505,13 @@ def plot_strategy_result():
     print(f'Number of orders: {n_orders}')
 
     pd.set_option('display.max_rows', 10000)
-    df = pd.DataFrame({'Timestamp Buy': ts_buy_list, 'Timestamp Sell': ts_sell_list, 'Coin': coin_list, 'Profit': profit_event, 'Profit_vol_strat': profit_wt_event,
+    df_events_overview = pd.DataFrame({'Timestamp Buy': ts_buy_list, 'Timestamp Sell': ts_sell_list, 'Coin': coin_list, 'Profit': profit_event, 'Profit_vol_strat': profit_wt_event,
                   'max': max_list, 'min': min_list, 'Initial Price': initial_price_list, 'Buy Price': buy_price_list, 'Sell price': sell_price_list})
 
-    return df
+    # print(df_event_keys_overview)
+    # for key in list(df_event_keys_overview.keys()):
+    #     print(key)
+    #     print(len(df_event_keys_overview[key]))
+    df_event_keys_overview = pd.DataFrame(df_event_keys_overview)
+
+    return df_events_overview, df_event_keys_overview
