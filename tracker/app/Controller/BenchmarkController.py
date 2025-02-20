@@ -77,7 +77,7 @@ class Benchmark:
             
             cursor_benchmark = list(db_benchmark[coin].find())
 
-
+            list_dt = []
 
             # if benchmark was never created
             if len(cursor_benchmark) == 0:
@@ -96,7 +96,15 @@ class Benchmark:
                         last_timestamp = first_timestamp.split('T')[0]
                         volumes[last_timestamp] = []
                         i += 1
+
                     datetime_doc = datetime.fromisoformat(doc['_id'])
+
+                    # AVOID DUPLICATES
+                    datetime_minute = datetime_doc.replace(second=0).replace(microsecond=0)
+                    if datetime_minute not in list_dt:
+                        list_dt.append(datetime_minute)
+                    else:
+                        continue
                     
                     # compute average for 30, 60, 90 days
                     # this will append each doc_volume (every minute of observation)
@@ -142,7 +150,8 @@ class Benchmark:
                 # let us create the variable that will be saved in the db. 
                 # this will consider the average and standard deviation of the volume for each day
 
-
+                n_obs = len(volumes_30days_list)
+                print(f'Benchmark: {n_obs} obs in db_market for coin {coin}')
                 avg_volume_30days = round_(np.mean(volumes_30days_list),2)
                 std_volume_30days = round_(np.std(volumes_30days_list),2)
                 
