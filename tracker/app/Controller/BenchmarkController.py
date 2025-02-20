@@ -151,7 +151,8 @@ class Benchmark:
                 # this will consider the average and standard deviation of the volume for each day
 
                 n_obs = len(volumes_30days_list)
-                print(f'Benchmark: {n_obs} obs in db_market for coin {coin}')
+                avg_obs_per_day = n_obs / 30
+                print(f'Benchmark: {n_obs} obs (30days) ({avg_obs_per_day} /day) for coin {coin}')
                 avg_volume_30days = round_(np.mean(volumes_30days_list),2)
                 std_volume_30days = round_(np.std(volumes_30days_list),2)
                 
