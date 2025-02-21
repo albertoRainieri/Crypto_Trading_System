@@ -2234,24 +2234,166 @@ def get_plots(min_gain, max_gain):
     print(f'{n} events whose gain is between {min_gain*100}% and {max_gain*100}%')
     return paths_png
 
+def get_top_crypto(initial_investment=1000):
+    crypto_timeseries = get_crypto_performance()
+    top_crypto = {'top_10': {}, 'top_50': {}, 'top_150': {}, 'top_250': {}}
+    top_crypto_keys = list(top_crypto.keys())
+    threshold_list = [int(i.split('_')[1]) for i in list(top_crypto.keys())]
 
+    #topx timeseries
+    for coin in crypto_timeseries:
+        dates = list(crypto_timeseries[coin].keys())
+        if len(dates) > 0:
+            first_date = dates[0]
+        for date in dates:
+            for top_crypto_key in top_crypto_keys:
+                if date not in top_crypto[top_crypto_key] and date != first_date:
+                    top_crypto[top_crypto_key][date] = []
+            previous_date = (datetime.strptime(date, '%Y-%m-%d') - timedelta(days=1)).strftime("%Y-%m-%d")
+            if previous_date in crypto_timeseries[coin]:
+
+                price_previous_day = crypto_timeseries[coin][previous_date][0]
+                price_current_day = crypto_timeseries[coin][date][0]
+                gain = (price_current_day - price_previous_day) / price_previous_day
+                position = crypto_timeseries[coin][date][2]
+
+                for threshold in threshold_list:
+                    if position <= threshold:
+                        top_x = 'top_' + str(threshold)
+                        top_crypto[top_x][date].append(gain)
+                        break
     
+    # btc timeseries
+    top_crypto['btc'] = {}
+    dates = list(crypto_timeseries['BTCUSDT'].keys())
+    for date in dates:
+        previous_date = (datetime.strptime(date, '%Y-%m-%d') - timedelta(days=1)).strftime("%Y-%m-%d")
+        if previous_date in crypto_timeseries['BTCUSDT']:
+            price_previous_day = crypto_timeseries['BTCUSDT'][previous_date][0]
+            price_current_day = crypto_timeseries['BTCUSDT'][date][0]
+            gain = (price_current_day - price_previous_day) / price_previous_day
+            top_crypto['btc'][date] = gain
+
+    len_dates_btc = len(top_crypto['btc'])
+    for top_x in top_crypto_keys:
+        assert len(top_crypto[top_x]) == len_dates_btc
+
+    for top_x in top_crypto_keys:
+        #list_dt = top_crypto[]
+        for date in top_crypto[top_x]:
+            if len(top_crypto[top_x][date]) > 0:
+                top_crypto[top_x][date] = float(np.mean(top_crypto[top_x][date]))
+
+    #return top_crypto
+    crypto_performance = {}
+    for top_x in top_crypto:
+        list_dates = list(top_crypto[top_x].keys())
+        first_date = list_dates[0]
+        if top_x not in crypto_performance:
+            crypto_performance[top_x] = [initial_investment*(1+top_crypto[top_x][first_date])]
+        for date in list_dates[1:]:
+            previous_balance = crypto_performance[top_x][-1]
+            crypto_performance[top_x].append(previous_balance*(1+top_crypto[top_x][date]))
+
+    list_datetime = [datetime.strptime(date, '%Y-%m-%d') for date in list_dates]
+    return crypto_performance, list_datetime
+
+
+
+def get_crypto_performance():
+    volume_standings_full = load_volume_standings()
+    #return volume_standings_full
+    url = 'http://localhost//analysis/get-crypto-timeseries'
+    path_crypto_timeseries = ROOT_PATH + '/crypto_timeseries/crypto.json'
+    now = datetime.now()
+
+    if os.path.exists(path_crypto_timeseries):
+        with open(path_crypto_timeseries, 'r') as file:
+            crypto_timeseries = json.load(file)
+            start_datetime_split = list(crypto_timeseries['BTCUSDT'].keys())[-1].split('-')
+            start_datetime = datetime(year=int(start_datetime_split[0]), month=int(start_datetime_split[1]), day=int(start_datetime_split[2]))
+            if now - start_datetime < timedelta(days=2):
+                print('Data is up to date')
+                return crypto_timeseries
+    else:
+        start_datetime = datetime(2025,1,12)
+
+    while now - start_datetime < timedelta(days=2):
+        print(f'Data Download from {start_datetime.isoformat()} + 7days')
+        request = {}
+        for date in volume_standings_full:
+            datetime_i = datetime.strptime(date, '%Y-%m-%d')
+            if datetime_i <= start_datetime:
+                continue
+            for coin in volume_standings_full[date]:
+                position = volume_standings_full[date][coin]
+                if position > 250:
+                    continue
+                if coin not in request:
+                    request[coin] = [datetime_i.isoformat()]
+                else:
+                    request[coin].append(datetime_i.isoformat())
+        
+        for coin in request:
+            request[coin] = (request[coin][0], min(
+                    datetime.fromisoformat(request[coin][0]) + timedelta(days=7),
+                    datetime.fromisoformat(request[coin][-1])
+                    ).isoformat())
+        
+
+        response = requests.post(url=url, json=request)
+        response = json.loads(response.text)
+        response = response['data']
+
+        if not os.path.exists(path_crypto_timeseries):
+            for coin in response:
+                for date in response[coin]:
+                    position = volume_standings_full[date][coin]
+                    response[coin][date].append(position)
+            with open(path_crypto_timeseries, 'w') as file:
+                json.dump(response, file)
+        else:
+            for coin in response:
+                if coin not in crypto_timeseries:
+                    crypto_timeseries[coin] = {}
+                for date in response[coin]:
+                    position = volume_standings_full[date][coin]
+                    #print(response[coin][date])
+                    response[coin][date].append(position)
+                    crypto_timeseries[coin][date] = response[coin][date]
+            with open(path_crypto_timeseries, 'w') as file:
+                json.dump(crypto_timeseries, file)
+        
+        start_datetime_split = list(crypto_timeseries['BTCUSDT'].keys())[-1].split('-')
+        start_datetime = datetime(year=int(start_datetime_split[0]), month=int(start_datetime_split[1]), day=int(start_datetime_split[2]))
+
+    return crypto_timeseries
+
+
+                
 
 def plot_strategy_result():
-    strategy_jump='strategy_jump=0.04'
-    limit='limit=0.25'
-    price_change_jump='price_change_jump=0.025'
-    max_limit='max_limit=0.2'
-    price_drop_limit='price_drop_limit=0.05'
-    distance_jump_to_current_price='distance_jump_to_current_price=0.01'
-    max_ask_order_distribution_level='max_ask_order_distribution_level=0.1'
-    last_i_ask_order_distribution='last_i_ask_order_distribution=1'
-    min_n_obs_jump_level='min_n_obs_jump_level=5'
+    info_strategy = {
+        'strategy_jump': 'strategy_jump=0.04_',
+        'limit': 'limit=0.25_',
+        'price_change_jump': 'price_change_jump=0.025_',
+        'max_limit': 'max_limit=0.2_',
+        'price_drop_limit': 'price_drop_limit=0.05_',
+        'distance_jump_to_current_price': 'distance_jump_to_current_price=0.01_',
+        'max_ask_order_distribution_level': 'max_ask_order_distribution_level=0.1_',
+        'last_i_ask_order_distribution': 'last_i_ask_order_distribution=1_',
+        'min_n_obs_jump_level': 'min_n_obs_jump_level=5'
+    }
+    strategy = ''
+    print('')
+    print('##################### STRATEGY INFO #####################')
+    for info in info_strategy:
+        print(info_strategy[info])
+        strategy += info_strategy[info]
+    print('##################### STRATEGY INFO #####################')
+    print('')
 
-
-    strategy = f'{strategy_jump}_{limit}_{price_change_jump}_{max_limit}_{price_drop_limit}_{distance_jump_to_current_price}_{max_ask_order_distribution_level}_{last_i_ask_order_distribution}_{min_n_obs_jump_level}'
     path = f'/Users/albertorainieri/Personal/analysis/Analysis2024/strategy/{strategy}/result.json'
-    print(f'Strategy: {strategy}')
     
     output, complete_info = get_analysis()
 
@@ -2379,8 +2521,8 @@ def plot_strategy_result():
     frequencies = [gain_distribution[k] for k in sorted(gain_distribution.keys())] #Extract frequencies in the same order as bin edges
     bin_edges[-1] = 0.5
     bin_edges[0] = -0.5
-    print(bin_edges)
-    print(frequencies)
+    # print(bin_edges)
+    # print(frequencies)
     buy_events_list_ascending_order = sorted(buy_events_list, key=lambda item: item[0])
     total_events_list_ascending_order = sorted(total_events_list, key=lambda item: item[0])
     dt_buy_sell_list_ascending_order = sorted(dt_buy_sell_list, key=lambda item: item[0])
@@ -2411,8 +2553,10 @@ def plot_strategy_result():
     #print(buy_current_number_orders)
     max_cuncurrent_orders = max(buy_current_number_orders)
     investment_per_order = initial_investment / max_cuncurrent_orders
-    plt.plot(dt_buy_list, buy_current_number_orders)
-    plt.plot(dt_total_list, total_current_number_orders)
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(dt_buy_list, buy_current_number_orders)
+    ax.plot(dt_total_list, total_current_number_orders)
     plt.gcf().autofmt_xdate() # Automatically rotate the date labels
     plt.tight_layout()
     plt.title('Number of Cuncurrent Orders')
@@ -2486,9 +2630,14 @@ def plot_strategy_result():
         total_profit_event.append(gain)
 
     #print(start_amount)
-    plt.plot(dt_buy_list, gain_list, label="order_book_strategy")
-    plt.plot(dt_buy_list, gain_wt_list, label="volume strategy") # sono gli eventi
-    plt.plot(dt_total_list, total_gain_list, label="total")
+    fig, ax = plt.subplots(figsize=(12, 6))
+    crypto_performance, list_datetime = get_top_crypto()
+    for topx in crypto_performance:
+        ax.plot(list_datetime, crypto_performance[topx], label=topx)
+
+    ax.plot(dt_buy_list, gain_list, label="order book strategy", linewidth=3)
+    ax.plot(dt_buy_list, gain_wt_list, label="volume strategy selected events") # sono gli eventi
+    ax.plot(dt_total_list, total_gain_list, label="volume strategy all events")
     plt.title('Gain')
     plt.gcf().autofmt_xdate() # Automatically rotate the date labels
     plt.tight_layout()
