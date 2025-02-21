@@ -150,9 +150,7 @@ class Benchmark:
                 # let us create the variable that will be saved in the db. 
                 # this will consider the average and standard deviation of the volume for each day
 
-                n_obs = len(volumes_30days_list)
-                avg_obs_per_day = n_obs / 30
-                print(f'Benchmark: {n_obs} obs (30days) ({avg_obs_per_day} /day) for coin {coin}')
+                
                 avg_volume_30days = round_(np.mean(volumes_30days_list),2)
                 std_volume_30days = round_(np.std(volumes_30days_list),2)
                 
@@ -246,10 +244,15 @@ class Benchmark:
                             volumes[last_timestamp] = []
                             volumes[last_timestamp].append(doc['volume'])
                     
+                    
                     if isinstance(volumes[last_timestamp], list):
                         avg = round_(np.mean(volumes[last_timestamp]),2)
                         std = round_(np.std(volumes[last_timestamp]),2)
                         volume_info[last_timestamp] = (avg,std)
+                        n_obs = len(volumes[last_timestamp])
+                        print(f'Benchmark: {n_obs} obs in db_market for {coin}. Volume avg: {avg}')
+                    else:
+                        print(f'Benchmark: something is wrong for {coin}')
 
                     # adjust average of 30, 60, 90 days
                     for date in list(volume_info.keys()):
@@ -315,7 +318,7 @@ class Benchmark:
         
         volume_standings = Benchmark.sort_and_rank_by_volume(volume_list)
 
-        print(volume_standings)
+        #print(volume_standings)
         now = datetime.now() + timedelta(minutes=1)
         id_volume_standings_doc = now.strftime("%Y-%m-%d") 
 
