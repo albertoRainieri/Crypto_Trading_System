@@ -1321,19 +1321,15 @@ def analyze_timeseries(event_key, check_past, check_future, jump, limit, price_c
             start_timestamp_path = start_timestamp.replace(':', '-').split('.')[0]
             path_plot = f'{path_plot_coin}/{start_timestamp_path}.png'
             plot_exists = os.path.exists(path_plot)
-            
-            if event_key not in strategy_result or coin not in strategy_result[event_key] or start_timestamp not in strategy_result[event_key][coin]:
-                if coin not in tmp_strategy_result:
-                    tmp_strategy_result[coin] = {}
 
-                tmp_strategy_result[coin][start_timestamp] = {}
-
-            elif save_plot == False:
+            if event_key in strategy_result and coin in strategy_result[event_key] and start_timestamp in strategy_result[event_key][coin] and save_plot == False:
                 continue
-            elif plot_exists:
+            elif event_key in strategy_result and coin in strategy_result[event_key] and start_timestamp in strategy_result[event_key][coin] and save_plot == True and plot_exists:
                 continue
                 
-            
+            if coin not in tmp_strategy_result:
+                tmp_strategy_result[coin] = {}
+            tmp_strategy_result[coin][start_timestamp] = {}
 
             start_datetime = datetime.fromisoformat(start_timestamp)
             start_datetime = start_datetime.replace(second=0).replace(microsecond=0)
@@ -2199,18 +2195,41 @@ def get_analysis():
   return output, complete_info
 
 
-def get_plots(min_gain, max_gain):
+def get_plots(min_gain, max_gain, buy_events=True):
     from IPython.display import Image, display
+    info_strategy = {
+        'strategy_jump': 'strategy_jump=0.04_',
+        'limit': 'limit=0.25_',
+        'price_change_jump': 'price_change_jump=0.025_',
+        'max_limit': 'max_limit=0.2_',
+        'price_drop_limit': 'price_drop_limit=0.05_',
+        'distance_jump_to_current_price': 'distance_jump_to_current_price=0.01_',
+        'max_ask_order_distribution_level': 'max_ask_order_distribution_level=0.1_',
+        'last_i_ask_order_distribution': 'last_i_ask_order_distribution=1_',
+        'min_n_obs_jump_level': 'min_n_obs_jump_level=5'
+    }
+    strategy = ''
+    print('')
+    print('##################### STRATEGY INFO #####################')
+    for info in info_strategy:
+        print(info_strategy[info])
+        strategy += info_strategy[info]
+    print('##################### STRATEGY INFO #####################')
+    print('')
+
+    path = f'/Users/albertorainieri/Personal/analysis/Analysis2024/strategy/{strategy}/result.json'
     n = 0
-    path = '/Users/albertorainieri/Personal/analysis/Analysis2024/strategy/strategy_jump=0.04_limit=0.25_price_change_jump=0.025_max_limit=0.2_price_drop_limit=0.05_distance_jump_to_current_price=0.03_max_ask_order_distribution_level=0.05_last_i_ask_order_distribution=1/result.json'
+    avg_gain_list = []
     paths_png = []
+    gain_png_paths=[]
+
     with open(path, 'r') as file:
         result = json.load(file)
     for event_key in result:
         for coin in result[event_key]:
             for start_timestamp in result[event_key][coin]:
                 gain = result[event_key][coin][start_timestamp]['gain']
-                if gain != None and gain/100 <= max_gain and gain/100 > min_gain:
+                if buy_events and gain != None and gain/100 <= max_gain and gain/100 > min_gain:
                     buy_price = result[event_key][coin][start_timestamp]['buy_price']
                     sell_price = result[event_key][coin][start_timestamp]['sell_price']
                     datetime_sell = result[event_key][coin][start_timestamp]['datetime_sell']
@@ -2227,12 +2246,33 @@ def get_plots(min_gain, max_gain):
                     print(ask_order_distribution)
                     path_png = result[event_key][coin][start_timestamp]['path_png']
                     display(Image(filename=path_png))
-                    paths_png.append(path_png)
                     n += 1
-
-
-    print(f'{n} events whose gain is between {min_gain*100}% and {max_gain*100}%')
-    return paths_png
+                elif not buy_events and gain == None:
+                    n += 1
+                    max_change = result[event_key][coin][start_timestamp]['max_change']/100
+                    min_change = result[event_key][coin][start_timestamp]['min_change']/100
+                    initial_price = result[event_key][coin][start_timestamp]['initial_price']
+                    final_price = result[event_key][coin][start_timestamp]['final_price']
+                    max_price = initial_price * ( 1 + max_change)
+                    min_price = initial_price * ( 1 - min_change)
+                    avg_price = np.mean([max_price, min_price, final_price])
+                    avg_gain = (avg_price - initial_price) / initial_price
+                    avg_gain_list.append(avg_gain)
+                    print(f'Initial Price: {initial_price} - Final Price: {final_price}')
+                    print(f'Max Price: {max_price} - Min Price: {min_price}')
+                    path_png = result[event_key][coin][start_timestamp]['path_png']
+                    paths_png.append(path_png)
+                    gain_png_paths.append((avg_gain,path_png))
+                    #display(Image(filename=path_png))
+    if buy_events:
+        print(f'{n} events whose gain is between {min_gain*100}% and {max_gain*100}%')
+    else:
+        gain_png_paths = sorted(gain_png_paths, key=lambda item: item[0], reverse=True)
+        print(gain_png_paths)
+        avg_gain = round_(np.mean(avg_gain_list),3)*100
+        print(f'{n} events not traded. Average Gain: {avg_gain}%')
+        for gain_png in gain_png_paths[-10:]:
+            display(Image(filename=gain_png[1]))
 
 def get_top_crypto(initial_investment=1000):
     crypto_timeseries = get_crypto_performance()
@@ -2312,13 +2352,15 @@ def get_crypto_performance():
             crypto_timeseries = json.load(file)
             start_datetime_split = list(crypto_timeseries['BTCUSDT'].keys())[-1].split('-')
             start_datetime = datetime(year=int(start_datetime_split[0]), month=int(start_datetime_split[1]), day=int(start_datetime_split[2]))
-            if now - start_datetime < timedelta(days=2):
+            timedelta_ = now - start_datetime
+            print(timedelta_)
+            if now - start_datetime < timedelta(days=1):
                 print('Data is up to date')
                 return crypto_timeseries
     else:
         start_datetime = datetime(2025,1,12)
 
-    while now - start_datetime < timedelta(days=2):
+    while True:
         print(f'Data Download from {start_datetime.isoformat()} + 7days')
         request = {}
         for date in volume_standings_full:
@@ -2343,6 +2385,7 @@ def get_crypto_performance():
 
         response = requests.post(url=url, json=request)
         response = json.loads(response.text)
+        all_data_downloaded = response['all_data_downloaded']
         response = response['data']
 
         if not os.path.exists(path_crypto_timeseries):
@@ -2366,6 +2409,9 @@ def get_crypto_performance():
         
         start_datetime_split = list(crypto_timeseries['BTCUSDT'].keys())[-1].split('-')
         start_datetime = datetime(year=int(start_datetime_split[0]), month=int(start_datetime_split[1]), day=int(start_datetime_split[2]))
+
+        if all_data_downloaded:
+            break
 
     return crypto_timeseries
 
@@ -2415,6 +2461,7 @@ def plot_strategy_result():
     gain_list = []
     gain_wt_list = []
     gain_distribution = {(-1,-0.4):0, (-0.4, -0.3):0, (-0.3,-0.2):0, (-0.2,-0.1):0, (-0.1,-0.05):0, (-0.05,0):0, (0,0.05):0, (0.05,0.1):0, (0.1,0.2):0, (0.2,0.3):0, (0.3,0.4):0, (0.4,10):0}
+    gain_distribution_no_strategy = {(-1,-0.4):0, (-0.4, -0.3):0, (-0.3,-0.2):0, (-0.2,-0.1):0, (-0.1,-0.05):0, (-0.05,0):0, (0,0.05):0, (0.05,0.1):0, (0.1,0.2):0, (0.2,0.3):0, (0.3,0.4):0, (0.4,10):0}
     event_keys_overview = {}
     n_events_per_event_keys = {}
     df_event_keys_overview = {'event_keys': [], 'n_events': [], 'gain': [], 'max': [], 'min': []}
@@ -2448,16 +2495,16 @@ def plot_strategy_result():
                     max_change = result[event_key][coin][start_timestamp]['max_change']
                     min_change = result[event_key][coin][start_timestamp]['min_change']
                     max_price = initial_price * ( 1 + (max_change / 100))
-                    min_price = initial_price * ( 1 - (min_change / 100))
-                    gain_no_strategy = ((((min_price + max_price + final_price ) / 3) - initial_price ) / initial_price) * 100
-                    gain_wt_orderbook_strategy = ( final_price - initial_price ) / initial_price
+                    min_price = initial_price * ( 1 + (min_change / 100))
+                    #gain_no_strategy = ( final_price - initial_price ) / initial_price
+                    gain_no_strategy = ((((min_price + max_price + final_price ) / 3) - initial_price ) / initial_price)
                     datetime_start = datetime.fromisoformat(start_timestamp)
                     datetime_end = datetime.fromisoformat(start_timestamp) + timedelta(days=1)
                     dt_total_list.append((datetime_start, 'buy'))
                     dt_total_list.append((datetime_end, 'sell'))
                     total_events_list.append((
                                             datetime_start, #datetime_end,
-                                            max_change, min_change, gain_wt_orderbook_strategy,
+                                            max_change, min_change, gain_no_strategy,
                                             coin, initial_price, final_price))
 
                     month_year = datetime.fromisoformat(start_timestamp).strftime("%Y-%m")
@@ -2472,7 +2519,7 @@ def plot_strategy_result():
                         gains_per_event_key[month_year].append(gain)
                         max_per_event_key[month_year].append(max_change)
                         min_per_event_key[month_year].append(min_change)
-                        gain_no_strategy_overview[month_year].append(gain_wt_orderbook_strategy*100)
+                        gain_no_strategy_overview[month_year].append(gain_no_strategy*100)
                         total_gain.append(gain)
                         total_max.append(max_change)
                         total_min.append(min_change)
@@ -2486,11 +2533,17 @@ def plot_strategy_result():
                         dt_buy_sell_list.append((datetime_sell, 'sell'))
                         buy_events_list.append((#datetime_buy, datetime_sell, datetime_start, datetime_end,
                                             datetime_buy, datetime_sell, datetime_start,
-                                            max_change, min_change, gain, gain_wt_orderbook_strategy,
+                                            max_change, min_change, gain, gain_no_strategy,
                                             coin, initial_price, final_price, buy_price, sell_price))
                         for gain_range in gain_distribution:
                             if gain/100 >= gain_range[0] and gain/100 < gain_range[1]:
                                 gain_distribution[gain_range] += 1
+                                break
+                    else:
+                        for gain_range in gain_distribution_no_strategy:
+                            if gain_no_strategy >= gain_range[0] and gain_no_strategy < gain_range[1]:
+                                #print(initial_price, min_price, max_price, final_price)
+                                gain_distribution_no_strategy[gain_range] += 1
                                 break
         
         df_event_keys_overview['event_keys'].append(event_key)
@@ -2521,6 +2574,11 @@ def plot_strategy_result():
     frequencies = [gain_distribution[k] for k in sorted(gain_distribution.keys())] #Extract frequencies in the same order as bin edges
     bin_edges[-1] = 0.5
     bin_edges[0] = -0.5
+
+    bin_edges_no_strategy = sorted(list(set([k[0] for k in gain_distribution_no_strategy.keys()] + [k[1] for k in gain_distribution_no_strategy.keys()]))) #Extract all unique values and sort them
+    frequencies_no_strategy = [gain_distribution_no_strategy[k] for k in sorted(gain_distribution_no_strategy.keys())] #Extract frequencies in the same order as bin edges
+    bin_edges_no_strategy[-1] = 0.5
+    bin_edges_no_strategy[0] = -0.5
     # print(bin_edges)
     # print(frequencies)
     buy_events_list_ascending_order = sorted(buy_events_list, key=lambda item: item[0])
@@ -2588,7 +2646,7 @@ def plot_strategy_result():
         max_change = event[3]
         min_change = event[4]
         gain = event[5]
-        gain_wt_orderbook_strategy = event[6]
+        gain_no_strategy = event[6]
         coin = event[7]
         initial_price = event[8]
         final_price = event[9]
@@ -2596,7 +2654,7 @@ def plot_strategy_result():
         sell_price = event[11]
         commission = investment_per_order*0.0007125*2
         total_commission += commission
-        current_investment_2 += gain_wt_orderbook_strategy*investment_per_order - commission
+        current_investment_2 += gain_no_strategy*investment_per_order - commission
         dt_buy_list.append(datetime_buy)
         current_investment += (gain/100)*investment_per_order - commission
         gain_list.append(current_investment)
@@ -2605,7 +2663,7 @@ def plot_strategy_result():
         ts_sell_list.append(datetime_sell.isoformat())
         buy_price_list.append(buy_price)
         sell_price_list.append(sell_price)
-        profit_wt_event.append(gain_wt_orderbook_strategy*100)
+        profit_wt_event.append(gain_no_strategy*100)
         gain_wt_list.append(current_investment_2)
         coin_list.append(coin)
         max_list.append(max_change)
@@ -2633,19 +2691,20 @@ def plot_strategy_result():
     fig, ax = plt.subplots(figsize=(12, 6))
     crypto_performance, list_datetime = get_top_crypto()
     for topx in crypto_performance:
-        ax.plot(list_datetime, crypto_performance[topx], label=topx)
+        if topx == 'top_250' or topx == 'btc' or topx == 'top_10':
+            ax.plot(list_datetime, crypto_performance[topx], label=topx)
 
     ax.plot(dt_buy_list, gain_list, label="order book strategy", linewidth=3)
     ax.plot(dt_buy_list, gain_wt_list, label="volume strategy selected events") # sono gli eventi
     ax.plot(dt_total_list, total_gain_list, label="volume strategy all events")
-    plt.title('Gain')
+    plt.title(f'Performance (Start Investment: {initial_investment}$)')
     plt.gcf().autofmt_xdate() # Automatically rotate the date labels
     plt.tight_layout()
     plt.legend()  # Display the legend
     plt.show()
 
     plt.hist(bin_edges[:-1], bins=bin_edges, weights=frequencies, rwidth=0.8) #rwidth is the bar width
-    plt.title("Gain Distribution")
+    plt.title("Gain Distribution (Order Book Strategy)")
     plt.xlabel("Gain Range")
     plt.ylabel("Frequency")
     plt.xticks(bin_edges)  # Set x-axis ticks to bin edges for clarity
@@ -2653,21 +2712,30 @@ def plot_strategy_result():
     plt.tight_layout() 
     plt.show()
 
+    plt.hist(bin_edges_no_strategy[:-1], bins=bin_edges_no_strategy, weights=frequencies_no_strategy, rwidth=0.8) #rwidth is the bar width
+    plt.title("Gain Distribution No Strategy (Only events not triggered)")
+    plt.xlabel("Gain Range")
+    plt.ylabel("Frequency")
+    plt.xticks(bin_edges_no_strategy)  # Set x-axis ticks to bin edges for clarity
+    plt.xticks(rotation=90, ha='center')
+    plt.tight_layout() 
+    plt.show()
+
     profit = round_(current_investment - initial_investment,2)
     n_orders = len(gain_list)
     average_profit_per_event = round_(np.mean(profit_event),2)
-    print(f'Initial Investment: {initial_investment} euro')
-    print(f'Invesment per event: {round_(investment_per_order,2)} euro')
-    print(f'Commission: {round_(total_commission,2)} euro')
+    print(f'Initial Investment: {initial_investment}$')
+    print(f'Invesment per event: {round_(investment_per_order,2)}$')
+    print(f'Commission: {round_(total_commission,2)}$')
     print(f'Total Investment {round_(n_orders*investment_per_order,2)}')
     print(f'Average Profit per event: {average_profit_per_event}%')
-    print(f'Profit: {profit} euro')
+    print(f'Profit: {profit}$')
     print(f'Total Observations Under Analysis: {len(total_events_list_ascending_order)}')
     print(f'Total Events triggered by strategy: {len(buy_events_list_ascending_order)}')
     print(len(total_events_list_ascending_order))
 
     pd.set_option('display.max_rows', 10000)
-    df_events_overview = pd.DataFrame({'Timestamp Buy': ts_buy_list, 'Timestamp Sell': ts_sell_list, 'Coin': coin_list, 'Profit': profit_event, 'Profit_vol_strat': profit_wt_event,
+    df_events_overview = pd.DataFrame({'Timestamp Buy': ts_buy_list, 'Timestamp Sell': ts_sell_list, 'Coin': coin_list, 'Profit': profit_event, 'Investment': gain_list, 'Profit_vol_strat': profit_wt_event,
                   'max': max_list, 'min': min_list, 'Initial Price': initial_price_list, 'Buy Price': buy_price_list, 'Sell price': sell_price_list})
 
     # print(df_event_keys_overview)
