@@ -46,9 +46,9 @@ async def user_configuration(obj: dict = Body(...)):#, request: Request = Depend
 async def get_price_changes(obj: dict = Body(...)):#, request: Request = Depends(Authorization.get_current_active_user)):
     return AnalysisController.get_price_changes(obj)
 
-@router.post("/get-btc-eth-timeseries")
-async def get_btc_eth_timeseries(obj: dict = Body(...)):#, request: Request = Depends(Authorization.get_current_active_user)):
-    return AnalysisController.get_btc_eth_timeseries(obj)
+@router.post("/get-crypto-timeseries")
+async def get_crypto_timeseries(obj: dict = Body(...)):#, request: Request = Depends(Authorization.get_current_active_user)):
+    return AnalysisController.get_crypto_timeseries(obj)
 
 @router.post("/get-order-book")
 async def get_orderbook(obj: dict = Body(...)):#, request: Request = Depends(Authorization.get_current_active_user)):

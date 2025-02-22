@@ -528,30 +528,37 @@ class AnalysisController:
         return JSONResponse(content=json_string)
     
 
-    def get_btc_eth_timeseries(request):
+    def get_crypto_timeseries(request):
         client = DatabaseConnection()
         db_tracker = client.get_db(DATABASE_TRACKER)
-        print(request)
-        
-        btc_docs = []
-        eth_docs = []
-        for timestamp in request['timestamp_list']:
-            timestamp_start = (datetime.fromisoformat(timestamp) - timedelta(seconds=30)).isoformat()
-            timestamp_end = (datetime.fromisoformat(timestamp) + timedelta(seconds=30)).isoformat()
-            #print(timestamp)
-            btc_doc = list(db_tracker['BTCUSDT'].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}}, {'price': 1}))
-            eth_doc = list(db_tracker['ETHUSDT'].find({"_id": {"$gte": timestamp_start, "$lt": timestamp_end}}, {'price': 1}))
-            #print(btc_doc)
+        crypto_timeseries = {}
 
-            for doc_btc in btc_doc:
-                btc_docs.append(doc_btc['price'])
-            for doc_eth in eth_doc:
-                eth_docs.append(doc_eth['price'])
+        # get last data available
+        all_data_downloaded = False
+        last_doc = db_tracker['BTCUSDT'].find_one(sort=[("_id", -1)])
+        last_timestamp = last_doc['_id']
+        if datetime.fromisoformat(request['BTCUSDT'][-1]) > datetime.fromisoformat(last_timestamp):
+            all_data_downloaded = True
+
+        for coin in request:
+            #print(coin)
+            start_timestamp = request[coin][0]
+            end_timestamp = request[coin][-1]
+            crypto_timeseries[coin] = {}
             
+            #print(timestamp)
+            timeseries = list(db_tracker[coin].find({"_id": {"$gte": start_timestamp, "$lt": end_timestamp}}, {'price': 1}))
 
-        response = {'data': {}}
-        response['data']['btc'] = btc_docs
-        response['data']['eth'] = eth_docs
+            for doc in timeseries:
+                timestamp = doc['_id']
+                date = datetime.fromisoformat(timestamp).strftime("%Y-%m-%d")
+                if date not in crypto_timeseries[coin]:
+                    n = 1
+                    crypto_timeseries[coin][date] = [doc['price'],n]
+                else:
+                    crypto_timeseries[coin][date][1] += 1
+
+        response = {'data': crypto_timeseries, 'all_data_downloaded': all_data_downloaded}
 
         client.close()
         json_string = jsonable_encoder(response)
