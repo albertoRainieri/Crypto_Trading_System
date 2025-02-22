@@ -11,7 +11,8 @@ from constants.constants import *
 from database.DatabaseConnection import DatabaseConnection
 from app.Controller.LoggingController import LoggingController
 from signal import SIGKILL
-from numpy import linspace
+from numpy import arange, linspace
+from numpy import mean as np_mean
 #import random
 
 
@@ -200,6 +201,243 @@ def get_sleep_seconds( live_order_book_scripts_number, number_script, second_bin
                 + second_binance_request
             )
             return sleep_seconds, correct_minute
+        
+def count_decimals(num):
+  """
+  Determines the number of decimal places in a given number.
+
+  Args:
+    num: The number to check.
+
+  Returns:
+    The number of decimal places, or 0 if the number is an integer.
+  """
+  try:
+    str_num = str(num)
+    decimal_index = str_num.index('.')
+    return len(str_num) - decimal_index
+  except ValueError:
+    # If no decimal point is found, it's an integer
+    return 1
+        
+def get_price_levels(price, bid_orders, cumulative_volume_jump=0.03, price_change_limit=0.4, price_change_jump=0.025):
+    '''
+    this function outputs the pricelevels (tuple: 4 elements), order_distribution, cumulative_level
+    price_levels (TUPLE):
+        [1] : absolute price_level
+        [2] : relative price_level (percentage from current price)
+        [3] : cumulative_level (from 0 to 100, which percentage of bid/ask total volume this level corresponds to) (NOT USED)
+        [4] : this is the JUMP. distance from previous level (from 0 to 100, gt > "$jump"). Only if greater than "cumulative_volume_jump"
+    order_distribution (OBJ): (KEYS: price_change; VALUES: density of this price level
+      (i.e. 5% of the bid/ask volume is concentrated in the first 2.5% price range, considering ONLY the "price_change_limit" (e.g. 40% price range from current price) ))
+        {0.025: 0.05,
+         0.05:  0.02,
+         ...
+         }
+    previous_cumulative_level: it is the percentage of the bid/ask volume considering only the "price_change_limit" (e.g. 40% price range from current price)
+                                with respect to the total bid/ask volume
+    '''
+    previous_level = 0
+    price_levels = []
+    n_decimals = count_decimals(price)
+    cumulative_level_without_jump = 0
+    price_change_level = price_change_jump
+    order_distribution = {}
+    for i in arange(price_change_jump,price_change_limit+price_change_jump,price_change_jump):
+        order_distribution[str(round_(i,3))] = 0
+    previous_cumulative_level = 0
+
+    for level in bid_orders:
+        cumulative_level = level[1]
+        price_change = level[0]
+
+        # in this "if condition", I see how orders are distributed along the (0,price_change_limit) range,
+        #  the chunks of orders are divided relative to "price_change_jump" (i.e. if var=0.025, I check in the [0,2.5%] price change window how deep is the order book and so on)
+        # if price_change is below next threshold, keep updating the cumulative volume level for that price level
+        if abs(price_change) <= price_change_level:
+            order_distribution[str(price_change_level)] = cumulative_level
+        
+        # in case is above next threshold, update price_change_level and initialize next price_change_level
+        else:
+            # before moving to the next price level, update the relative level
+            order_distribution[str(price_change_level)] = round_(order_distribution[str(price_change_level)] - previous_cumulative_level,2)
+
+            # now update the next price change level
+            previous_cumulative_level += order_distribution[str(price_change_level)]
+            price_change_level = round_(price_change_level + price_change_jump,3)
+
+            # in case some price level is empty, skip to the next level
+            while abs(price_change) > price_change_level:
+                price_change_level = round_(price_change_level + price_change_jump,3)
+
+            # next chunk is below next thrshold
+            if abs(price_change) <= price_change_level and abs(price_change) <= price_change_limit:
+                order_distribution[str(price_change_level)] = cumulative_level
+
+        # here, I discover the jumps, the info is stored in "price_levels"
+        if cumulative_level - previous_level >= cumulative_volume_jump and abs(price_change) <= price_change_limit and abs(price_change) >= 0.01:
+            actual_jump = round_(cumulative_level - previous_level,3)
+            price_level = price * (1+price_change)
+            info = (round_(price_level,n_decimals), price_change, cumulative_level, actual_jump)
+            #print(info, cumulative_level, price_change)
+            price_levels.append(info)
+        elif abs(price_change) <= price_change_limit:
+            cumulative_level_without_jump = cumulative_level
+
+        if abs(price_change) > price_change_limit:
+            break
+        previous_level = cumulative_level
+    
+    # scale order_distribution to [0,100] range
+    for lvl in order_distribution:
+        if previous_cumulative_level != 0:
+            order_distribution[lvl] = round_(order_distribution[lvl] / previous_cumulative_level,3)
+        else:
+            order_distribution[lvl] = 0
+    
+    # if there are not jumps, at least I want to get the cumulative volume at the limit price level
+    if len(price_levels) == 0:
+        info = (None, None, cumulative_level_without_jump, False)
+        price_levels.append(info)
+    
+    # if cumulative_level_without_jump == 0:
+    #     print(bid_orders)
+    
+    return price_levels, order_distribution, round_(previous_cumulative_level,3)
+
+def hit_jump_price_levels_range(current_price, ask_price_levels, neighborhood_of_price_jump = 0.005, distance_jump_to_current_price=0.01, min_n_obs_jump_level=5):
+    '''
+    This function defines all the historical level whereas a jump price change was existent
+    Since it can happen that price_jump_level are not always in the same point (price) I check if the jump price is in the neighboorhood of the historical jump price (average with np_mean)
+
+    # THIS IS THE INPUT OF ask_PRICE_LEVELS
+    Structure of ask price_levels: IT IS A LIST OF LISTS
+    - ask_price_levels: e.g. [[13.978], [13.958], [13.958], [13.978], [13.949, 12.942], [13.97], [13.939, 12.933], [14.053]]
+      EACH SUBLIST containes the jump prices at dt
+
+    # THIS THE STRUCTURE OF SUMMARY_JUMP_PRICE
+    [LIST [TUPLES]]
+        [ (average price jump level, list_of_jump_price_levels )]
+    '''
+
+    summary_jump_price_level = {}
+    # iterate throgh 
+    for ask_price_levels_dt in ask_price_levels:
+        for abs_price in ask_price_levels_dt:
+            if abs_price == None:
+                continue
+            if len(summary_jump_price_level) != 0:
+                IS_NEW_X = True
+                for x in summary_jump_price_level:
+                    historical_price_level = summary_jump_price_level[x][0]
+                    historical_price_level_list = summary_jump_price_level[x][1]
+                    #print(historical_price_level, abs_price)
+                    if abs_price <= historical_price_level * (1 + neighborhood_of_price_jump) and abs_price >= historical_price_level * (1 - neighborhood_of_price_jump):
+                        historical_price_level_list.append(abs_price)
+                        historical_price_level = np_mean(historical_price_level_list)
+                        summary_jump_price_level[x] = (historical_price_level, historical_price_level_list)
+                        IS_NEW_X = False
+                        break
+                if IS_NEW_X:
+                    list_x = [int(i) for i in list(summary_jump_price_level.keys())]
+                    new_x = str(max(list_x) + 1)
+                    summary_jump_price_level[new_x] = (abs_price, [abs_price])
+            else:
+                #print(abs_price)
+                summary_jump_price_level['1'] = (abs_price, [abs_price])
+            
+    #print(summary_jump_price_level)
+    for x in summary_jump_price_level:
+        if abs((current_price - summary_jump_price_level[x][0] ) / current_price ) <= distance_jump_to_current_price and len(summary_jump_price_level[x][1]) >= min_n_obs_jump_level:
+            return True
+            #print(current_price, dt)
+    return False
+
+def trigger_entrypoint(price, max_price,
+                        ask_price_levels, ask_order_distribution_list, price_change_jump,
+                        max_limit, price_drop_limit, distance_jump_to_current_price,
+                        max_ask_order_distribution_level, last_i_ask_order_distribution, min_n_obs_jump_level):
+    
+    BUY = False
+    dt_ask = datetime.now() - timedelta(minutes=last_i_ask_order_distribution) + timedelta(seconds=10)
+    max_price = max(price, max_price)
+    max_change = ( max_price - price_list[0] ) / price_list[0]
+    current_price_drop = abs( (price - max_price) / max_price )
+    selected_ask_order_distribution_list = []
+    for ask_order_distribution in ask_order_distribution_list:
+        if datetime.fromisoformat(ask_order_distribution['dt']) > dt_ask:
+            selected_ask_order_distribution_list.append(ask_order_distribution)
+
+
+    if current_price_drop >= price_drop_limit and max_change <= max_limit:
+
+        # PHASE 2
+        # DEFINE HOW CLOSE THE PRICE IS TO HISTORICAL JUMP LEVELS
+        is_jump_price_level = hit_jump_price_levels_range(current_price=price, ask_price_levels=ask_price_levels,
+                                                           distance_jump_to_current_price=distance_jump_to_current_price,
+                                                           min_n_obs_jump_level=min_n_obs_jump_level)
+        if is_jump_price_level:
+            # get keys of ask_order_distribution [0.025, 0.05, 0.075, ...]
+            if len(ask_order_distribution_list) >= last_i_ask_order_distribution:
+                keys_ask_order_distribution = list(ask_order_distribution_list[-1]['ask'].keys())
+
+                # initialize new var for average ask order distribution
+                avg_ask_order_distribution = {}
+
+                for lvl in keys_ask_order_distribution:
+                    avg_ask_order_distribution[lvl] = []
+
+                for lvl in selected_ask_order_distribution_list['ask']:
+                    avg_ask_order_distribution[lvl].append(ask_order_distribution['ask'][lvl])
+                
+                # compute the mean
+                for lvl in avg_ask_order_distribution:
+                    avg_ask_order_distribution[lvl] = np_mean(avg_ask_order_distribution[lvl])
+
+                # TODO: check only first level, or next ones too ?
+                if avg_ask_order_distribution[str(price_change_jump)] < max_ask_order_distribution_level:
+                    BUY = True
+                    #SELL_TS_SECONDS = ((datetime.fromisoformat(id) + timedelta(minutes=minutes_timeframe)) - datetime.now()).seconds
+                    print(f'BUY TRIGGER: coin: {coin} - price: {price} ')
+
+                    #print(f'n_ask_order: {len(selected_ask_order_distribution_list)}')
+                    #print(price, dt, ask_order_distribution[str(price_change_jump)], ask_order_distribution[str(price_change_jump+price_change_jump)])
+                    ask_order_distribution_list = ask_order_distribution_list[-last_i_ask_order_distribution:]
+                    return max_price, selected_ask_order_distribution_list, BUY, price
+        
+    return max_price, selected_ask_order_distribution_list, BUY, None
+
+def analyze_ask_orders(order_book_info, max_price, ask_price_levels, ask_order_distribution_list,
+                        cumulative_volume_jump, price_change_limit, #get_price_levels
+                        price_change_jump, last_i_ask_order_distribution,
+                        distance_jump_to_current_price, min_n_obs_jump_level,
+                        max_limit, price_drop_limit, max_ask_order_distribution_level):
+    '''
+    order_book_info[0] --> current_price
+    order_book_info[1] --> total_bid_volume
+    order_book_info[2] --> total_ask_volume
+    order_book_info[3] --> summary_bid_orders
+    order_book_info[4] --> summary_ask_orders
+    '''
+    
+    dt = datetime.now()
+    price = order_book_info[0]
+    ask_orders = order_book_info[4]
+    ask_price_levels_dt = []
+
+    ask_price_level, ask_order_distribution, ask_cumulative_level = get_price_levels(price, ask_orders, cumulative_volume_jump, price_change_limit, price_change_jump)
+    for lvl in ask_price_level:
+        ask_price_levels_dt.append(lvl[0])
+
+    ask_price_levels.append(ask_price_levels_dt)
+    ask_order_distribution_list.append({'ask': ask_order_distribution, 'dt': dt})
+    max_price, ask_order_distribution_list, BUY, buy_price = trigger_entrypoint(price, max_price, ask_price_levels, ask_order_distribution_list, price_change_jump,
+                        max_limit, price_drop_limit, distance_jump_to_current_price,
+                        max_ask_order_distribution_level, last_i_ask_order_distribution, min_n_obs_jump_level)
+
+    #SELL_TS_SECONDS = ((datetime.fromisoformat(id) + timedelta(minutes=minutes_timeframe)) - datetime.now()).seconds
+    
+    return max_price, ask_price_levels, ask_order_distribution_list, BUY, buy_price
 
 
 if __name__ == "__main__":
@@ -208,9 +446,13 @@ if __name__ == "__main__":
     """
     # decide which second to make request to binance
     #second_binance_request = random.randint(5, 58)
+    BUY = False
     LIMIT = 20
     range_second_trigger = [round_(i,2) for i in linspace(10,58,20)]
     logger = LoggingController.start_logging()
+    price_list = []
+    ask_price_levels = []
+    ask_order_distribution_list = []
 
     coin = sys.argv[1]
     event_key = sys.argv[2]
@@ -296,6 +538,8 @@ if __name__ == "__main__":
             order_book_info = get_info_order_book(coin)
             if order_book_info != None:
                 update_db_order_book_record( id, event_key, db_collection, order_book_info )
+                if not BUY:
+                    price_list, ask_price_levels, ask_order_distribution_list, BUY, buy_price = analyze_ask_orders(order_book_info, price_list, ask_order_distribution_list)
 
             event_keys = db.list_collection_names()
             numbers_filled, live_order_book_scripts_number = ( get_current_number_of_orderbook_scripts(db, event_keys) )
