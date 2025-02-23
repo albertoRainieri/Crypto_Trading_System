@@ -1267,10 +1267,6 @@ def simulate_entry_position(price_list, list_datetime, start_datetime,
     return None
 
 
-    # DETERMINE THE CURRENT_ORDER_DISTRIBUTION ON THE ASK-LEVEL
-
-    pass
-
 def analyze_timeseries(event_key, check_past, check_future, jump, limit, price_change_jump,
                                 max_limit, price_drop_limit, distance_jump_to_current_price,
                         max_ask_order_distribution_level, last_i_ask_order_distribution, min_n_obs_jump_level, strategy_result,
@@ -1942,8 +1938,6 @@ def get_currency_coin():
 
 def frequency_events_analysis(complete_info):
 
-    
-
     summary = {}
     for event_key in complete_info:
         for coin in complete_info[event_key]['info']:
@@ -1958,7 +1952,7 @@ def frequency_events_analysis(complete_info):
 
     cols = 2
     rows = int(len(summary) / cols + 1)
-    fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(15, 15))
+    fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(12, 6))
     # y = i % cols
     # x = i // cols
     sorted_data = dict(sorted(summary.items()))
@@ -1972,8 +1966,6 @@ def frequency_events_analysis(complete_info):
     plt.tight_layout()
     # Show the plot
     plt.show()
-
-
 
 
 def filter_xth_percentile(obj, filter_field, xth_percentile):
@@ -2013,22 +2005,16 @@ def filter_xth_percentile(obj, filter_field, xth_percentile):
     else:
         return {}, None
     
-def create_rismanagement_from_complete_info(complete_info):
-    sum_events = 0
-    riskmanagement_json = {}
-    for event_key in complete_info:
-        if '30m' in event_key or '60m' in event_key:
-            continue
-        riskmanagement_json[event_key] = complete_info[event_key]['frequency/month']
-        sum_events += complete_info[event_key]['frequency/month']
-    n_event_keys = len(riskmanagement_json)
-    print(f'{n_event_keys} event_keys')
-    print(riskmanagement_json)
-    print(sum_events/30)
-    print('At this moment no riskmanagement json is saved, change this line of code in Helpers.py')
-    # with open(f'/Users/albertorainieri/Personal/backend/riskmanagement/riskmanagement.json', 'w') as outfile:
-    #     json.dump(riskmanagement_json, outfile, indent=4)
-    return riskmanagement_json
+def create_strategy_configuration(strategy_configuration_parameters):
+    output, complete_info = get_analysis()
+    event_keys = list(complete_info.keys())
+    strategy_configuration = {'event_keys': event_keys,
+                              'parameters': strategy_configuration_parameters}
+    
+    strategy_path = '/Users/albertorainieri/Personal/backend/strategy/strategy.json'
+    with open(strategy_path, 'w') as file:
+        json.dump(strategy_configuration, file, indent=4)
+
 
 def filter_complete_info_by_current_eventkeys(output, complete_info):
     '''
@@ -2198,22 +2184,23 @@ def get_analysis():
 def get_plots(min_gain, max_gain, buy_events=True):
     from IPython.display import Image, display
     info_strategy = {
-        'strategy_jump': 'strategy_jump=0.04_',
-        'limit': 'limit=0.25_',
-        'price_change_jump': 'price_change_jump=0.025_',
-        'max_limit': 'max_limit=0.2_',
-        'price_drop_limit': 'price_drop_limit=0.05_',
-        'distance_jump_to_current_price': 'distance_jump_to_current_price=0.01_',
-        'max_ask_order_distribution_level': 'max_ask_order_distribution_level=0.1_',
-        'last_i_ask_order_distribution': 'last_i_ask_order_distribution=1_',
-        'min_n_obs_jump_level': 'min_n_obs_jump_level=5'
+        'strategy_jump': 0.04,
+        'limit': 0.25,
+        'price_change_jump': 0.025,
+        'max_limit': 0.2,
+        'price_drop_limit': 0.05,
+        'distance_jump_to_current_price': 0.01,
+        'max_ask_order_distribution_level': 0.1,
+        'last_i_ask_order_distribution': 1,
+        'min_n_obs_jump_level': 5
     }
     strategy = ''
     print('')
     print('##################### STRATEGY INFO #####################')
-    for info in info_strategy:
-        print(info_strategy[info])
-        strategy += info_strategy[info]
+    for parameter_key, value  in info_strategy.items():
+        print(f'{parameter_key}: {value} ')
+        strategy += f'{parameter_key}={value}_'
+    strategy=strategy[:-1]
     print('##################### STRATEGY INFO #####################')
     print('')
 
@@ -2420,28 +2407,27 @@ def get_crypto_performance():
 
 def plot_strategy_result():
     info_strategy = {
-        'strategy_jump': 'strategy_jump=0.04_',
-        'limit': 'limit=0.25_',
-        'price_change_jump': 'price_change_jump=0.025_',
-        'max_limit': 'max_limit=0.2_',
-        'price_drop_limit': 'price_drop_limit=0.05_',
-        'distance_jump_to_current_price': 'distance_jump_to_current_price=0.01_',
-        'max_ask_order_distribution_level': 'max_ask_order_distribution_level=0.1_',
-        'last_i_ask_order_distribution': 'last_i_ask_order_distribution=1_',
-        'min_n_obs_jump_level': 'min_n_obs_jump_level=5'
+        'strategy_jump': 0.04,
+        'limit': 0.25,
+        'price_change_jump': 0.025,
+        'max_limit': 0.2,
+        'price_drop_limit': 0.05,
+        'distance_jump_to_current_price': 0.01,
+        'max_ask_order_distribution_level': 0.1,
+        'last_i_ask_order_distribution': 1,
+        'min_n_obs_jump_level': 5
     }
     strategy = ''
     print('')
     print('##################### STRATEGY INFO #####################')
-    for info in info_strategy:
-        print(info_strategy[info])
-        strategy += info_strategy[info]
+    for parameter_key, value  in info_strategy.items():
+        print(f'{parameter_key}: {value} ')
+        strategy += f'{parameter_key}={value}_'
+    strategy=strategy[:-1]
     print('##################### STRATEGY INFO #####################')
     print('')
 
     path = f'/Users/albertorainieri/Personal/analysis/Analysis2024/strategy/{strategy}/result.json'
-    
-    output, complete_info = get_analysis()
 
     with open(path, 'r') as file:
         result = json.load(file)

@@ -279,8 +279,8 @@ def get_price_levels(price, bid_orders, cumulative_volume_jump=0.03, price_chang
             actual_jump = round_(cumulative_level - previous_level,3)
             price_level = price * (1+price_change)
             info = (round_(price_level,n_decimals), price_change, cumulative_level, actual_jump)
-            #print(info, cumulative_level, price_change)
-            price_levels.append(info)
+            #price_levels.append(info)
+            price_levels.append(round_(price_level,n_decimals))
         elif abs(price_change) <= price_change_limit:
             cumulative_level_without_jump = cumulative_level
 
@@ -397,21 +397,14 @@ def trigger_entrypoint(price, max_price,
                 # TODO: check only first level, or next ones too ?
                 if avg_ask_order_distribution[str(price_change_jump)] < max_ask_order_distribution_level:
                     BUY = True
-                    #SELL_TS_SECONDS = ((datetime.fromisoformat(id) + timedelta(minutes=minutes_timeframe)) - datetime.now()).seconds
                     print(f'BUY TRIGGER: coin: {coin} - price: {price} ')
 
-                    #print(f'n_ask_order: {len(selected_ask_order_distribution_list)}')
-                    #print(price, dt, ask_order_distribution[str(price_change_jump)], ask_order_distribution[str(price_change_jump+price_change_jump)])
-                    ask_order_distribution_list = ask_order_distribution_list[-last_i_ask_order_distribution:]
                     return max_price, selected_ask_order_distribution_list, BUY, price
         
     return max_price, selected_ask_order_distribution_list, BUY, None
 
 def analyze_ask_orders(order_book_info, max_price, ask_price_levels, ask_order_distribution_list,
-                        cumulative_volume_jump, price_change_limit, #get_price_levels
-                        price_change_jump, last_i_ask_order_distribution,
-                        distance_jump_to_current_price, min_n_obs_jump_level,
-                        max_limit, price_drop_limit, max_ask_order_distribution_level):
+                        strategy):
     '''
     order_book_info[0] --> current_price
     order_book_info[1] --> total_bid_volume
@@ -419,24 +412,28 @@ def analyze_ask_orders(order_book_info, max_price, ask_price_levels, ask_order_d
     order_book_info[3] --> summary_bid_orders
     order_book_info[4] --> summary_ask_orders
     '''
+
+    cumulative_volume_jump = strategy['strategy_jump']
+    price_change_limit = strategy['limit']
+    price_change_jump = strategy['price_change_jump']
+    max_limit = strategy['max_limit']
+    price_drop_limit = strategy['price_drop_limit']
+    distance_jump_to_current_price = strategy['distance_jump_to_current_price']
+    max_ask_order_distribution_level = strategy['max_ask_order_distribution_level']
+    last_i_ask_order_distribution = strategy['last_i_ask_order_distribution']
+    min_n_obs_jump_level = strategy['min_n_obs_jump_level']
     
     dt = datetime.now()
     price = order_book_info[0]
     ask_orders = order_book_info[4]
-    ask_price_levels_dt = []
 
-    ask_price_level, ask_order_distribution, ask_cumulative_level = get_price_levels(price, ask_orders, cumulative_volume_jump, price_change_limit, price_change_jump)
-    for lvl in ask_price_level:
-        ask_price_levels_dt.append(lvl[0])
-
-    ask_price_levels.append(ask_price_levels_dt)
+    ask_price_level_dt, ask_order_distribution, ask_cumulative_level = get_price_levels(price, ask_orders, cumulative_volume_jump, price_change_limit, price_change_jump)
+    ask_price_levels.append(ask_price_level_dt)
     ask_order_distribution_list.append({'ask': ask_order_distribution, 'dt': dt})
     max_price, ask_order_distribution_list, BUY, buy_price = trigger_entrypoint(price, max_price, ask_price_levels, ask_order_distribution_list, price_change_jump,
                         max_limit, price_drop_limit, distance_jump_to_current_price,
                         max_ask_order_distribution_level, last_i_ask_order_distribution, min_n_obs_jump_level)
 
-    #SELL_TS_SECONDS = ((datetime.fromisoformat(id) + timedelta(minutes=minutes_timeframe)) - datetime.now()).seconds
-    
     return max_price, ask_price_levels, ask_order_distribution_list, BUY, buy_price
 
 
@@ -458,13 +455,16 @@ if __name__ == "__main__":
     event_key = sys.argv[2]
     id = sys.argv[3]
     lvl = sys.argv[4]
+    RESTART = bool(int(sys.argv[5]))
+    if not RESTART:
+        strategy_parameters = json.loads(sys.argv[6])
 
     if lvl == "None":
         lvl = None
     else:
         lvl = int(lvl)
 
-    RESTART = bool(int(sys.argv[5]))
+    
     minutes_timeframe = int(extract_timeframe(event_key))
     now = datetime.now()
     yesterday = now - timedelta(days=1)
@@ -472,7 +472,7 @@ if __name__ == "__main__":
     client = DatabaseConnection()
     db = client.get_db(DATABASE_ORDER_BOOK)
     db_collection = db[event_key]
-    event_key_docs = list( db_collection.find( {"_id": {"$gt": yesterday.isoformat()}}, {"_id": 1, "coin": 1, "number": 1} ) )
+    event_key_docs = list( db_collection.find( {"_id": {"$gt": yesterday.isoformat()}}, {"_id": 1, "coin": 1, "number": 1, "strategy_parameters": 1} ) )
     db_volume_standings = client.get_db(DATABASE_VOLUME_STANDINGS)
 
     # at midnight (00:00 only) it is possible to have an exception due to unavailibility of the info
@@ -493,10 +493,11 @@ if __name__ == "__main__":
 
     # check in the current event_key if there are current jobs
     for doc in event_key_docs:
-        # If True, the event trigger has just started, otherwise the system has restarted and we are trying to resume the order book polling
+        # If True, the system has restarted and we are trying to resume the order book polling
         if doc["_id"] == id:
             INITIALIZE_DOC_ORDERBOOK = False
             number_script = doc["number"]
+            strategy_parameters = doc['strategy_parameters']
             second_binance_request = range_second_trigger[number_script % LIMIT]
 
         # In case, the script has started in the script time windows, skip
@@ -519,7 +520,7 @@ if __name__ == "__main__":
         
 
         second_binance_request = range_second_trigger[number_script % LIMIT]
-        db_collection.insert_one( { "_id": id, "coin": coin, "ranking": ranking, "data": {},  "number": number_script, } )
+        db_collection.insert_one( { "_id": id, "coin": coin, "ranking": ranking, "data": {},  "number": number_script, "strategy_parameters": strategy_parameters} )
 
     if not STOP_SCRIPT:
         current_number_script = number_script + 1
@@ -539,7 +540,8 @@ if __name__ == "__main__":
             if order_book_info != None:
                 update_db_order_book_record( id, event_key, db_collection, order_book_info )
                 if not BUY:
-                    price_list, ask_price_levels, ask_order_distribution_list, BUY, buy_price = analyze_ask_orders(order_book_info, price_list, ask_order_distribution_list)
+                    max_price, ask_price_levels, ask_order_distribution_list, BUY, buy_price = analyze_ask_orders(order_book_info, max_price, ask_price_levels, ask_order_distribution_list,
+                                                                                                                    strategy_parameters)
 
             event_keys = db.list_collection_names()
             numbers_filled, live_order_book_scripts_number = ( get_current_number_of_orderbook_scripts(db, event_keys) )

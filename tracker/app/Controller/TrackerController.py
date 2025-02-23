@@ -9,7 +9,7 @@ import numpy as np
 from tracker.database.DatabaseConnection import DatabaseConnection
 from tracker.app.Controller.TradingController import TradingController
 from tracker.constants.constants import *
-import asyncio
+from time import time
 
 
 class TrackerController:
@@ -40,11 +40,9 @@ class TrackerController:
     #async def start_tracking(db_trades, db_tracker, db_benchmark, logger, db_logger):
     #@timer_func
     def start_tracking(db_trades, db_tracker, db_benchmark, logger, db_logger):
+        t1 = time()
         now = datetime.now()
-        #now_isoformat = now.isoformat()
-        reference_1day_datetime = now - timedelta(days=1)
-        reference_6h_datetime = now - timedelta(hours=6)
-        reference_3h_datetime = now - timedelta(hours=3)
+
         reference_1h_datetime = now - timedelta(hours=1)
         reference_30m_datetime = now - timedelta(minutes=30)
         reference_15m_datetime = now - timedelta(minutes=15)
@@ -52,33 +50,14 @@ class TrackerController:
         reference_10s_datetime = now - timedelta(seconds=10)
 
         
-        reference_1day = reference_1day_datetime.isoformat()
-
-        year_1h_ago = reference_1h_datetime.year
-        month_1h_ago = reference_1h_datetime.month
-        day_1h_ago = reference_1h_datetime.day
-        hour_1h_ago = reference_1h_datetime.hour
-        minute_1h_ago =  reference_1h_datetime.minute
-
-        year_3h_ago = reference_3h_datetime.year
-        month_3h_ago = reference_3h_datetime.month
-        day_3h_ago = reference_3h_datetime.day
-        hour_3h_ago = reference_3h_datetime.hour
-        minute_3h_ago =  reference_3h_datetime.minute
-
-        year_6h_ago = reference_6h_datetime.year
-        month_6h_ago = reference_6h_datetime.month
-        day_6h_ago = reference_6h_datetime.day
-        hour_6h_ago = reference_6h_datetime.hour
-        minute_6h_ago =  reference_6h_datetime.minute
-
+        reference_1hour = reference_1h_datetime.isoformat()
         coins_list = db_trades.list_collection_names()
 
         #download list of most_traded_coins
         f = open ('/tracker/json/most_traded_coins.json', "r")
         data = json.loads(f.read())
 
-        f = open ('/tracker/riskmanagement/riskmanagement.json', "r")
+        f = open ('/tracker/strategy/strategy.json', "r")
         risk_configuration = json.loads(f.read())
 
         #coin_list_subset = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
@@ -88,12 +67,11 @@ class TrackerController:
         
         # iterate through each coin
         # The all cycle takes slightly less than 1 second (from localhost 15/08/2023)
+        last_coin = coins_list[-1]
         for coin in coins_list:
 
             if coin not in coin_list_subset:
                 continue
-            
-
             
             volume_coin = list(db_benchmark[coin].find({}, {'_id': 1, 'volume_30_avg': 1, 'volume_30_std': 1, 'Last_30_Trades': 1}))
             #print(volume_coin)
@@ -129,13 +107,13 @@ class TrackerController:
                         if now.hour == 0 and now.minute == 5: 
                             msg = f'{coin} has not always been in most_traded_coins in the last {benchmark_days} days. Position: {data["most_traded_coins"].index(coin)}'
                             #logger.info(msg)
-                            db_logger[DATABASE_TRACKER_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+                            #db_logger[DATABASE_TRACKER_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
                         continue
                 except:
                     if now.hour == 0 and now.minute == 5: 
                         msg = f'{coin}: There are not enough observations in db_benchmark. Position: {data["most_traded_coins"].index(coin)}'
                         #logger.info(msg)
-                        db_logger[DATABASE_TRACKER_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+                        #db_logger[DATABASE_TRACKER_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
                     continue
 
 
@@ -145,45 +123,23 @@ class TrackerController:
                 if now.hour == 0 and now.minute == 5:
                     msg = f'{coin} does not have a volume average. Computation in tracker will be skipped. Position: {data["most_traded_coins"].index(coin)}'
                     #logger.info(msg)
-                    db_logger[DATABASE_TRACKER_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+                    #db_logger[DATABASE_TRACKER_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
                 continue
 
             # logger.info(f'{coin}: {avg_volume_1_month}')
             # initialize these variables list for each coin
 
-            volumes_24h_list = []
-            volumes_6h_list = []
-            volumes_3h_list = []
             volumes_60m_list = []
             volumes_30m_list = []
             volumes_15m_list = []
             volumes_5m_list = []
 
-            buy_volume_24h_list = []
-            buy_volume_6h_list = []
-            buy_volume_3h_list = []
             buy_volume_60m_list = []
             buy_volume_30m_list = []
             buy_volume_15m_list = []
             buy_volume_5m_list = []
-
-            # buy_trades_24h_list = []
-            # buy_trades_6h_list = []
-            # buy_trades_3h_list = []
-            # buy_trades_60m_list = []
-            # buy_trades_30m_list = []
-            # buy_trades_15m_list = []
-            # buy_trades_5m_list = []
-
-            # trades_24h_list = []
-            # trades_6h_list = []
-            # trades_3h_list = []
-            # trades_60m_list = []
-            # trades_30m_list = []
-            # trades_15m_list = []
-            # trades_5m_list = []
             
-            docs = list(db_trades[coin].find({"_id": {"$gte": reference_1day}}))
+            docs = list(db_trades[coin].find({"_id": {"$gte": reference_1hour}}))
 
             #check if it is available an observation in "Market_Trades" in the last minute
             if len(docs) == 0:
@@ -205,14 +161,6 @@ class TrackerController:
                     #logger.info(doc)
                     doc_vol = doc['volume']
                     doc_buy_vol = doc['buy_volume']
-                    # doc_buy_trd = doc['buy_n']
-                    # doc_trades = doc['n_trades']
-
-                    volumes_24h_list.append(doc_vol)
-                    buy_volume_24h_list.append(doc_buy_vol)
-                    # buy_trades_24h_list.append(doc_buy_trd)
-                    # trades_24h_list.append(doc_trades)
-
                     timestamp_trade = datetime.fromisoformat(doc['_id'])
 
                     # if timestamp trade is not older than 5 minutes
@@ -222,30 +170,10 @@ class TrackerController:
                         volumes_15m_list.append(doc_vol)
                         volumes_30m_list.append(doc_vol)
                         volumes_60m_list.append(doc_vol)
-                        volumes_3h_list.append(doc_vol)
-                        volumes_6h_list.append(doc_vol)
-
-                        # trades_5m_list.append(doc_trades)
-                        # trades_15m_list.append(doc_trades)
-                        # trades_30m_list.append(doc_trades)
-                        # trades_60m_list.append(doc_trades)
-                        # trades_3h_list.append(doc_trades)
-                        # trades_6h_list.append(doc_trades)
-
                         buy_volume_5m_list.append(doc_buy_vol)
                         buy_volume_15m_list.append(doc_buy_vol)
                         buy_volume_30m_list.append(doc_buy_vol)
                         buy_volume_60m_list.append(doc_buy_vol)
-                        buy_volume_3h_list.append(doc_buy_vol)
-                        buy_volume_6h_list.append(doc_buy_vol)
-
-                        # buy_trades_5m_list.append(doc_buy_trd)
-                        # buy_trades_15m_list.append(doc_buy_trd)
-                        # buy_trades_30m_list.append(doc_buy_trd)
-                        # buy_trades_60m_list.append(doc_buy_trd)
-                        # buy_trades_3h_list.append(doc_buy_trd)
-                        # buy_trades_6h_list.append(doc_buy_trd)
-
                         continue
                     
                     # if timestamp trade is not older than 15 minutes
@@ -253,102 +181,24 @@ class TrackerController:
                         volumes_15m_list.append(doc_vol)
                         volumes_30m_list.append(doc_vol)
                         volumes_60m_list.append(doc_vol)
-                        volumes_3h_list.append(doc_vol)
-                        volumes_6h_list.append(doc_vol)
-
-                        # trades_15m_list.append(doc_trades)
-                        # trades_30m_list.append(doc_trades)
-                        # trades_60m_list.append(doc_trades)
-                        # trades_3h_list.append(doc_trades)
-                        # trades_6h_list.append(doc_trades)
-
                         buy_volume_15m_list.append(doc_buy_vol)
                         buy_volume_30m_list.append(doc_buy_vol)
                         buy_volume_60m_list.append(doc_buy_vol)
-                        buy_volume_3h_list.append(doc_buy_vol)
-                        buy_volume_6h_list.append(doc_buy_vol)
-
-                        # buy_trades_15m_list.append(doc_buy_trd)
-                        # buy_trades_30m_list.append(doc_buy_trd)
-                        # buy_trades_60m_list.append(doc_buy_trd)
-                        # buy_trades_3h_list.append(doc_buy_trd)
-                        # buy_trades_6h_list.append(doc_buy_trd)
-
                         continue
                     
                     # if timestamp trade is not older than 30 minutes
                     elif timestamp_trade > reference_30m_datetime:
                         volumes_30m_list.append(doc_vol)
                         volumes_60m_list.append(doc_vol)
-                        volumes_3h_list.append(doc_vol)
-                        volumes_6h_list.append(doc_vol)
-
-                        # trades_30m_list.append(doc_trades)
-                        # trades_60m_list.append(doc_trades)
-                        # trades_3h_list.append(doc_trades)
-                        # trades_6h_list.append(doc_trades)
-
                         buy_volume_30m_list.append(doc_buy_vol)
                         buy_volume_60m_list.append(doc_buy_vol)
-                        buy_volume_3h_list.append(doc_buy_vol)
-                        buy_volume_6h_list.append(doc_buy_vol)
-
-                        # buy_trades_30m_list.append(doc_buy_trd)
-                        # buy_trades_60m_list.append(doc_buy_trd)
-                        # buy_trades_3h_list.append(doc_buy_trd)
-                        # buy_trades_6h_list.append(doc_buy_trd)
                         continue
                     
                     # if timestamp trade is not older than 60 minutes
                     elif timestamp_trade > reference_1h_datetime:
-                        
                         volumes_60m_list.append(doc_vol)
-                        volumes_3h_list.append(doc_vol)
-                        volumes_6h_list.append(doc_vol)
-
-                        # trades_60m_list.append(doc_trades)
-                        # trades_3h_list.append(doc_trades)
-                        # trades_6h_list.append(doc_trades)
-                        
                         buy_volume_60m_list.append(doc_buy_vol)
-                        buy_volume_3h_list.append(doc_buy_vol)
-                        buy_volume_6h_list.append(doc_buy_vol)
-
-                        # buy_trades_60m_list.append(doc_buy_trd)
-                        # buy_trades_3h_list.append(doc_buy_trd)
-                        # buy_trades_6h_list.append(doc_buy_trd)
-
                         continue
-                    
-                    # if timestamp trade is not older than 3 hours
-                    elif timestamp_trade > reference_3h_datetime:
-                        
-                        volumes_3h_list.append(doc_vol)
-                        volumes_6h_list.append(doc_vol)
-
-                        # trades_3h_list.append(doc_trades)
-                        # trades_6h_list.append(doc_trades)
-
-                        buy_volume_3h_list.append(doc_buy_vol)
-                        buy_volume_6h_list.append(doc_buy_vol)
-
-                        # buy_trades_3h_list.append(doc_buy_trd)
-                        # buy_trades_6h_list.append(doc_buy_trd)
-
-                        continue
-                    
-                    # if timestamp trade is not older than 6 hours
-                    elif timestamp_trade > reference_6h_datetime:
-                        volumes_6h_list.append(doc_vol)
-
-                        # trades_6h_list.append(doc_trades)
-
-                        buy_volume_6h_list.append(doc_buy_vol)
-
-                        # buy_trades_6h_list.append(doc_buy_trd)
-
-                        continue
-                    
                 # Compute the volume statistics of the last minute. Since we reach the end of the "docs" variable
 
                 price_now = doc['price']
@@ -358,172 +208,71 @@ class TrackerController:
                     buy_volume_perc_1m = round_(doc['buy_volume'] / doc['volume'],2)
                 else:
                     buy_volume_perc_1m = 0.5
-                
-                if doc['n_trades'] != 0:
-                    buy_trades_perc_1m = round_(doc['buy_n'] / doc['n_trades'],2)
-                else:
-                    buy_trades_perc_1m = 0.5
-
-                    
-                # if coin == 'DODOUSDT' and now.minute <= 20 and now.hour == 7:
-                #     path_log = f"/tracker/logs/debug-{now.minute}.json"
-                #     logger.info(f'24h: {len(volumes_24h_list)}')
-                #     logger.info(f'6h: {len(volumes_6h_list)}')
-                #     logger.info(f'3h: {len(volumes_3h_list)}')
-                #     logger.info(f'60m: {len(volumes_60m_list)}')
-                #     logger.info(f'30m: {len(volumes_30m_list)}')
-                #     logger.info(f'15m: {len(volumes_15m_list)}')
-                #     logger.info(f'5m: {len(volumes_5m_list)}')
-
-                #     log = {'_id': now_isoformat,
-                #         'vol_5m': volumes_5m_list,
-                #         'vol_15m': volumes_15m_list, 
-                #         'vol_30m': volumes_30m_list, 
-                #         'vol_60m': volumes_60m_list, 
-                #         'vol_3h': volumes_3h_list,
-                #         'vol_6h': volumes_6h_list, 
-                #         'vol_24h': volumes_24h_list, 
-                #         }
-
-                #     with open(path_log, 'w') as file:
-                #         json.dump(log, file)
-
-
-                if sum(volumes_24h_list) != 0 and len(volumes_24h_list) > 1400:
-                    volumes_24h = round_(np.mean(volumes_24h_list) / avg_volume_1_month, 2) 
-                    buy_volume_perc_24h = round_(sum(buy_volume_24h_list)/sum(volumes_24h_list),2)
-                    # buy_trades_perc_24h = round_(sum(buy_trades_24h_list)/sum(trades_24h_list),2)
-                    # volumes_24h_std = round_(np.std(volumes_24h_list) / std_volume_1_month, 2)
-                else:
-                    volumes_24h = None
-                    buy_volume_perc_24h = None
-                    # buy_trades_perc_24h = None
-                    # volumes_24h_std = None
-
-                
-                if sum(volumes_6h_list) != 0 and len(volumes_6h_list) > 330:
-                    volumes_6h = round_(np.mean(volumes_6h_list) / avg_volume_1_month, 2) 
-                    buy_volume_perc_6h = round_(sum(buy_volume_6h_list)/sum(volumes_6h_list),2)
-                    # buy_trades_perc_6h = round_(sum(buy_trades_6h_list)/sum(trades_6h_list),2)
-                    # volumes_6h_std = round_(np.std(volumes_6h_list) / std_volume_1_month, 2)
-                else:
-                    volumes_6h = None
-                    buy_volume_perc_6h = None
-                    # buy_trades_perc_6h = None
-                    # volumes_6h_std = None
-
-                if sum(volumes_3h_list) != 0 and len(volumes_3h_list) > 160:
-                    volumes_3h = round_(np.mean(volumes_3h_list) / avg_volume_1_month, 2) 
-                    buy_volume_perc_3h = round_(sum(buy_volume_3h_list)/sum(volumes_3h_list),2)
-                    # buy_trades_perc_3h = round_(sum(buy_trades_3h_list)/sum(trades_3h_list),2)
-                    # volumes_3h_std = round_(np.std(volumes_3h_list) / std_volume_1_month, 2)
-                else:
-                    volumes_3h = None
-                    buy_volume_perc_3h = None
-                    # buy_trades_perc_3h = None
-                    # volumes_3h_std = None
 
 
                 if sum(volumes_60m_list) != 0 and len(volumes_60m_list) >= 50:
                     volumes_60m = round_(np.mean(volumes_60m_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_60m = round_(sum(buy_volume_60m_list)/sum(volumes_60m_list),2)
-                    # buy_trades_perc_60m = round_(sum(buy_trades_60m_list)/sum(trades_60m_list),2)
-                    # volumes_60m_std = round_(np.std(volumes_60m_list) / std_volume_1_month, 2)
+
                 else:
                     volumes_60m = None
-                    buy_volume_perc_60m = None
-                    # buy_trades_perc_60m = None
-                    # volumes_60m_std = None
-                
+                    buy_volume_perc_60m = None     
 
                 if sum(volumes_30m_list) != 0 and len(volumes_30m_list) >= 24:
                     volumes_30m = round_(np.mean(volumes_30m_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_30m = round_(sum(buy_volume_30m_list)/sum(volumes_30m_list),2)
-                    # buy_trades_perc_30m = round_(sum(buy_trades_30m_list)/sum(trades_30m_list),2)
-                    # volumes_30m_std = round_(np.std(volumes_30m_list) / std_volume_1_month, 2)
                 else:
                     volumes_30m = None
                     buy_volume_perc_30m = None
-                    # buy_trades_perc_30m = None
-                    # volumes_30m_std = None
-
 
                 if sum(volumes_15m_list) != 0 and len(volumes_15m_list) >= 12:
                     volumes_15m = round_(np.mean(volumes_15m_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_15m = round_(sum(buy_volume_15m_list)/sum(volumes_15m_list),2)
-                    # buy_trades_perc_15m = round_(sum(buy_trades_15m_list)/sum(trades_15m_list),2)
-                    # volumes_15m_std = round_(np.std(volumes_15m_list) / std_volume_1_month, 2)
                 else:
                     volumes_15m = None
                     buy_volume_perc_15m = None
-                    # buy_trades_perc_15m = None
-                    # volumes_15m_std = None
 
                 if sum(volumes_5m_list) != 0 and len(volumes_5m_list) >= 4:
                     volumes_5m = round_(np.mean(volumes_5m_list) / avg_volume_1_month, 2) 
                     buy_volume_perc_5m = round_(sum(buy_volume_5m_list)/sum(volumes_5m_list),2)
-                    # buy_trades_perc_5m = round_(sum(buy_trades_5m_list)/sum(trades_5m_list),2)
-                    # volumes_5m_std = round_(np.std(volumes_5m_list) / std_volume_1_month, 2)
                 else:
                     volumes_5m = None
                     buy_volume_perc_5m = None
-                    # buy_trades_perc_5m = None
-                    # volumes_5m_std = None
 
-                # if coin == "BTCUSDT":
-                #     logger.info(f'24h: {len(volumes_24h_list)}')
-                #     logger.info(f'6h: {len(volumes_6h_list)}')
-                #     logger.info(f'3h: {len(volumes_3h_list)}')
-                #     logger.info(f'60m: {len(volumes_60m_list)}')
-                #     logger.info(f'30m: {len(volumes_30m_list)}')
-                #     logger.info(f'15m: {len(volumes_15m_list)}')
-                #     logger.info(f'5m: {len(volumes_5m_list)}')
-
-
-                # doc_db = {'_id': datetime.now().isoformat(),"price": price_now,
-                #         'vol_1m': volume_1m, 'buy_vol_1m': buy_volume_perc_1m, 'buy_trd_1m': buy_trades_perc_1m,
-                #         'vol_5m': volumes_5m, 'vol_5m_std': volumes_5m_std, 'buy_vol_5m': buy_volume_perc_5m, 'buy_trd_5m': buy_trades_perc_5m,
-                #         'vol_15m': volumes_15m, 'vol_15m_std': volumes_15m_std, 'buy_vol_15m': buy_volume_perc_15m, 'buy_trd_15m': buy_trades_perc_15m,
-                #         'vol_30m': volumes_30m, 'vol_30m_std': volumes_30m_std, 'buy_vol_30m': buy_volume_perc_30m, 'buy_trd_30m': buy_trades_perc_30m,
-                #         'vol_60m': volumes_60m, 'vol_60m_std': volumes_60m_std, 'buy_vol_60m': buy_volume_perc_60m, 'buy_trd_60m': buy_trades_perc_60m,
-                #         'vol_3h': volumes_3h, 'vol_3h_std': volumes_3h_std, 'buy_vol_3h': buy_volume_perc_3h, 'buy_trd_3h': buy_trades_perc_3h,
-                #         'vol_6h': volumes_6h, 'vol_6h_std': volumes_6h_std, 'buy_vol_6h': buy_volume_perc_6h, 'buy_trd_6h': buy_trades_perc_6h,
-                #         'vol_24h': volumes_24h, 'vol_24h_std': volumes_24h_std, 'buy_vol_24h': buy_volume_perc_24h,'buy_trd_24h': buy_trades_perc_24h,
-                #         }
-                
                 doc_db = {'_id': datetime.now().isoformat(),"price": price_now,
                         'vol_1m': volume_1m, 'buy_vol_1m': buy_volume_perc_1m,
                         'vol_5m': volumes_5m, 'buy_vol_5m': buy_volume_perc_5m,
                         'vol_15m': volumes_15m, 'buy_vol_15m': buy_volume_perc_15m,
                         'vol_30m': volumes_30m, 'buy_vol_30m': buy_volume_perc_30m,
-                        'vol_60m': volumes_60m, 'buy_vol_60m': buy_volume_perc_60m,
-                        'vol_3h': volumes_3h, 'buy_vol_3h': buy_volume_perc_3h,
-                        'vol_6h': volumes_6h, 'buy_vol_6h': buy_volume_perc_6h,
-                        'vol_24h': volumes_24h, 'buy_vol_24h': buy_volume_perc_24h,
-                        }                # if coin == last_coin or coin == first_coin:
-                #     logger.info(f'TrackerController: {coin}')
+                        'vol_60m': volumes_60m, 'buy_vol_60m': buy_volume_perc_60m
+                        }       
 
-                
                 # CHECK IF THE EVENT CAN TRIGGER A BUY ORDER
 
                 # ASYNC CALL ENABLED call. Enable only if cpu support is high. 4CPUs are probably minimum
                 #asyncio.create_task(TradingController.check_event_triggering(coin, doc_db, volatility_coin, logger, db_logger, risk_configuration))
                 
                 # ASYNC DISABLED. THIS IS PREFERRED CHOICE even if CPU Support is high
-                TradingController.check_event_triggering_testing(coin, doc_db, volatility_coin, logger, db_logger, risk_configuration)
+                TradingController.buy_event_analysis(coin, doc_db, volatility_coin, logger, db_logger, risk_configuration)
                 #logger.info(doc_db)
 
                 db_tracker[coin].insert(doc_db)
 
+                if coin == last_coin and now.hour == 0 and now.minute == 5:
+                    t2 = time()
+                    timespent = round_(t2-t1,2)
+                    logger.info(f'TrackerController executed in {timespent} seconds')
+
             # if Bitcoin was not retrieved 
             elif coin == 'BTCUSDT':
-                msg = 'No trade was saved in Market_Trades in the last minute for list1'
+                msg = 'BTCUSDT was not traded in the last minute'
                 logger.info(msg)
                 db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
             elif coin == 'ETHUSDT':
-                msg = 'No trade was saved in Market_Trades in the last minute for list2'
+                msg = 'ETHUSDT was not traded in the last minute'
                 logger.info(msg)
                 db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+                
             
             
 
