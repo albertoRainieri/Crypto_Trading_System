@@ -39,8 +39,7 @@ class TrackerController:
     #@timer_func
     #async def start_tracking(db_trades, db_tracker, db_benchmark, logger, db_logger):
     #@timer_func
-    def start_tracking(db_trades, db_tracker, db_benchmark, logger, db_logger):
-        t1 = time()
+    def start_tracking(best_x_coins, db_trades, db_tracker, db_benchmark, logger, db_logger):
         now = datetime.now()
 
         reference_1h_datetime = now - timedelta(hours=1)
@@ -57,7 +56,7 @@ class TrackerController:
         f = open ('/tracker/json/most_traded_coins.json', "r")
         data = json.loads(f.read())
 
-        f = open ('/tracker/strategy/strategy.json', "r")
+        f = open ('/tracker/riskmanagement/riskmanagement.json', "r")
         risk_configuration = json.loads(f.read())
 
         #coin_list_subset = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
@@ -67,7 +66,7 @@ class TrackerController:
         
         # iterate through each coin
         # The all cycle takes slightly less than 1 second (from localhost 15/08/2023)
-        last_coin = coins_list[-1]
+        #logger.info(best_x_coins)
         for coin in coins_list:
 
             if coin not in coin_list_subset:
@@ -82,7 +81,6 @@ class TrackerController:
             if len(volume_coin) != 0:
 
                 avg_volume_1_month = volume_coin[0]['volume_30_avg']
-                std_volume_1_month = volume_coin[0]['volume_30_std']
                 
 
                 # in case there is something wrong with "volume_30_avg" then skip
@@ -92,8 +90,6 @@ class TrackerController:
                         #logger.info(msg)
                         db_logger[DATABASE_TRACKER_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
                     continue
-
-                volatility_coin = str(int(std_volume_1_month / avg_volume_1_month))
 
                 # here, the coin must pass some checks.
                 # In particular, it is required that the coin has been in the "most_traded_coins" in the last consecutive "benchmark_days".
@@ -253,27 +249,21 @@ class TrackerController:
                 #asyncio.create_task(TradingController.check_event_triggering(coin, doc_db, volatility_coin, logger, db_logger, risk_configuration))
                 
                 # ASYNC DISABLED. THIS IS PREFERRED CHOICE even if CPU Support is high
-                TradingController.buy_event_analysis(coin, doc_db, volatility_coin, logger, db_logger, risk_configuration)
+                TradingController.buy_event_analysis(coin, doc_db, risk_configuration)
                 #logger.info(doc_db)
 
                 db_tracker[coin].insert(doc_db)
 
-                if coin == last_coin and now.hour == 0 and now.minute == 5:
-                    t2 = time()
-                    timespent = round_(t2-t1,2)
-                    logger.info(f'TrackerController executed in {timespent} seconds')
+            # if Bitcoin was not retrieved
+            elif best_x_coins == None:
+                msg = f'Something is wrong for db_volume_standings. last record was not computed'
+                logger.info(msg)
+                db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
 
-            # if Bitcoin was not retrieved 
-            elif coin == 'BTCUSDT':
-                msg = 'BTCUSDT was not traded in the last minute'
+            elif coin in best_x_coins:
+                msg = f'{coin} was not traded in the last minute'
                 logger.info(msg)
                 db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
-            elif coin == 'ETHUSDT':
-                msg = 'ETHUSDT was not traded in the last minute'
-                logger.info(msg)
-                db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
-                
-            
             
 
         

@@ -16,8 +16,8 @@ from numpy import mean as np_mean
 #import random
 
 
-def binance_order_book_request(coin):
-    url = f"https://api.binance.com/api/v3/depth?symbol={coin}&limit=5000"
+def binance_order_book_request(coin, limit=5000):
+    url = f"https://api.binance.com/api/v3/depth?symbol={coin}&limit={limit}"
     try:
         response = requests.get(url=url)
     except:
@@ -32,19 +32,46 @@ def binance_order_book_request(coin):
         sleep(retry_after*2)
     return response.text, status_code
 
+def get_most_efficient_limit_orderbook_api(limit):
+    # REFERENCE: https://developers.binance.com/docs/binance-spot-api-docs/rest-api/market-data-endpoints#order-book
+
+    request_weight_legend = {
+            (1,100): 5,
+            (101,500): 25,
+            (501,1000):	50,
+            (1001,5000): 250 }
+    
+    threshold_limit = 1000
+    x = 0.2 #percentage
+    y = 0.15 #percentage
+
+    if limit >= threshold_limit*(1-x):
+        return 250, 5000
+    else:
+        for limit_n_range in request_weight_legend:
+            if limit*(1+y) >= limit_n_range[0] and limit*(1+y) < limit_n_range[1]:
+                weight = request_weight_legend[limit_n_range]
+                break
+        return weight, limit*(1+y)
 
 def round_(number, decimal):
     return float(format(number, f".{decimal}f"))
 
 
 def get_statistics(resp):
+    '''
+    This function makes a first pre-processing of the orderbook data, the output is then analyzed for buy-events
+    '''
     json_resp = json.loads(resp)
     total_ask_volume = 0
     total_bid_volume = 0
 
     # lowest_bid_price = json_resp['bids'][-1][0]
     # highest_ask_price = json_resp['asks'][-1][0]
-    current_price = float(json_resp["bids"][0][0])
+    best_bid_price = float(json_resp["bids"][0][0])
+    best_ask_price = float(json_resp["asks"][0][0])
+
+    max_n_orders = max(len(json_resp["bids"]),len(json_resp["asks"]))
 
     for ask_order in json_resp["asks"]:
         total_ask_volume += float(ask_order[0]) * float(ask_order[1])
@@ -68,7 +95,7 @@ def get_statistics(resp):
         if cumulative_ask_volume_ratio >= next_delta_threshold:
             summary_ask_orders.append(
                 (
-                    round_((price_order - current_price) / current_price, 3),
+                    round_((price_order - best_ask_price) / best_ask_price, 3),
                     cumulative_ask_volume_ratio,
                 )
             )
@@ -85,7 +112,7 @@ def get_statistics(resp):
         if cumulative_bid_volume_ratio >= next_delta_threshold:
             summary_bid_orders.append(
                 (
-                    round_((price_order - current_price) / current_price, 3),
+                    round_((price_order - best_bid_price) / best_bid_price, 3),
                     cumulative_bid_volume_ratio,
                 )
             )
@@ -93,16 +120,18 @@ def get_statistics(resp):
             # print(f'{next_delta_threshold}: {bid_order}')
 
     return (
-        current_price,
+        best_bid_price,
+        best_ask_price,
         int(total_bid_volume),
         int(total_ask_volume),
         summary_bid_orders,
         summary_ask_orders,
+        max_n_orders
     )
 
 
-def get_info_order_book(coin):
-    response, status_code = binance_order_book_request(coin)
+def get_info_order_book(coin, limit=5000):
+    response, status_code = binance_order_book_request(coin, limit)
     if status_code == 200:
         return get_statistics(response)
     else:
@@ -126,18 +155,19 @@ def extract_timeframe(input_string):
         return None
 
 
-def update_db_order_book_record(id, event_key, db_collection, order_book_info):
+def update_db_order_book_record(id, event_key, db_collection, order_book_info, weight):
 
     new_data = []
-    new_data.append(order_book_info[0])  # current_price
-    new_data.append(order_book_info[1])  # total_bid_volume
-    new_data.append(order_book_info[2])  # total_ask_volume
-    new_data.append(order_book_info[3])  # summary_bid_orders
-    new_data.append(order_book_info[4])  # summary_ask_orders
+    #new_data.append(order_book_info[0])  # bid_price
+    new_data.append(order_book_info[1])  # ask_price
+    new_data.append(order_book_info[2])  # total_bid_volume
+    new_data.append(order_book_info[3])  # total_ask_volume
+    new_data.append(order_book_info[4])  # summary_bid_orders
+    new_data.append(order_book_info[5])  # summary_ask_orders
 
     now = datetime.now().replace(microsecond=0).isoformat()
     filter_query = {"_id": id}
-    update_doc = {"$set": {f"data.{now}": new_data}}
+    update_doc = {"$set": {f"data.{now}": new_data, "weight": weight}}
     result = db_collection.update_one(filter_query, update_doc)
 
     if result.modified_count != 1:
@@ -148,20 +178,22 @@ def update_db_order_book_record(id, event_key, db_collection, order_book_info):
 def get_current_number_of_orderbook_scripts(db, event_keys):
     live_order_book_scripts_number = 0
     numbers_filled = []
+    current_weight = 0
     for collection in event_keys:
 
         minutes_timeframe = int(extract_timeframe(collection))
         yesterday = datetime.now() - timedelta(minutes=minutes_timeframe)
         query = {"_id": {"$gt": yesterday.isoformat()}}
-        docs = list(db[collection].find(query, {"_id": 1, "number": 1}))
+        docs = list(db[collection].find(query, {"_id": 1, "number": 1, "weight":1}))
         for doc in docs:
             numbers_filled.append(doc["number"])
+            current_weight += doc["weight"]
         # logger.info(docs)
         # len_docs = len(docs)
         # logger.info(f'{len_docs} - {collection}')
         live_order_book_scripts_number += len(docs)
 
-    return numbers_filled, live_order_book_scripts_number
+    return numbers_filled, live_order_book_scripts_number, current_weight
 
 
 def get_sleep_seconds( live_order_book_scripts_number, number_script, second_binance_request, limit ):
@@ -397,7 +429,7 @@ def trigger_entrypoint(price, max_price,
                 # TODO: check only first level, or next ones too ?
                 if avg_ask_order_distribution[str(price_change_jump)] < max_ask_order_distribution_level:
                     BUY = True
-                    print(f'BUY TRIGGER: coin: {coin} - price: {price} ')
+                    logger.info(f'BUY TRIGGER: coin: {coin} - price: {price} ')
 
                     return max_price, selected_ask_order_distribution_list, BUY, price
         
@@ -406,11 +438,12 @@ def trigger_entrypoint(price, max_price,
 def analyze_ask_orders(order_book_info, max_price, ask_price_levels, ask_order_distribution_list,
                         strategy):
     '''
-    order_book_info[0] --> current_price
-    order_book_info[1] --> total_bid_volume
-    order_book_info[2] --> total_ask_volume
-    order_book_info[3] --> summary_bid_orders
-    order_book_info[4] --> summary_ask_orders
+    order_book_info[0] --> bid_price
+    order_book_info[1] --> ask_price
+    order_book_info[2] --> total_bid_volume
+    order_book_info[3] --> total_ask_volume
+    order_book_info[4] --> summary_bid_orders
+    order_book_info[5] --> summary_ask_orders
     '''
 
     cumulative_volume_jump = strategy['strategy_jump']
@@ -424,8 +457,8 @@ def analyze_ask_orders(order_book_info, max_price, ask_price_levels, ask_order_d
     min_n_obs_jump_level = strategy['min_n_obs_jump_level']
     
     dt = datetime.now()
-    price = order_book_info[0]
-    ask_orders = order_book_info[4]
+    price = order_book_info[1]
+    ask_orders = order_book_info[5]
 
     ask_price_level_dt, ask_order_distribution, ask_cumulative_level = get_price_levels(price, ask_orders, cumulative_volume_jump, price_change_limit, price_change_jump)
     ask_price_levels.append(ask_price_level_dt)
@@ -443,8 +476,9 @@ if __name__ == "__main__":
     """
     # decide which second to make request to binance
     #second_binance_request = random.randint(5, 58)
-    BUY = False
+    BUY = True
     LIMIT = 20
+    efficient_limit = 5000
     range_second_trigger = [round_(i,2) for i in linspace(10,58,20)]
     logger = LoggingController.start_logging()
     price_list = []
@@ -475,7 +509,7 @@ if __name__ == "__main__":
     event_key_docs = list( db_collection.find( {"_id": {"$gt": yesterday.isoformat()}}, {"_id": 1, "coin": 1, "number": 1, "strategy_parameters": 1} ) )
     db_volume_standings = client.get_db(DATABASE_VOLUME_STANDINGS)
 
-    # at midnight (00:00 only) it is possible to have an exception due to unavailibility of the info
+    # at midnight (00:00 only) it is possible to have an exception due to unavailibility of the info (update: THIS SHOULD NOT LONGER HAPPEN)
     try:
         id_volume_standings_db = now.strftime("%Y-%m-%d")
         volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find_one( {"_id": id_volume_standings_db} )
@@ -497,7 +531,11 @@ if __name__ == "__main__":
         if doc["_id"] == id:
             INITIALIZE_DOC_ORDERBOOK = False
             number_script = doc["number"]
-            strategy_parameters = doc['strategy_parameters']
+            if 'strategy_parameters' in doc:
+                strategy_parameters = doc['strategy_parameters']
+            else:
+                strategy_parameters = None
+                
             second_binance_request = range_second_trigger[number_script % LIMIT]
 
         # In case, the script has started in the script time windows, skip
@@ -510,7 +548,7 @@ if __name__ == "__main__":
         # logger.info(f'coin {coin} has a ranking {ranking} higher than the threshold of the event_key lvl {event_key}')
         STOP_SCRIPT = True
 
-    numbers_filled, live_order_book_scripts_number = get_current_number_of_orderbook_scripts(db, event_keys)
+    numbers_filled, live_order_book_scripts_number, current_weight = get_current_number_of_orderbook_scripts(db, event_keys)
     # initialize
     if not STOP_SCRIPT and INITIALIZE_DOC_ORDERBOOK and not RESTART:
         for i in range(live_order_book_scripts_number + 1):
@@ -520,7 +558,8 @@ if __name__ == "__main__":
         
 
         second_binance_request = range_second_trigger[number_script % LIMIT]
-        db_collection.insert_one( { "_id": id, "coin": coin, "ranking": ranking, "data": {},  "number": number_script, "strategy_parameters": strategy_parameters} )
+        db_collection.insert_one( { "_id": id, "coin": coin, "ranking": ranking, "data": {},
+                                     "number": number_script, "strategy_parameters": strategy_parameters, "weight": 250} )
 
     if not STOP_SCRIPT:
         current_number_script = number_script + 1
@@ -536,24 +575,34 @@ if __name__ == "__main__":
 
         while datetime.now() < stop_script_datetime:
             #logger.info(f'{number_script}')
-            order_book_info = get_info_order_book(coin)
+            order_book_info = get_info_order_book(coin, limit=efficient_limit)
             if order_book_info != None:
-                update_db_order_book_record( id, event_key, db_collection, order_book_info )
+                
                 if not BUY:
-                    max_price, ask_price_levels, ask_order_distribution_list, BUY, buy_price = analyze_ask_orders(order_book_info, max_price, ask_price_levels, ask_order_distribution_list,
-                                                                                                                    strategy_parameters)
+                    max_price, ask_price_levels, ask_order_distribution_list, BUY, buy_price = analyze_ask_orders( order_book_info, max_price, ask_price_levels, ask_order_distribution_list,strategy_parameters)
+                
+                # here, I try to get an efficient limit (parameter) for orderbook api, for respecting the request weight limit
+                # coin with less volume, tend to need a lower limit, so I compute it
+                # (25/02/2025) it looks it is unneccessary, weight tends to be always at max (250), even for coins with few volume
+                limit_orderbook_api = order_book_info[6]
+                weight, efficient_limit = get_most_efficient_limit_orderbook_api(limit_orderbook_api)
+                update_db_order_book_record( id, event_key, db_collection, order_book_info, weight)
+
 
             event_keys = db.list_collection_names()
-            numbers_filled, live_order_book_scripts_number = ( get_current_number_of_orderbook_scripts(db, event_keys) )
+            numbers_filled, live_order_book_scripts_number, current_weight = ( get_current_number_of_orderbook_scripts(db, event_keys) )
             times_in_live_order_book_scripts_number = live_order_book_scripts_number // LIMIT
             sleep_seconds, correct_minute = get_sleep_seconds(  live_order_book_scripts_number, number_script, second_binance_request, LIMIT)
-            next_iso_trigger = (  datetime.now() + timedelta(seconds=sleep_seconds) ).isoformat()
+            # next_iso_trigger = (  datetime.now() + timedelta(seconds=sleep_seconds) ).isoformat()
+            # logger.info(f'coin: {coin}; position: {ranking}; weight: {weight}; efficient_limit: {efficient_limit}')
+            # if number_script == 1:
+            #     logger.info(f'Current Limit Weight: {current_weight}')
             # logger.info(f'Next trigger - {next_iso_trigger} - number_script: {number_script} -live_order_book_scripts_number {live_order_book_scripts_number} -LIMIT: {LIMIT} ')
             sleep(sleep_seconds)
 
-            # this step is necessary in case, the number of live scripts has increased and the minute trigger has shifted, so sleep_seconds need to be adjusted
-            # va "correct_minute" is a boolean and if the minute trigger is shifted, but this minute is in minute_range, then do not sleep
-            numbers_filled, live_order_book_scripts_number = get_current_number_of_orderbook_scripts(db, event_keys)
+            # this step is necessary in case the number of live scripts has increased and the minute trigger has shifted, so sleep_seconds need to be adjusted
+            # "correct_minute" is a boolean and if the minute trigger has shifted, then take extra sleep, but if this minute is in minute_range, then do not take extra sleep
+            numbers_filled, live_order_book_scripts_number, current_weight = get_current_number_of_orderbook_scripts(db, event_keys)
             NEXT_times_in_live_order_book_scripts_number = live_order_book_scripts_number // LIMIT
             sleep_seconds, correct_minute = get_sleep_seconds(  live_order_book_scripts_number, number_script, second_binance_request, LIMIT)
             if times_in_live_order_book_scripts_number != NEXT_times_in_live_order_book_scripts_number and not correct_minute:

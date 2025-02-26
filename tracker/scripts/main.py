@@ -2,6 +2,7 @@
 from time import time, sleep
 import sys, os
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
+from app.Helpers.Helpers import round_, get_best_coins
 from database.DatabaseConnection import DatabaseConnection
 from app.Controller.LoggingController import LoggingController
 from app.Controller.TrackerController import TrackerController
@@ -13,19 +14,26 @@ import json
 SECOND_START_TRACKING = 2
 FIRST_RUN = True
 
-def main(db_trades, db_tracker, db_benchmark, db_logger, logger, FIRST_RUN, SECOND_START_TRACKING):
+def main(db_trades, db_tracker, db_benchmark, db_logger, db_volume_standings, logger, FIRST_RUN, SECOND_START_TRACKING):
     '''
     This function tracks the statistics of the most traded pairs each minute
     '''
 
+    best_x_coins = get_best_coins(db_volume_standings)
+
     while True:
 
-
-        if datetime.now().second == SECOND_START_TRACKING:
-            #logger.info(datetime.now())
-            #asyncio.run(TrackerController.start_tracking(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, logger=logger, db_logger=db_logger))
-            TrackerController.start_tracking(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, logger=logger, db_logger=db_logger)
+        now = datetime.now()
+        if now.second == SECOND_START_TRACKING:
+            t1 = time()
+            TrackerController.start_tracking(best_x_coins, db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, logger=logger, db_logger=db_logger)
             
+            if now.hour == 0 and now.minute == 0:
+                t2 = time()
+                timespent = round_(t2-t1,3)
+                logger.info(f'start_tracking executed in {timespent}s')
+                best_x_coins = get_best_coins(db_volume_standings)
+
             
             # sleep until next run of tracking
             FIRST_RUN = False
@@ -47,7 +55,7 @@ if __name__ == '__main__':
     db_trades = client.get_db(database=DATABASE_MARKET)
     db_tracker = client.get_db(database=DATABASE_TRACKER)
     db_benchmark = client.get_db(database=DATABASE_BENCHMARK)
-    #db_trading = client.get_db(database=DATABASE_TRADING)
+    db_volume_standings = client.get_db(DATABASE_VOLUME_STANDINGS)
     db_logger = client.get_db(DATABASE_LOGGING)
 
     SECOND_START_TRACKING = 2
@@ -57,4 +65,4 @@ if __name__ == '__main__':
     sleep(2)
     logger.info('Main Script Started')
     main(db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, db_logger=db_logger,
-          logger=logger, FIRST_RUN=FIRST_RUN, SECOND_START_TRACKING=SECOND_START_TRACKING)
+          db_volume_standings=db_volume_standings, logger=logger, FIRST_RUN=FIRST_RUN, SECOND_START_TRACKING=SECOND_START_TRACKING)

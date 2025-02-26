@@ -216,7 +216,7 @@ class TradingController:
     def get_currency_coin():
         return ['GBUSDT', 'FDUSDUSDT', 'EURUSDT']
 
-    def buy_event_analysis(coin, obs, volatility_coin, logger, db_logger, strategy_configuration):
+    def buy_event_analysis(coin, obs, strategy_configuration):
 
         '''
         This functions triggers a market order if the condition of the risk strategies are met.
@@ -227,7 +227,7 @@ class TradingController:
         if coin in TradingController.get_currency_coin():
             return None
         
-        event_keys = strategy_configuration['event']
+        event_keys = strategy_configuration['event_keys']
         
         for event_key in event_keys:
 
@@ -274,7 +274,7 @@ class TradingController:
     def restart_order_book_polling(logger):
         f = open ('/tracker/riskmanagement/riskmanagement.json', "r")
         risk_configuration = json.loads(f.read())
-        event_keys = list(risk_configuration.keys())
+        event_keys = list(risk_configuration['event_keys'])
         RESTART = '1'
 
         logger.info('TradingController.restart_order_book_polling is started')
@@ -294,7 +294,7 @@ class TradingController:
                 #if datetime.now() <  datetime.fromisoformat(id) + timedelta(minutes=minutes_timeframe):
                 coin = doc['coin']
                 logger.info(f'Resuming Order Book for coin {coin}, event_key {event_key} and id {id}')
-                strategy_parameters = None
+                strategy_parameters = 'None'
                 subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, 'None', RESTART, strategy_parameters])
         client.close()
 

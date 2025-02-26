@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import pytz
 import json, os
 import re
+from constants.constants import *
 
 logger = LoggingController.start_logging()
     
@@ -21,6 +22,17 @@ def timer_func(func):
         logger.info(f'Function {func.__name__!r} executed in {(t2-t1):.4f}s')
         return result
     return wrap_func
+
+def get_best_coins(db_volume_standings):
+    
+    SETS_WSS_BACKEND = int(os.getenv('SETS_WSS_BACKEND'))
+    id_volume_standings_db = datetime.now().strftime("%Y-%m-%d")
+    try:
+        volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find_one( {"_id": id_volume_standings_db} )
+        best_x_coins = list(volume_standings["standings"].keys())[:SETS_WSS_BACKEND]
+        return best_x_coins
+    except:
+        return None
 
 def getsubstring_fromkey(text):
     '''
