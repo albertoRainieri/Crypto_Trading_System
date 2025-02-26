@@ -187,7 +187,10 @@ def get_current_number_of_orderbook_scripts(db, event_keys):
         docs = list(db[collection].find(query, {"_id": 1, "number": 1, "weight":1}))
         for doc in docs:
             numbers_filled.append(doc["number"])
-            current_weight += doc["weight"]
+            if "weight" in doc:
+                current_weight += doc["weight"]
+            else:
+                current_weight += 250
         # logger.info(docs)
         # len_docs = len(docs)
         # logger.info(f'{len_docs} - {collection}')
