@@ -124,39 +124,72 @@ def get_order_book(initial_request):
                             request[event_key][coin].append(_id)
 
         # make the request to the server
+        requests_server = 0
+        done_request = {}
+        LIMIT_EVENTS_PER_REQUEST = 10
         if to_update:
-            print(f'{orderbook_events} events for orderbook are going to be extracted in algocrypto.eu')
-            url = "https://algocrypto.eu/analysis/get-order-book"
-            #url = "http://localhost/analysis/get-order-book"
-            response = requests.post(url=url, json = request)
-            status_code = response.status_code
+            while requests_server < orderbook_events:
+                i = 0
+                tmp_request = {}
+                for event_key in request:
+                    for coin in request[event_key]:
+                        for id_ in request[event_key][coin]:
+                            if i > LIMIT_EVENTS_PER_REQUEST:
+                                break
+                            elif event_key in done_request and coin in done_request[event_key] and id_ in done_request[event_key][coin]:
+                                continue
+                            else:
+                                if event_key not in tmp_request:
+                                    tmp_request[event_key] = {}
+                                if event_key not in done_request:
+                                    done_request[event_key] = {}
 
-            # get the response, and update data_order_book_event_key and metadata
-            if status_code == 200:
-                response = json.loads(response.text)
-                for event_key in response:
-                    event_key_path = event_key.replace(":", "_").replace("/", "_")
-                    path_order_book_event_key = f'{ROOT_PATH}/order_book/{event_key_path}.json'
-                    if os.path.exists(path_order_book_event_key):
-                        f = open(path_order_book_event_key, "r")
-                        data_order_book_event_key = json.loads(f.read())
-                    else:
-                        data_order_book_event_key = {}
-                    for coin in response[event_key]:
-                        if coin not in data_order_book_event_key:
-                            data_order_book_event_key[coin] = {}
-                        for _id in response[event_key][coin]:
-                            metadata_order_book[event_key][coin].append(_id)
-                            data_order_book_event_key[coin][_id] = response[event_key][coin][_id]
-                    # Save the data_order_book_event_key
-                    with open(path_order_book_event_key, 'w') as outfile_data:
-                        json.dump(data_order_book_event_key, outfile_data)
+                                if coin not in tmp_request[event_key]:
+                                    tmp_request[event_key][coin] = []
+                                if coin not in done_request[event_key]:
+                                    done_request[event_key][coin] = []
 
-                # Save the metadata
-                with open(path_order_book_metadata, 'w') as outfile_metadata:
-                        json.dump(metadata_order_book, outfile_metadata, indent=4)
-            else:
-                print(f'Status Code: {status_code}, error received from server')
+                                tmp_request[event_key][coin].append(id_)
+                                done_request[event_key][coin].append(id_)
+
+                                i += 1
+                                requests_server += 1
+
+                print(tmp_request)
+                print(done_request)
+                print(f'{requests_server}/{orderbook_events} events for orderbook are going to be extracted in algocrypto.eu')
+                url = "https://algocrypto.eu/analysis/get-order-book"
+                #url = "http://localhost/analysis/get-order-book"
+
+                response = requests.post(url=url, json = tmp_request)
+                status_code = response.status_code
+
+                # get the response, and update data_order_book_event_key and metadata
+                if status_code == 200:
+                    response = json.loads(response.text)
+                    for event_key in response:
+                        event_key_path = event_key.replace(":", "_").replace("/", "_")
+                        path_order_book_event_key = f'{ROOT_PATH}/order_book/{event_key_path}.json'
+                        if os.path.exists(path_order_book_event_key):
+                            f = open(path_order_book_event_key, "r")
+                            data_order_book_event_key = json.loads(f.read())
+                        else:
+                            data_order_book_event_key = {}
+                        for coin in response[event_key]:
+                            if coin not in data_order_book_event_key:
+                                data_order_book_event_key[coin] = {}
+                            for _id in response[event_key][coin]:
+                                metadata_order_book[event_key][coin].append(_id)
+                                data_order_book_event_key[coin][_id] = response[event_key][coin][_id]
+                        # Save the data_order_book_event_key
+                        with open(path_order_book_event_key, 'w') as outfile_data:
+                            json.dump(data_order_book_event_key, outfile_data)
+
+                    # Save the metadata
+                    with open(path_order_book_metadata, 'w') as outfile_metadata:
+                            json.dump(metadata_order_book, outfile_metadata, indent=4)
+                else:
+                    print(f'Status Code: {status_code}, error received from server')
         else:
             print('Order Book Metadata is up to date')
         
@@ -2011,7 +2044,7 @@ def create_strategy_configuration(strategy_configuration_parameters):
     strategy_configuration = {'event_keys': event_keys,
                               'parameters': strategy_configuration_parameters}
     
-    strategy_path = '/Users/albertorainieri/Personal/backend/strategy/strategy.json'
+    strategy_path = '/Users/albertorainieri/Personal/backend/riskmanagement/riskmanagement.json'
     with open(strategy_path, 'w') as file:
         json.dump(strategy_configuration, file, indent=4)
 
@@ -2333,15 +2366,19 @@ def get_crypto_performance():
     url = 'http://localhost//analysis/get-crypto-timeseries'
     path_crypto_timeseries = ROOT_PATH + '/crypto_timeseries/crypto.json'
     now = datetime.now()
+    now_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_date = now.strftime("%Y-%m-%d")
 
     if os.path.exists(path_crypto_timeseries):
         with open(path_crypto_timeseries, 'r') as file:
             crypto_timeseries = json.load(file)
-            start_datetime_split = list(crypto_timeseries['BTCUSDT'].keys())[-1].split('-')
+            last_date_btc = list(crypto_timeseries['BTCUSDT'].keys())[-1]
+            start_datetime_split = last_date_btc.split('-')
             start_datetime = datetime(year=int(start_datetime_split[0]), month=int(start_datetime_split[1]), day=int(start_datetime_split[2]))
             timedelta_ = now - start_datetime
+            print(f'Last date saved: {last_date_btc}')
             print(timedelta_)
-            if now - start_datetime < timedelta(days=1):
+            if now - start_datetime < timedelta(days=2):
                 print('Data is up to date')
                 return crypto_timeseries
     else:
@@ -2363,11 +2400,23 @@ def get_crypto_performance():
                 else:
                     request[coin].append(datetime_i.isoformat())
         
+        #print(request)
         for coin in request:
-            request[coin] = (request[coin][0], min(
+            #print(coin)
+            start_ts = request[coin][0]
+            if len(request[coin]) == 1:
+                end_ts = (start_datetime + timedelta(days=2)).isoformat()
+            # elif request[coin][0] == request[coin][1] == now_midnight:
+            #     continue
+            # elif request[coin][0] == request[coin][1]:
+            #     end_ts = (start_datetime + timedelta(days=2)).isoformat()
+            else:
+                end_ts = min(
                     datetime.fromisoformat(request[coin][0]) + timedelta(days=7),
-                    datetime.fromisoformat(request[coin][-1])
-                    ).isoformat())
+                    datetime.fromisoformat(request[coin][-1] + timedelta(days=2))
+                    ).isoformat()
+            
+            request[coin] = [start_ts, end_ts]
         
 
         response = requests.post(url=url, json=request)
@@ -2413,7 +2462,7 @@ def plot_strategy_result():
         'max_limit': 0.2,
         'price_drop_limit': 0.05,
         'distance_jump_to_current_price': 0.01,
-        'max_ask_order_distribution_level': 0.1,
+        'max_ask_order_distribution_level': 0.2,
         'last_i_ask_order_distribution': 1,
         'min_n_obs_jump_level': 5
     }
