@@ -23,13 +23,27 @@ def timer_func(func):
         return result
     return wrap_func
 
+def get_currency_coin():
+    return ['GBUSDT', 'FDUSDUSDT', 'EURUSDT']
+
 def get_best_coins(db_volume_standings):
     
     SETS_WSS_BACKEND = int(os.getenv('SETS_WSS_BACKEND'))
     id_volume_standings_db = datetime.now().strftime("%Y-%m-%d")
     try:
         volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find_one( {"_id": id_volume_standings_db} )
-        best_x_coins = list(volume_standings["standings"].keys())[:SETS_WSS_BACKEND]
+        best_x_coins = []
+        best_x_coins_pre = list(volume_standings["standings"].keys())[SETS_WSS_BACKEND:SETS_WSS_BACKEND*2]
+        i=SETS_WSS_BACKEND*2
+        currency_coins = get_currency_coin()
+        for coin in best_x_coins_pre:
+            if coin not in currency_coins:
+                best_x_coins.append(coin)
+            else:
+                i+=1
+                best_x_coins.append(list(volume_standings["standings"].keys())[i])
+        
+        logger.info(f'The best {SETS_WSS_BACKEND} coins are: {best_x_coins}')
         return best_x_coins
     except:
         return None

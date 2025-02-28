@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import os
 from time import sleep
 from constants.constants import *
-from app.Helpers.Helpers import round_, timer_func
+from app.Helpers.Helpers import round_, timer_func, get_currency_coin
 from database.DatabaseConnection import DatabaseConnection
 from app.Controller.LoggingController import LoggingController
 import logging
@@ -134,6 +134,8 @@ def select_coins(LIST, db_benchmark, position_threshold):
     collection_list = db_benchmark.list_collection_names()
     summary = {}
     for coin in collection_list:
+        if coin in get_currency_coin():
+            continue
         volume_benchmark_coin_doc = db_benchmark[coin].find_one()
         volume_30_avg = volume_benchmark_coin_doc['volume_30_avg']
         # if the coin has at least 30 days of analysis, it is eligible for deletion
@@ -174,6 +176,9 @@ def select_coins(LIST, db_benchmark, position_threshold):
                 most_traded_coins_first_filter[coin] = {"position":position}
 
     most_traded_coins_first_filter = sort_object_by_position(most_traded_coins_first_filter)
+
+    # this is done for avoiding trading the best x coins, for reducing connectivity problems. 28/02/2025
+    most_traded_coins_first_filter = most_traded_coins_first_filter[SETS_WSS_BACKEND:]
 
     
     #logger.info(f'coins discarded: {coins_discarded} for list: {LIST}')
@@ -430,7 +435,6 @@ def saveTrades_toDB(prices, doc_db, database):
     with open(path, "w") as outfile_volume:
         outfile_volume.write(json.dumps(last_prices))
     
-            #print(doc_db)
 
 if __name__ == "__main__":
     client = DatabaseConnection()

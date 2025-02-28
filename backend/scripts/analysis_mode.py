@@ -39,8 +39,8 @@ def main():
         logger.info('')
         logger.info('Iteration Started')
         now = datetime.now()
-        last_doc_saved_tracker = db_tracker['BTCUSDT'].find_one(sort=[("_id", -1)])
-        last_doc_saved_market = db_market['BTCUSDT'].find_one(sort=[("_id", -1)])
+        last_doc_saved_tracker = db_tracker['SOLUSDT'].find_one(sort=[("_id", -1)])
+        last_doc_saved_market = db_market['SOLUSDT'].find_one(sort=[("_id", -1)])
         get_benchmark_info(db_benchmark)
         
         if last_doc_saved_tracker != None and last_doc_saved_market != None:
@@ -216,7 +216,7 @@ def update_data_json(response_tracker, response_market, data_tracker, data_marke
         JSON_PATH_DIR = '/analysis/json_tracker'
         logger.info(f'Start updating {path_json_tracker}')
         new_data = response_tracker.json()
-        btc_obs = len(new_data['BTCUSDT'])
+        btc_obs = len(new_data['SOLUSDT'])
         count_coins = sum([1 for coin in list(new_data.keys()) if len(new_data[coin]) != 0])
         logger.info(f'{btc_obs} new observations for {count_coins} BTC')
         for coin in new_data:
@@ -239,13 +239,13 @@ def update_data_json(response_tracker, response_market, data_tracker, data_marke
             logger.info(coin_obs[-1])
 
         if btc_obs == 0 and (datetime_end - datetime_start) >= timedelta(days=DAYS) - timedelta(minutes=1):
-            datetime_creation = (datetime.fromisoformat(data_tracker['data']['BTCUSDT'][-1]['_id']) + timedelta(days=DAYS))
+            datetime_creation = (datetime.fromisoformat(data_tracker['data']['SOLUSDT'][-1]['_id']) + timedelta(days=DAYS))
             datetime_creation = (pytz.utc.localize(datetime_creation)).isoformat()
         elif btc_obs == 0:
             print(datetime_end.isoformat())
             datetime_creation = datetime_end.isoformat()
         else:
-            datetime_creation = datetime.fromisoformat(data_tracker['data']['BTCUSDT'][-1]['_id'])
+            datetime_creation = datetime.fromisoformat(data_tracker['data']['SOLUSDT'][-1]['_id'])
             datetime_creation = (pytz.utc.localize(datetime_creation)).isoformat()
 
         data_tracker['datetime_creation'] = datetime_creation
@@ -261,7 +261,7 @@ def update_data_json(response_tracker, response_market, data_tracker, data_marke
         JSON_PATH_DIR = '/analysis/json_market'
         logger.info(f'Start updating {path_json_market}')
         new_data = response_market.json()
-        btc_obs = len(new_data['BTCUSDT'])
+        btc_obs = len(new_data['SOLUSDT'])
         count_coins = sum([1 for coin in list(new_data.keys()) if len(new_data[coin]) != 0])
         logger.info(f'{btc_obs} new observations for {count_coins} BTC')
         n_instrument_newdata = 0
@@ -288,13 +288,13 @@ def update_data_json(response_tracker, response_market, data_tracker, data_marke
             logger.info(coin_obs[-1])
 
         if btc_obs == 0 and datetime_end - datetime_start >= timedelta(days=DAYS) - timedelta(minutes=1):
-            datetime_creation = (datetime.fromisoformat(data_tracker['data']['BTCUSDT'][-1]['_id']) + timedelta(days=DAYS))
+            datetime_creation = (datetime.fromisoformat(data_tracker['data']['SOLUSDT'][-1]['_id']) + timedelta(days=DAYS))
             datetime_creation = (pytz.utc.localize(datetime_creation)).isoformat()
         elif btc_obs == 0:
 
             datetime_creation = datetime_end
         else:
-            datetime_creation = datetime.fromisoformat(data_market['data']['BTCUSDT'][-1]['_id'])
+            datetime_creation = datetime.fromisoformat(data_market['data']['SOLUSDT'][-1]['_id'])
             datetime_creation = (pytz.utc.localize(datetime_creation)).isoformat()
 
         data_market['datetime_creation'] = datetime_creation

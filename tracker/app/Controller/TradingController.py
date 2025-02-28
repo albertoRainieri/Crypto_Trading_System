@@ -4,7 +4,7 @@ from app.Controller.LoggingController import LoggingController
 import json
 from tracker.constants.constants import *
 from datetime import datetime, timedelta
-from tracker.app.Helpers.Helpers import round_, timer_func
+from tracker.app.Helpers.Helpers import round_, timer_func, get_currency_coin
 import numpy as np
 from tracker.database.DatabaseConnection import DatabaseConnection
 from tracker.app.Helpers.Helpers import getsubstring_fromkey, timer_func
@@ -213,9 +213,6 @@ class TradingController:
     #                 client.close()    
     # # ASYNC DISABLED. THIS IS PREFERRED CHOICE even if CPU Support is high
 
-    def get_currency_coin():
-        return ['GBUSDT', 'FDUSDUSDT', 'EURUSDT']
-
     def buy_event_analysis(coin, obs, strategy_configuration):
 
         '''
@@ -224,7 +221,7 @@ class TradingController:
         '''
 
         #skip if it is a currency coin
-        if coin in TradingController.get_currency_coin():
+        if coin in get_currency_coin():
             return None
         
         event_keys = strategy_configuration['event_keys']

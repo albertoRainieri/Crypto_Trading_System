@@ -535,9 +535,10 @@ class AnalysisController:
 
         # get last data available
         all_data_downloaded = False
-        last_doc = db_tracker['BTCUSDT'].find_one(sort=[("_id", -1)])
+        last_doc = db_tracker['SOLUSDT'].find_one(sort=[("_id", -1)])
         last_timestamp = last_doc['_id']
-        if datetime.fromisoformat(request['BTCUSDT'][-1]) > datetime.fromisoformat(last_timestamp):
+        print(f'Last Timestamp for SOLUSDT in tracker db: {last_timestamp}')
+        if datetime.fromisoformat(request['SOLUSDT'][-1]) > datetime.fromisoformat(last_timestamp):
             all_data_downloaded = True
 
         for coin in request:
@@ -559,6 +560,7 @@ class AnalysisController:
                     crypto_timeseries[coin][date][1] += 1
 
         response = {'data': crypto_timeseries, 'all_data_downloaded': all_data_downloaded}
+        print(f'All Data Downloaded: {all_data_downloaded}')
 
         client.close()
         json_string = jsonable_encoder(response)
