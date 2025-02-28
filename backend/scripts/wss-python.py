@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import os
 from time import sleep
 from constants.constants import *
-from app.Helpers.Helpers import round_, timer_func, get_currency_coin
+from app.Helpers.Helpers import round_, timer_func, discard_coin_list
 from database.DatabaseConnection import DatabaseConnection
 from app.Controller.LoggingController import LoggingController
 import logging
@@ -158,7 +158,7 @@ def select_coins(LIST, db_benchmark, position_threshold):
     coins_discarded = 0
     
     for coin in most_traded_coins:
-        if coin in get_currency_coin():
+        if coin in discard_coin_list():
             continue
         # these coins are most likely not traded, but there some that are new entry, I need to list them all
         if coin not in summary:
@@ -177,7 +177,7 @@ def select_coins(LIST, db_benchmark, position_threshold):
     most_traded_coins_first_filter = sort_object_by_position(most_traded_coins_first_filter)
 
     # this is done for avoiding trading the best x coins, for reducing connectivity problems. 28/02/2025
-    most_traded_coins_first_filter = most_traded_coins_first_filter[SETS_WSS_BACKEND:]
+    #most_traded_coins_first_filter = most_traded_coins_first_filter[SETS_WSS_BACKEND:]
 
     
     #logger.info(f'coins discarded: {coins_discarded} for list: {LIST}')

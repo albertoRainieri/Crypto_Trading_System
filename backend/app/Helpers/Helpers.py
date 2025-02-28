@@ -23,8 +23,8 @@ def timer_func(func):
         return result
     return wrap_func
 
-def get_currency_coin():
-    return ['GBUSDT', 'FDUSDUSDT', 'EURUSDT']
+def discard_coin_list():
+    return ['GBUSDT', 'FDUSDUSDT', 'EURUSDT', 'BTCUSDT', 'ETHUSDT']
 
 def get_best_coins(db_volume_standings):
     
@@ -33,11 +33,11 @@ def get_best_coins(db_volume_standings):
     try:
         volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find_one( {"_id": id_volume_standings_db} )
         best_x_coins = []
-        best_x_coins_pre = list(volume_standings["standings"].keys())[SETS_WSS_BACKEND:SETS_WSS_BACKEND*2]
-        i=SETS_WSS_BACKEND*2
-        currency_coins = get_currency_coin()
+        best_x_coins_pre = list(volume_standings["standings"].keys())[:SETS_WSS_BACKEND]
+        i=SETS_WSS_BACKEND
+        discard_coins = discard_coin_list()
         for coin in best_x_coins_pre:
-            if coin not in currency_coins:
+            if coin not in discard_coins:
                 best_x_coins.append(coin)
             else:
                 i+=1

@@ -4,8 +4,7 @@ from app.Controller.LoggingController import LoggingController
 import json
 from tracker.constants.constants import *
 from datetime import datetime, timedelta
-from tracker.app.Helpers.Helpers import round_, timer_func, get_currency_coin
-import numpy as np
+from tracker.app.Helpers.Helpers import round_, timer_func
 from tracker.database.DatabaseConnection import DatabaseConnection
 from tracker.app.Helpers.Helpers import getsubstring_fromkey, timer_func
 import requests
@@ -219,10 +218,6 @@ class TradingController:
         This functions triggers a market order if the condition of the risk strategies are met.
         The risk strategies are defined by "risk_configuration"
         '''
-
-        #skip if it is a currency coin
-        if coin in get_currency_coin():
-            return None
         
         event_keys = strategy_configuration['event_keys']
         
