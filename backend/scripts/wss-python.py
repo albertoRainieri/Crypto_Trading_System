@@ -134,8 +134,6 @@ def select_coins(LIST, db_benchmark, position_threshold):
     collection_list = db_benchmark.list_collection_names()
     summary = {}
     for coin in collection_list:
-        if coin in get_currency_coin():
-            continue
         volume_benchmark_coin_doc = db_benchmark[coin].find_one()
         volume_30_avg = volume_benchmark_coin_doc['volume_30_avg']
         # if the coin has at least 30 days of analysis, it is eligible for deletion
@@ -160,7 +158,8 @@ def select_coins(LIST, db_benchmark, position_threshold):
     coins_discarded = 0
     
     for coin in most_traded_coins:
-        
+        if coin in get_currency_coin():
+            continue
         # these coins are most likely not traded, but there some that are new entry, I need to list them all
         if coin not in summary:
             most_traded_coins_first_filter[coin] = {"position":None}
