@@ -222,7 +222,6 @@ class TradingController:
         event_keys = strategy_configuration['event_keys']
         FIRST_EVENT_KEY = True
         RESTART = '0'
-        UPDATE = True
         
         for event_key in event_keys:
 
@@ -277,15 +276,17 @@ class TradingController:
 
                                 if event_key != doc['event_key'] and "reference_id" not in doc:
                                     reference_id = doc['_id']
-                                    logger.info(f'Duplicate Event Order Book in the last {coin_exclusive_window_minutes} minutes: {coin} - {_id} - {event_key} - Reference ID: {reference_id}')
                                     db_collection.insert({'_id': _id, 'coin': coin, 'event_key': event_key, 'all_event_keys': all_event_keys, "reference_id": reference_id})
-                                    
+                                    logger.info(f'Duplicate Event Order Book in the last {coin_exclusive_window_minutes} minutes: {coin} - {_id} - {event_key} - Reference ID: {reference_id}')
+                                    FIRST_EVENT_KEY = False
+                                    break
+
                                 elif event_key == doc['event_key'] and "reference_id" not in doc:
                                     reference_id = doc['_id']
                                     db_collection.insert({'_id': _id, 'coin': coin, 'event_key': event_key, 'all_event_keys': all_event_keys, "reference_id": reference_id})
                                     logger.info(f'SAME COIN - SAME EVENT KEY {coin_exclusive_window_minutes} minutes: {coin} - {_id} - {event_key} - Reference ID: {reference_id}')
-
-                                FIRST_EVENT_KEY = False
+                                    FIRST_EVENT_KEY = False
+                                    break
                     else:
                         logger.info(f'Duplicate Event Order Book in this minute: {coin} - {_id} - {event_key}.')
                         filter_query = {"_id": _id}
