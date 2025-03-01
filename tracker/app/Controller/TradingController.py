@@ -212,7 +212,7 @@ class TradingController:
     #                 client.close()    
     # # ASYNC DISABLED. THIS IS PREFERRED CHOICE even if CPU Support is high
 
-    def buy_event_analysis(coin, obs, strategy_configuration):
+    def buy_event_analysis(coin, obs, strategy_configuration, logger, volume_standings):
 
         '''
         This functions triggers a market order if the condition of the risk strategies are met.
@@ -220,32 +220,87 @@ class TradingController:
         '''
         
         event_keys = strategy_configuration['event_keys']
+        FIRST_EVENT_KEY = True
+        RESTART = '0'
+        UPDATE = True
         
         for event_key in event_keys:
 
             # check if coin is already on trade for this specific event, if True, pass
-            COIN_ON_TRADING = False
-
             vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
-            if lvl == None:
-                lvl = 'None'
+            ranking = int(volume_standings["standings"][coin]["rank"])
+            if ranking > int(lvl):
+                continue
 
             if obs[vol_field] == None or obs[buy_vol_field] == None:
                 continue
             
             # if vol is higher than threshold, go ahead
             if obs[vol_field] >= vol_value:
-                # if field is below 0.5, discard events whose buy_vol is strictly greater than threshold
+                # determine if the buy_vol is below/above threshold. the operator changes if the threshold is below/above 0.5
                 if buy_vol_value < 0.5 and obs[buy_vol_field] <= buy_vol_value or buy_vol_value > 0.5 and obs[buy_vol_field] >= buy_vol_value:
 
-                    id = obs['_id']
-                    strategy_parameters = json.dumps(strategy_configuration['parameters'])
-                    RESTART = '0'
-
-                    # Start Order Book SCRIPT
-                    subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, lvl, RESTART, strategy_parameters])
-
+                    _id = obs['_id']
                     
+                    # the var FIRST_EVENT_KEY helps avoiding duplicates if there are multiple event_keys trigger in the same second. 
+                    # In any case, I keep track of the record in the collection db['Metadata']
+                    if FIRST_EVENT_KEY:
+                        # this variable sets the minute range, within which the coin can not be traded again
+                        coin_exclusive_window_minutes = int(os.getenv('COIN_EXCLUSIVE_ORDERBOOK_WINDOW_MINUTES'))
+                        client = DatabaseConnection()
+                        
+                        coin_window_ts = (datetime.now() - timedelta(minutes=coin_exclusive_window_minutes)).isoformat()
+                        # initalize metadata orderbook db collection
+                        
+                        db = client.get_db(DATABASE_ORDER_BOOK)
+                        db_collection = db[COLLECTION_ORDERBOOK_METADATA]
+
+                        # determine if there were scripts for "$coin" in the last 3hours
+                        docs = list(db_collection.find({"_id": {"$gt": coin_window_ts}, "coin": coin},{'event_key':1, 'reference_id':1, 'all_event_keys': 1}))
+                
+                        # this is the case where the orderbook script was never executed for $coin in the last 30minutes
+                        if len(docs) == 0:
+                            #logger.info(f'execute event - {coin}')
+                            strategy_parameters = json.dumps(strategy_configuration['parameters'])
+                            all_event_keys = [event_key]
+                            db_collection.insert({'_id': _id, 'coin': coin, 'event_key': event_key, 'all_event_keys': all_event_keys})
+                            # Start Order Book SCRIPT
+                            subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, _id, str(ranking), RESTART, strategy_parameters])
+                            FIRST_EVENT_KEY = False
+                        # here the script order book is already started, so just keep track of the record in metadata
+                        else:
+                            #logger.info(f'duplicate event - {coin}')
+                            for doc in docs:
+                                # if event_key is different than it is just a duplicate of the coin, 
+                                # and reference_id is important to see if that id is the one associated with the real data saved in order book
+                                all_event_keys = [event_key]
+
+                                if event_key != doc['event_key'] and "reference_id" not in doc:
+                                    reference_id = doc['_id']
+                                    logger.info(f'Duplicate Event Order Book in the last {coin_exclusive_window_minutes} minutes: {coin} - {_id} - {event_key} - Reference ID: {reference_id}')
+                                    db_collection.insert({'_id': _id, 'coin': coin, 'event_key': event_key, 'all_event_keys': all_event_keys, "reference_id": reference_id})
+                                    
+                                elif event_key == doc['event_key'] and "reference_id" not in doc:
+                                    reference_id = doc['_id']
+                                    db_collection.insert({'_id': _id, 'coin': coin, 'event_key': event_key, 'all_event_keys': all_event_keys, "reference_id": reference_id})
+                                    logger.info(f'SAME COIN - SAME EVENT KEY {coin_exclusive_window_minutes} minutes: {coin} - {_id} - {event_key} - Reference ID: {reference_id}')
+
+                                FIRST_EVENT_KEY = False
+                    else:
+                        logger.info(f'Duplicate Event Order Book in this minute: {coin} - {_id} - {event_key}.')
+                        filter_query = {"_id": _id}
+                        all_event_keys.append(event_key)
+                        update_doc = {"$set": {'all_event_keys': all_event_keys}}
+                        result = db_collection.update_one(filter_query, update_doc)
+                        if result.modified_count != 1:
+                            now = datetime.now().isoformat()
+                            logger.info(f"{now}: Order Book Metadata Update failed for {event_key} with id {_id}.")
+
+            if not FIRST_EVENT_KEY:
+                client.close()
+                    
+
+
                     
     def extract_timeframe(input_string):
         """
@@ -273,21 +328,23 @@ class TradingController:
         client = DatabaseConnection()
 
         for event_key in event_keys:
-            minutes_timeframe = int(TradingController.extract_timeframe(event_key))
-            
-            db = client.get_db(DATABASE_ORDER_BOOK)
-            db_collection = db[event_key]
-            now = datetime.now()
-            yesterday = now - timedelta(minutes=minutes_timeframe)
-            docs = list(db_collection.find({"_id": {"$gt": yesterday.isoformat()}}, {"_id": 1, "coin":1}))
-            for doc in docs:
-                id = doc['_id']
-                # if event trigger time window is still open
-                #if datetime.now() <  datetime.fromisoformat(id) + timedelta(minutes=minutes_timeframe):
-                coin = doc['coin']
-                logger.info(f'Resuming Order Book for coin {coin}, event_key {event_key} and id {id}')
-                strategy_parameters = 'None'
-                subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, 'None', RESTART, strategy_parameters])
+            if event_key != COLLECTION_ORDERBOOK_METADATA:
+                minutes_timeframe = int(TradingController.extract_timeframe(event_key))
+                
+                db = client.get_db(DATABASE_ORDER_BOOK)
+                db_collection = db[event_key]
+                now = datetime.now()
+                yesterday = now - timedelta(minutes=minutes_timeframe)
+                docs = list(db_collection.find({"_id": {"$gt": yesterday.isoformat()}}, {"_id": 1, "coin":1, "ranking":1}))
+                for doc in docs:
+                    id = doc['_id']
+                    # if event trigger time window is still open
+                    #if datetime.now() <  datetime.fromisoformat(id) + timedelta(minutes=minutes_timeframe):
+                    coin = doc['coin']
+                    ranking = doc['ranking']
+                    logger.info(f'Resuming Order Book for coin {coin}, event_key {event_key} and id {id}')
+                    strategy_parameters = 'None'
+                    subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, str(ranking),  RESTART, strategy_parameters])
         client.close()
 
 

@@ -6,6 +6,7 @@ import pytz
 import json, os
 import re
 from constants.constants import *
+from pymongo import DESCENDING
 
 logger = LoggingController.start_logging()
     
@@ -47,6 +48,15 @@ def get_best_coins(db_volume_standings):
         return best_x_coins
     except:
         return None
+
+def get_volume_standings(db_volume_standings):
+
+    today_date = datetime.now().strftime("%Y-%m-%d")
+    volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find().sort([('_id', DESCENDING)]).limit(1).next()
+    if volume_standings['_id'] != today_date:
+        logger.info(f"WARNING: LAST DOC for  DB_VOLUME_STANDINGS is {volume_standings['_id']}")
+
+    return volume_standings
 
 def getsubstring_fromkey(text):
     '''

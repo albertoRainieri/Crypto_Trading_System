@@ -13,6 +13,7 @@ from app.Controller.LoggingController import LoggingController
 from signal import SIGKILL
 from numpy import arange, linspace
 from numpy import mean as np_mean
+from time import time
 #import random
 
 
@@ -155,7 +156,8 @@ def extract_timeframe(input_string):
         return None
 
 
-def update_db_order_book_record(id, event_key, db_collection, order_book_info, weight):
+def update_db_order_book_record(id, event_key, db_collection, order_book_info, weight, max_price, initial_price,
+                                bid_price_levels, ask_order_distribution_list, BUY):
 
     new_data = []
     #new_data.append(order_book_info[0])  # bid_price
@@ -167,12 +169,14 @@ def update_db_order_book_record(id, event_key, db_collection, order_book_info, w
 
     now = datetime.now().replace(microsecond=0).isoformat()
     filter_query = {"_id": id}
-    update_doc = {"$set": {f"data.{now}": new_data, "weight": weight}}
+    update_doc = {"$set": {f"data.{now}": new_data, "weight": weight, "max_price": max_price, "initial_price": initial_price,
+                           'summary_jump_price_level': summary_jump_price_level, 'ask_order_distribution_list': ask_order_distribution_list, 'buy': BUY}}
+    
     result = db_collection.update_one(filter_query, update_doc)
 
     if result.modified_count != 1:
         now = datetime.now().isoformat()
-        print(f"{now}: Order Book update failed for {event_key} with id {id}.")
+        logger.info(f"{now}: Order Book update failed for {event_key} with id {id}.")
 
 
 def get_current_number_of_orderbook_scripts(db, event_keys):
@@ -180,21 +184,22 @@ def get_current_number_of_orderbook_scripts(db, event_keys):
     numbers_filled = []
     current_weight = 0
     for collection in event_keys:
+        if collection != COLLECTION_ORDERBOOK_METADATA:
 
-        minutes_timeframe = int(extract_timeframe(collection))
-        yesterday = datetime.now() - timedelta(minutes=minutes_timeframe)
-        query = {"_id": {"$gt": yesterday.isoformat()}}
-        docs = list(db[collection].find(query, {"_id": 1, "number": 1, "weight":1}))
-        for doc in docs:
-            numbers_filled.append(doc["number"])
-            if "weight" in doc:
-                current_weight += doc["weight"]
-            else:
-                current_weight += 250
-        # logger.info(docs)
-        # len_docs = len(docs)
-        # logger.info(f'{len_docs} - {collection}')
-        live_order_book_scripts_number += len(docs)
+            minutes_timeframe = int(extract_timeframe(collection))
+            yesterday = datetime.now() - timedelta(minutes=minutes_timeframe)
+            query = {"_id": {"$gt": yesterday.isoformat()}}
+            docs = list(db[collection].find(query, {"_id": 1, "number": 1, "weight":1}))
+            for doc in docs:
+                numbers_filled.append(doc["number"])
+                if "weight" in doc:
+                    current_weight += doc["weight"]
+                else:
+                    current_weight += 250
+            # logger.info(docs)
+            # len_docs = len(docs)
+            # logger.info(f'{len_docs} - {collection}')
+            live_order_book_scripts_number += len(docs)
 
     return numbers_filled, live_order_book_scripts_number, current_weight
 
@@ -255,7 +260,7 @@ def count_decimals(num):
     # If no decimal point is found, it's an integer
     return 1
         
-def get_price_levels(price, bid_orders, cumulative_volume_jump=0.03, price_change_limit=0.4, price_change_jump=0.025):
+def get_price_levels(price, orders, cumulative_volume_jump=0.03, price_change_limit=0.4, price_change_jump=0.025):
     '''
     this function outputs the pricelevels (tuple: 4 elements), order_distribution, cumulative_level
     price_levels (TUPLE):
@@ -282,7 +287,7 @@ def get_price_levels(price, bid_orders, cumulative_volume_jump=0.03, price_chang
         order_distribution[str(round_(i,3))] = 0
     previous_cumulative_level = 0
 
-    for level in bid_orders:
+    for level in orders:
         cumulative_level = level[1]
         price_change = level[0]
 
@@ -333,21 +338,21 @@ def get_price_levels(price, bid_orders, cumulative_volume_jump=0.03, price_chang
     # if there are not jumps, at least I want to get the cumulative volume at the limit price level
     if len(price_levels) == 0:
         info = (None, None, cumulative_level_without_jump, False)
-        price_levels.append(info)
+        price_levels.append(None)
     
     # if cumulative_level_without_jump == 0:
     #     print(bid_orders)
     
     return price_levels, order_distribution, round_(previous_cumulative_level,3)
 
-def hit_jump_price_levels_range(current_price, ask_price_levels, neighborhood_of_price_jump = 0.005, distance_jump_to_current_price=0.01, min_n_obs_jump_level=5):
+def hit_jump_price_levels_range(coin, current_price, bid_price_levels_dt, summary_jump_price_level, neighborhood_of_price_jump = 0.005, distance_jump_to_current_price=0.01, min_n_obs_jump_level=5):
     '''
     This function defines all the historical level whereas a jump price change was existent
     Since it can happen that price_jump_level are not always in the same point (price) I check if the jump price is in the neighboorhood of the historical jump price (average with np_mean)
 
-    # THIS IS THE INPUT OF ask_PRICE_LEVELS
+    # THIS IS THE INPUT OF bid_price_levels
     Structure of ask price_levels: IT IS A LIST OF LISTS
-    - ask_price_levels: e.g. [[13.978], [13.958], [13.958], [13.978], [13.949, 12.942], [13.97], [13.939, 12.933], [14.053]]
+    - bid_price_levels: e.g. [[13.978], [13.958], [13.958], [13.978], [13.949, 12.942], [13.97], [13.939, 12.933], [14.053]]
       EACH SUBLIST containes the jump prices at dt
 
     # THIS THE STRUCTURE OF SUMMARY_JUMP_PRICE
@@ -355,90 +360,98 @@ def hit_jump_price_levels_range(current_price, ask_price_levels, neighborhood_of
         [ (average price jump level, list_of_jump_price_levels )]
     '''
 
-    summary_jump_price_level = {}
     # iterate throgh 
-    for ask_price_levels_dt in ask_price_levels:
-        for abs_price in ask_price_levels_dt:
-            if abs_price == None:
-                continue
-            if len(summary_jump_price_level) != 0:
-                IS_NEW_X = True
-                for x in summary_jump_price_level:
-                    historical_price_level = summary_jump_price_level[x][0]
-                    historical_price_level_list = summary_jump_price_level[x][1]
-                    #print(historical_price_level, abs_price)
-                    if abs_price <= historical_price_level * (1 + neighborhood_of_price_jump) and abs_price >= historical_price_level * (1 - neighborhood_of_price_jump):
-                        historical_price_level_list.append(abs_price)
-                        historical_price_level = np_mean(historical_price_level_list)
-                        summary_jump_price_level[x] = (historical_price_level, historical_price_level_list)
-                        IS_NEW_X = False
-                        break
-                if IS_NEW_X:
-                    list_x = [int(i) for i in list(summary_jump_price_level.keys())]
-                    new_x = str(max(list_x) + 1)
-                    summary_jump_price_level[new_x] = (abs_price, [abs_price])
-            else:
-                #print(abs_price)
-                summary_jump_price_level['1'] = (abs_price, [abs_price])
+    for abs_price in bid_price_levels_dt:
+        if abs_price == None:
+            continue
+        if len(summary_jump_price_level) != 0:
+            IS_NEW_X = True
+            for x in summary_jump_price_level:
+                historical_price_level = summary_jump_price_level[x][0]
+                historical_price_level_n_obs = summary_jump_price_level[x][1]
+                if abs_price <= historical_price_level * (1 + neighborhood_of_price_jump) and abs_price >= historical_price_level * (1 - neighborhood_of_price_jump):
+                    #historical_price_level_list.append(abs_price)
+                    historical_price_level = (historical_price_level*historical_price_level_n_obs + abs_price) / (historical_price_level_n_obs + 1)
+                    summary_jump_price_level[x] = (historical_price_level, historical_price_level_n_obs + 1)
+                    IS_NEW_X = False
+                    break
+            if IS_NEW_X:
+                list_x = [int(i) for i in list(summary_jump_price_level.keys())]
+                new_x = str(max(list_x) + 1)
+                summary_jump_price_level[new_x] = (abs_price, 1)
+        else:
+            #print(abs_price)
+            summary_jump_price_level['1'] = (abs_price, 1)
             
     #print(summary_jump_price_level)
     for x in summary_jump_price_level:
-        if abs((current_price - summary_jump_price_level[x][0] ) / current_price ) <= distance_jump_to_current_price and len(summary_jump_price_level[x][1]) >= min_n_obs_jump_level:
-            return True
+        logger.info(summary_jump_price_level)
+        jump = abs((current_price - summary_jump_price_level[x][0] ) / current_price )
+        historical_price_level_n_obs = summary_jump_price_level[x][1]
+        logger.info(f'jump price level - {coin}: {jump} vs {distance_jump_to_current_price}')
+        if jump <= distance_jump_to_current_price and historical_price_level_n_obs >= min_n_obs_jump_level:
+            return True, summary_jump_price_level
             #print(current_price, dt)
-    return False
+    return False, summary_jump_price_level
 
-def trigger_entrypoint(price, max_price,
-                        ask_price_levels, ask_order_distribution_list, price_change_jump,
+def trigger_entrypoint(coin, price, initial_price, max_price,
+                        bid_price_levels_dt, summary_jump_price_level, ask_order_distribution_list, price_change_jump,
                         max_limit, price_drop_limit, distance_jump_to_current_price,
                         max_ask_order_distribution_level, last_i_ask_order_distribution, min_n_obs_jump_level):
     
     BUY = False
     dt_ask = datetime.now() - timedelta(minutes=last_i_ask_order_distribution) + timedelta(seconds=10)
     max_price = max(price, max_price)
-    max_change = ( max_price - price_list[0] ) / price_list[0]
+    max_change = ( max_price - initial_price ) / initial_price
     current_price_drop = abs( (price - max_price) / max_price )
     selected_ask_order_distribution_list = []
     for ask_order_distribution in ask_order_distribution_list:
-        if datetime.fromisoformat(ask_order_distribution['dt']) > dt_ask:
+        if ask_order_distribution['dt'] > dt_ask:
             selected_ask_order_distribution_list.append(ask_order_distribution)
 
-
-    if current_price_drop >= price_drop_limit and max_change <= max_limit:
-
-        # PHASE 2
-        # DEFINE HOW CLOSE THE PRICE IS TO HISTORICAL JUMP LEVELS
-        is_jump_price_level = hit_jump_price_levels_range(current_price=price, ask_price_levels=ask_price_levels,
-                                                           distance_jump_to_current_price=distance_jump_to_current_price,
-                                                           min_n_obs_jump_level=min_n_obs_jump_level)
-        if is_jump_price_level:
-            # get keys of ask_order_distribution [0.025, 0.05, 0.075, ...]
-            if len(ask_order_distribution_list) >= last_i_ask_order_distribution:
-                keys_ask_order_distribution = list(ask_order_distribution_list[-1]['ask'].keys())
-
-                # initialize new var for average ask order distribution
-                avg_ask_order_distribution = {}
-
-                for lvl in keys_ask_order_distribution:
-                    avg_ask_order_distribution[lvl] = []
-
-                for lvl in selected_ask_order_distribution_list['ask']:
-                    avg_ask_order_distribution[lvl].append(ask_order_distribution['ask'][lvl])
+    # PHASE 2
+    # DEFINE HOW CLOSE THE PRICE IS TO HISTORICAL JUMP LEVELS
+    t1 = time()
+    is_jump_price_level, summary_jump_price_level  = hit_jump_price_levels_range(coin=coin, current_price=price, bid_price_levels_dt=bid_price_levels_dt,
+                                                        summary_jump_price_level=summary_jump_price_level, distance_jump_to_current_price=distance_jump_to_current_price,
+                                                        min_n_obs_jump_level=min_n_obs_jump_level)
+    t2 = time()
+    time_spent = round_(t2-t1,5)
+    logger.info(f'hit_jump_price_levels_range executed in {time_spent}s')
+    
+    logger.info(f'{coin}: {current_price_drop} >= {price_drop_limit} and {max_change} <= {max_limit}')
+    if is_jump_price_level and current_price_drop >= price_drop_limit and max_change <= max_limit:
                 
-                # compute the mean
-                for lvl in avg_ask_order_distribution:
-                    avg_ask_order_distribution[lvl] = np_mean(avg_ask_order_distribution[lvl])
+        # get keys of ask_order_distribution [0.025, 0.05, 0.075, ...]
+        if len(selected_ask_order_distribution_list) >= last_i_ask_order_distribution:
+            keys_ask_order_distribution = list(selected_ask_order_distribution_list[-1]['ask'].keys())
 
-                # TODO: check only first level, or next ones too ?
-                if avg_ask_order_distribution[str(price_change_jump)] < max_ask_order_distribution_level:
-                    BUY = True
-                    logger.info(f'BUY TRIGGER: coin: {coin} - price: {price} ')
+            # initialize new var for average ask order distribution
+            avg_ask_order_distribution = {}
 
-                    return max_price, selected_ask_order_distribution_list, BUY, price
+            for lvl in keys_ask_order_distribution:
+                avg_ask_order_distribution[lvl] = []
+
+            for selected_ask_order_distribution in selected_ask_order_distribution_list:
+                for lvl in selected_ask_order_distribution['ask']:
+                    avg_ask_order_distribution[lvl].append(selected_ask_order_distribution['ask'][lvl])
+            
+            # compute the mean
+            for lvl in avg_ask_order_distribution:
+                avg_ask_order_distribution[lvl] = np_mean(avg_ask_order_distribution[lvl])
+
+            # TODO: check only first level, or next ones too ?
+            logger.info(f'avg_ask_order_distribution: {avg_ask_order_distribution}')
+            if avg_ask_order_distribution[str(price_change_jump)] < max_ask_order_distribution_level:
+                BUY = True
+                x = avg_ask_order_distribution[str(price_change_jump)]
+                logger.info(f'BUY TRIGGER: coin: {coin} - price: {price} - avg_ask_order: {x}')
+
+                return max_price, selected_ask_order_distribution_list, BUY, price, summary_jump_price_level
         
-    return max_price, selected_ask_order_distribution_list, BUY, None
+    return max_price, selected_ask_order_distribution_list, BUY, None, summary_jump_price_level
 
-def analyze_ask_orders(order_book_info, max_price, ask_price_levels, ask_order_distribution_list,
+def analyze_ask_orders(coin, order_book_info, initial_price, max_price, summary_jump_price_level, ask_order_distribution_list,
                         strategy):
     '''
     order_book_info[0] --> bid_price
@@ -460,17 +473,27 @@ def analyze_ask_orders(order_book_info, max_price, ask_price_levels, ask_order_d
     min_n_obs_jump_level = strategy['min_n_obs_jump_level']
     
     dt = datetime.now()
-    price = order_book_info[1]
+    price = order_book_info[1] #ask price
+    if initial_price == None:
+        initial_price = price
+
+    bid_orders = order_book_info[4]
     ask_orders = order_book_info[5]
 
+    t1 = time()
     ask_price_level_dt, ask_order_distribution, ask_cumulative_level = get_price_levels(price, ask_orders, cumulative_volume_jump, price_change_limit, price_change_jump)
-    ask_price_levels.append(ask_price_level_dt)
+    bid_price_level_dt, bid_order_distribution, bid_cumulative_level = get_price_levels(price, bid_orders, cumulative_volume_jump, price_change_limit, price_change_jump)
+    t2 = time()
+    time_spent = round_(t2-t1,5)
+    logger.info(f'get_price_levels executed in {time_spent}s')
+
     ask_order_distribution_list.append({'ask': ask_order_distribution, 'dt': dt})
-    max_price, ask_order_distribution_list, BUY, buy_price = trigger_entrypoint(price, max_price, ask_price_levels, ask_order_distribution_list, price_change_jump,
+    max_price, ask_order_distribution_list, BUY, buy_price, summary_jump_price_level = trigger_entrypoint(
+                        coin, price, initial_price, max_price, bid_price_level_dt, summary_jump_price_level, ask_order_distribution_list, price_change_jump,
                         max_limit, price_drop_limit, distance_jump_to_current_price,
                         max_ask_order_distribution_level, last_i_ask_order_distribution, min_n_obs_jump_level)
 
-    return max_price, ask_price_levels, ask_order_distribution_list, BUY, buy_price
+    return max_price, initial_price, summary_jump_price_level, ask_order_distribution_list, BUY, buy_price
 
 
 if __name__ == "__main__":
@@ -479,49 +502,46 @@ if __name__ == "__main__":
     """
     # decide which second to make request to binance
     #second_binance_request = random.randint(5, 58)
-    BUY = True
+
+    logger = LoggingController.start_logging()
+    
+    # MANAGEMENT VARIABLES
     LIMIT = 20
     efficient_limit = 5000
     range_second_trigger = [round_(i,2) for i in linspace(10,58,20)]
-    logger = LoggingController.start_logging()
-    price_list = []
-    ask_price_levels = []
-    ask_order_distribution_list = []
 
+    # STRATEGY VARIABLES
+    BUY = True
+    summary_jump_price_level = {}
+    ask_order_distribution_list = []
+    max_price = 0
+    initial_price = None
+
+    # INPUT VARIABLE SCRIPT
     coin = sys.argv[1]
     event_key = sys.argv[2]
     id = sys.argv[3]
-    lvl = sys.argv[4]
+    ranking = sys.argv[4]
     RESTART = bool(int(sys.argv[5]))
     if not RESTART:
         strategy_parameters = json.loads(sys.argv[6])
 
-    if lvl == "None":
-        lvl = None
-    else:
-        lvl = int(lvl)
-
-    
+    # TIME VARIABLE
     minutes_timeframe = int(extract_timeframe(event_key))
     now = datetime.now()
     yesterday = now - timedelta(days=1)
+    # this variable sets the minute range, within which the coin can not be traded again
+    coin_exclusive_window_minutes = int(os.getenv('COIN_EXCLUSIVE_ORDERBOOK_WINDOW_MINUTES'))
 
+    # DB VARIABLES
     client = DatabaseConnection()
     db = client.get_db(DATABASE_ORDER_BOOK)
     db_collection = db[event_key]
-    event_key_docs = list( db_collection.find( {"_id": {"$gt": yesterday.isoformat()}}, {"_id": 1, "coin": 1, "number": 1, "strategy_parameters": 1} ) )
-    db_volume_standings = client.get_db(DATABASE_VOLUME_STANDINGS)
-
-    # at midnight (00:00 only) it is possible to have an exception due to unavailibility of the info (update: THIS SHOULD NOT LONGER HAPPEN)
-    try:
-        id_volume_standings_db = now.strftime("%Y-%m-%d")
-        volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find_one( {"_id": id_volume_standings_db} )
-        ranking = int(volume_standings["standings"][coin]["rank"])
-    except:
-        id_volume_standings_db_2 = yesterday.strftime("%Y-%m-%d")
-        volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find_one({"_id": id_volume_standings_db_2})
-        ranking = int(volume_standings["standings"][coin]["rank"])
-
+    event_key_docs = list( db_collection.find( {"_id": {"$gt": yesterday.isoformat()}}, {"_id": 1, "coin": 1,
+                                                                                          "number": 1, "strategy_parameters": 1,
+                                                                                          "initial_price": 1, "max_price": 1, "buy":1,
+                                                                                            "summary_jump_price_level":1, "ask_order_distribution_list": 1} ) )
+    
     INITIALIZE_DOC_ORDERBOOK = True
     STOP_SCRIPT = False
 
@@ -534,22 +554,24 @@ if __name__ == "__main__":
         if doc["_id"] == id:
             INITIALIZE_DOC_ORDERBOOK = False
             number_script = doc["number"]
-            if 'strategy_parameters' in doc:
-                strategy_parameters = doc['strategy_parameters']
-            else:
-                strategy_parameters = None
+            strategy_parameters = doc['strategy_parameters']
+            if 'initial_price' in doc:
+                initial_price = doc['initial_price']
+            if 'max_price' in doc:
+                max_price = doc['max_price']
+            if 'buy' in doc:
+                BUY = doc['buy']
+            if 'summary_jump_price_level' in doc:
+                summary_jump_price_level = doc['summary_jump_price_level']
+            if 'ask_order_distribution_list' in doc: 
+                ask_order_distribution_list = doc['ask_order_distribution_list']
                 
             second_binance_request = range_second_trigger[number_script % LIMIT]
 
         # In case, the script has started in the script time windows, skip
-        elif doc["coin"] == coin and now < datetime.fromisoformat( doc["_id"] ) + timedelta(minutes=minutes_timeframe):
+        elif doc["coin"] == coin and now < datetime.fromisoformat( doc["_id"] ) + timedelta(minutes=coin_exclusive_window_minutes):
             # logger.info(f'coin {coin}-{event_key} is running, skipping script')
             STOP_SCRIPT = True
-
-    # if the event_key has a ranking threshold ("lvl") than check if ranking is in that threshold
-    if not RESTART and lvl != None and ranking > lvl:
-        # logger.info(f'coin {coin} has a ranking {ranking} higher than the threshold of the event_key lvl {event_key}')
-        STOP_SCRIPT = True
 
     numbers_filled, live_order_book_scripts_number, current_weight = get_current_number_of_orderbook_scripts(db, event_keys)
     # initialize
@@ -561,8 +583,9 @@ if __name__ == "__main__":
         
 
         second_binance_request = range_second_trigger[number_script % LIMIT]
-        db_collection.insert_one( { "_id": id, "coin": coin, "ranking": ranking, "data": {},
-                                     "number": number_script, "strategy_parameters": strategy_parameters, "weight": 250} )
+        db_collection.insert_one( { "_id": id, "coin": coin, "ranking": ranking, "data": {}, "initial_price": initial_price, "max_price": max_price,
+                                     "buy": BUY, "number": number_script, "strategy_parameters": strategy_parameters, "weight": 250,
+                                     "summary_jump_price_level": summary_jump_price_level, "ask_order_distribution_list": ask_order_distribution_list} )
 
     if not STOP_SCRIPT:
         current_number_script = number_script + 1
@@ -582,14 +605,18 @@ if __name__ == "__main__":
             if order_book_info != None:
                 
                 if not BUY:
-                    max_price, ask_price_levels, ask_order_distribution_list, BUY, buy_price = analyze_ask_orders( order_book_info, max_price, ask_price_levels, ask_order_distribution_list,strategy_parameters)
+                    max_price, initial_price, summary_jump_price_level, ask_order_distribution_list, BUY, buy_price = analyze_ask_orders(
+                        coin, order_book_info, initial_price, max_price, summary_jump_price_level, ask_order_distribution_list, strategy_parameters
+                        )
                 
                 # here, I try to get an efficient limit (parameter) for orderbook api, for respecting the request weight limit
                 # coin with less volume, tend to need a lower limit, so I compute it
                 # (25/02/2025) it looks it is unneccessary, weight tends to be always at max (250), even for coins with few volume
                 limit_orderbook_api = order_book_info[6]
                 weight, efficient_limit = get_most_efficient_limit_orderbook_api(limit_orderbook_api)
-                update_db_order_book_record( id, event_key, db_collection, order_book_info, weight)
+                update_db_order_book_record( id, event_key, db_collection, order_book_info, weight,
+                                            max_price, initial_price, 
+                                            summary_jump_price_level, ask_order_distribution_list, BUY)
 
 
             event_keys = db.list_collection_names()

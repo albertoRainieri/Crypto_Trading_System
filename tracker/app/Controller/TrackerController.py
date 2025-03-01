@@ -39,7 +39,7 @@ class TrackerController:
     #@timer_func
     #async def start_tracking(db_trades, db_tracker, db_benchmark, logger, db_logger):
     #@timer_func
-    def start_tracking(best_x_coins, db_trades, db_tracker, db_benchmark, logger, db_logger):
+    def start_tracking(best_x_coins, db_trades, db_tracker, db_benchmark, logger, db_logger, volume_standings):
         now = datetime.now()
 
         reference_1h_datetime = now - timedelta(hours=1)
@@ -249,7 +249,7 @@ class TrackerController:
                 #asyncio.create_task(TradingController.check_event_triggering(coin, doc_db, volatility_coin, logger, db_logger, risk_configuration))
                 
                 # ASYNC DISABLED. THIS IS PREFERRED CHOICE even if CPU Support is high
-                TradingController.buy_event_analysis(coin, doc_db, risk_configuration)
+                TradingController.buy_event_analysis(coin, doc_db, risk_configuration, logger, volume_standings)
                 #logger.info(doc_db)
 
                 db_tracker[coin].insert(doc_db)

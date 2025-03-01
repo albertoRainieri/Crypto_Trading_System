@@ -2,7 +2,7 @@
 from time import time, sleep
 import sys, os
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
-from app.Helpers.Helpers import round_, get_best_coins
+from app.Helpers.Helpers import round_, get_best_coins, get_volume_standings
 from database.DatabaseConnection import DatabaseConnection
 from app.Controller.LoggingController import LoggingController
 from app.Controller.TrackerController import TrackerController
@@ -20,21 +20,23 @@ def main(db_trades, db_tracker, db_benchmark, db_logger, db_volume_standings, lo
     '''
 
     best_x_coins = get_best_coins(db_volume_standings)
+    volume_standings = get_volume_standings(db_volume_standings)
 
     while True:
 
         now = datetime.now()
         if now.second == SECOND_START_TRACKING:
             t1 = time()
-            TrackerController.start_tracking(best_x_coins, db_trades=db_trades, db_tracker=db_tracker, db_benchmark=db_benchmark, logger=logger, db_logger=db_logger)
+            TrackerController.start_tracking(best_x_coins, volume_standings=volume_standings, db_trades=db_trades, db_tracker=db_tracker,
+                                              db_benchmark=db_benchmark, logger=logger, db_logger=db_logger)
             
             if now.hour == 0 and now.minute == 0:
                 t2 = time()
                 timespent = round_(t2-t1,3)
                 logger.info(f'start_tracking executed in {timespent}s')
                 best_x_coins = get_best_coins(db_volume_standings)
-
-            
+                volume_standings = get_volume_standings(db_volume_standings)
+    
             # sleep until next run of tracking
             FIRST_RUN = False
             time_delta = (datetime.now() + timedelta(minutes=1)).replace(second=SECOND_START_TRACKING, microsecond=0) - datetime.now()

@@ -250,7 +250,8 @@ class Benchmark:
                         std = round_(np.std(volumes[last_timestamp]),2)
                         volume_info[last_timestamp] = (avg,std)
                         n_obs = len(volumes[last_timestamp])
-                        print(f'Benchmark: {n_obs} obs in db_market for {coin}. Volume avg: {avg}')
+                        if n_obs < 1430 and n_obs > 1440:
+                            print(f'Benchmark: {n_obs} obs in db_market for {coin}. Volume avg: {avg}')
                     else:
                         print(f'Benchmark: something is wrong for {coin}')
 

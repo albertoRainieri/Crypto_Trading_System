@@ -176,10 +176,6 @@ def select_coins(LIST, db_benchmark, position_threshold):
 
     most_traded_coins_first_filter = sort_object_by_position(most_traded_coins_first_filter)
 
-    # this is done for avoiding trading the best x coins, for reducing connectivity problems. 28/02/2025
-    #most_traded_coins_first_filter = most_traded_coins_first_filter[SETS_WSS_BACKEND:]
-
-    
     #logger.info(f'coins discarded: {coins_discarded} for list: {LIST}')
 
     coin_list = {}
