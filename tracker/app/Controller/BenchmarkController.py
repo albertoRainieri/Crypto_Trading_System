@@ -33,9 +33,12 @@ class Benchmark:
         
         # compute reference time
         
-        reference_90days_datetime = datetime.now() - timedelta(days=28*3)
-        reference_60days_datetime = datetime.now() - timedelta(days=28*2)
-        reference_30days_datetime = datetime.now() - timedelta(days=28)
+        DAYS_1_MONTH = 28
+        DAYS_2_MONTH = 28*2
+        DAYS_3_MONTH = 28*3
+        reference_90days_datetime = datetime.now() - timedelta(days=DAYS_3_MONTH)
+        reference_60days_datetime = datetime.now() - timedelta(days=DAYS_2_MONTH)
+        reference_30days_datetime = datetime.now() - timedelta(days=DAYS_1_MONTH)
         reference_90days = reference_90days_datetime.isoformat()
 
         volumes_30days_list = []
@@ -297,7 +300,7 @@ class Benchmark:
                         }}
                     
                     db_benchmark[coin].update_one(filter, new_volume_series)
-                    #print(f'{coin} has been updated')
+                    #print(f'{coin} has been updated')                    
 
         Benchmark.computeVolumeStandings(db_benchmark, db_volume_standings)
 
@@ -310,20 +313,37 @@ class Benchmark:
 
         coins_list_benchmark = db_benchmark.list_collection_names()
         coins_list_volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find({})
+        yesterday_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
         volume_list = [] # [{'coin': BTCUSDT, 'volume_30_avg': 10000000}, {'coin': ETHUSDT, 'volume_30_avg': 5000000}, ...]
         for coin in coins_list_benchmark:
             cursor_benchmark = list(db_benchmark[coin].find())
-            volume_avg_30 = cursor_benchmark[0]['volume_30_avg']
-            volume_list.append({'coin': coin, 'volume_30_avg': volume_avg_30})
+            if 'volume_series' in cursor_benchmark[0]:
+                volume_series = cursor_benchmark[0]['volume_series']
+                dates_volume_series = list(volume_series.keys())
+                # Convert date strings to datetime objects
+                date_objects = [datetime.strptime(date_str, "%Y-%m-%d") for date_str in dates_volume_series]
+                # Sort the datetime objects
+                date_objects.sort()
+                # Convert the sorted datetime objects back to strings
+                sorted_date_strings = [date_obj.strftime("%Y-%m-%d") for date_obj in date_objects]
+                last_date = sorted_date_strings[-1]
+                if last_date == yesterday_date:
+                    volume_avg_30 = cursor_benchmark[0]['volume_30_avg']
+                    volume_list.append({'coin': coin, 'volume_30_avg': volume_avg_30})
+                else:
+                    print(f'ERROR: computeVolumeStandings: {coin}\'s last date is {last_date}. It is not in standings')
         
-        volume_standings = Benchmark.sort_and_rank_by_volume(volume_list)
+        if len(volume_list) != 0:
+            volume_standings = Benchmark.sort_and_rank_by_volume(volume_list)
 
-        #print(volume_standings)
-        now = datetime.now() + timedelta(minutes=1)
-        id_volume_standings_doc = now.strftime("%Y-%m-%d") 
+            #print(volume_standings)
+            now = datetime.now() + timedelta(minutes=1)
+            id_volume_standings_doc = now.strftime("%Y-%m-%d") 
 
-        db_volume_standings[COLLECTION_VOLUME_STANDINGS].insert_one({'_id': id_volume_standings_doc, 'standings': volume_standings})
+            db_volume_standings[COLLECTION_VOLUME_STANDINGS].insert_one({'_id': id_volume_standings_doc, 'standings': volume_standings})
+        else:
+            print('computeVolumeStandings: Standings could not be computed. Something went wrong')
 
 
 
