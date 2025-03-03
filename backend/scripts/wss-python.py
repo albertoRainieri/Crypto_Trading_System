@@ -130,10 +130,16 @@ def select_coins(LIST, db_benchmark, position_threshold):
     # I AM MOVING ETHUSDT TO SECOND LIST BECAUSE I NOTED THAT SOMETIMES TRADE VOLUME IN LIST 2 IS VERY LOW AND THEREFORE THE SAVE TO DB HAPPENS TOO LATE,.
     # THIS IS RISKY FOR THE TRACKER WHICH IS NOT ABLE TO GET THE LAST DATA
     most_traded_coins = data["most_traded_coins"]
+    datetimenow = datetime.now()
+    #datetimenow = datetime(2025,3,2)
+    yesterday_date = (datetimenow - timedelta(days=1)).strftime("%Y-%m-%d")
 
     collection_list = db_benchmark.list_collection_names()
     summary = {}
+    coins_no_longer_traded = {}
     for coin in collection_list:
+        if coin in discard_coin_list():
+            continue
         volume_benchmark_coin_doc = db_benchmark[coin].find_one()
         volume_30_avg = volume_benchmark_coin_doc['volume_30_avg']
         # if the coin has at least 30 days of analysis, it is eligible for deletion
@@ -144,26 +150,42 @@ def select_coins(LIST, db_benchmark, position_threshold):
             elegible_for_deletion = True
         else:
             elegible_for_deletion = False
-        
-        summary[coin] = {"volume_30_avg": volume_30_avg, "elegible_for_deletion": elegible_for_deletion}
+        if 'volume_series' in volume_benchmark_coin_doc:
+            volume_series = volume_benchmark_coin_doc['volume_series']
+            dates_volume_series = list(volume_series.keys())
+            # Convert date strings to datetime objects
+            date_objects = [datetime.strptime(date_str, "%Y-%m-%d") for date_str in dates_volume_series]
+            # Sort the datetime objects
+            date_objects.sort()
+            # Convert the sorted datetime objects back to strings
+            sorted_date_strings = [date_obj.strftime("%Y-%m-%d") for date_obj in date_objects]
+            last_date = sorted_date_strings[-1]
+            if last_date == yesterday_date:
+                summary[coin] = {"volume_30_avg": volume_30_avg, "elegible_for_deletion": elegible_for_deletion}
+            else:
+                coins_no_longer_traded[coin] = {"volume_30_avg": volume_30_avg, "elegible_for_deletion": elegible_for_deletion}
+
+    n_summary = len(summary)
+
     
-    
+    discarded_volumes = list(coins_no_longer_traded.values())
     all_volumes = list(summary.values())
-    #logger.info(all_volumes)
+    sorted_discarded_volumes = sorted(discarded_volumes, key=lambda x: x['volume_30_avg'], reverse=True)
     sorted_volumes = sorted(all_volumes, key=lambda x: x['volume_30_avg'], reverse=True)
     #logger.info(sorted_volumes)
     #threshold_volume = sorted_volumes[position_threshold]
     
     most_traded_coins_first_filter = {}
     coins_discarded = 0
+    coins_brought_back = []
     
     for coin in most_traded_coins:
         if coin in discard_coin_list():
             continue
         # these coins are most likely not traded, but there some that are new entry, I need to list them all
-        if coin not in summary:
+        if coin not in summary and coin not in coins_no_longer_traded:
             most_traded_coins_first_filter[coin] = {"position":None}
-        else:
+        elif coin in summary:
             position = sorted_volumes.index(summary[coin]) + 1
             # if coin not in summary, it is a new entry
             # if position below threshold, perfect
@@ -173,8 +195,17 @@ def select_coins(LIST, db_benchmark, position_threshold):
                 continue
             else:
                 most_traded_coins_first_filter[coin] = {"position":position}
+        else:
+            position = sorted_discarded_volumes.index(coins_no_longer_traded[coin]) + 1 + n_summary
+            if position > position_threshold and coins_no_longer_traded[coin]['elegible_for_deletion']:
+                coins_discarded += 1
+                continue
+            else:
+                coins_brought_back.append(coin)
+                most_traded_coins_first_filter[coin] = {"position":position}
 
     most_traded_coins_first_filter = sort_object_by_position(most_traded_coins_first_filter)
+    #logger.info(most_traded_coins_first_filter)
 
     #logger.info(f'coins discarded: {coins_discarded} for list: {LIST}')
 
@@ -202,7 +233,7 @@ def select_coins(LIST, db_benchmark, position_threshold):
             coins_in_none_position.append(coin)
     
     n_coins = len(coin_list[LIST])
-    logger.info(f'{LIST} - n_coins already traded in the app: {n_coins} ' )
+    logger.info(f'{LIST} - coins retrieved from top{position_threshold}: {n_coins} ' )
     
     coins_in_none_position = sorted(coins_in_none_position)
     for coin in coins_in_none_position:
@@ -230,10 +261,27 @@ def select_coins(LIST, db_benchmark, position_threshold):
         # Check for common elements across all three sets
     
     for pair, common in common_pairs.items():
-        logger.info(f"Common elements between list{pair[0] + 1} and list{pair[1] + 1}: {common}")
+        if len(common) != 0:
+            logger.info(f"Common elements between list{pair[0] + 1} and list{pair[1] + 1}: {common}")
     
     coin_list = coin_list[LIST]
+    logger.info(f'{LIST}: {coin_list}')
 
+    if LIST == f'list{str(SETS_WSS_BACKEND)}':
+        n_coins_back = position_threshold - n_summary
+        n_discarded_coins = len(coins_no_longer_traded)
+        n_coins_traded = len(most_traded_coins_first_filter)
+        n_coins_brought_back = len(coins_brought_back)
+        logger.info('')
+        logger.info('##### BACKEND INFO #####')
+        logger.info(f'Number of coins traded in the last day FROM db_Bencharmk: {n_summary}')
+        logger.info(f'Number of coins that have not been traded in the last day FROM db_Benchmark: {n_discarded_coins}')
+        logger.info(f'Number of coins that are going to be brought back: {n_coins_back}')
+        logger.info(f'Number of coins that are  brought back: {n_coins_brought_back}')
+        logger.info(f'Coins List Brought Back: {coins_brought_back}')
+        logger.info(f'Total Number of Coins traded: {n_coins_traded}')
+        logger.info('##### BACKEND INFO #####')
+        logger.info('')
     return coin_list
 
 
@@ -283,7 +331,6 @@ def on_open(ws):
 
     coin_list = select_coins(LIST, db_benchmark, position_threshold)
 
-    logger.info(f'{LIST}: {coin_list}')
     doc_db, prices, n_list_coins = initializeVariables(coin_list)
     
 

@@ -192,7 +192,8 @@ class Benchmark:
                 month = split_date[1]
                 day = split_date[2]
                 # this is the starting time from which looking for new observation. 
-                st_datetime = datetime(year=int(year), month=int(month), day=int(day)) + timedelta(days=1)
+                # minute=1 because I discard the midnight observation which still stands in case the coin has moved out of top300
+                st_datetime = datetime(year=int(year), month=int(month), day=int(day), minute=1) + timedelta(days=1)
                 et_datetime = (now_datetime - timedelta(days=1)).replace(hour=23, minute=59, second=59)
 
                 # this should happen during development, not in production
