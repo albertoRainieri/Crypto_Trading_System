@@ -156,8 +156,8 @@ def extract_timeframe(input_string):
         return None
 
 
-def update_db_order_book_record(id, event_key, db_collection, order_book_info, weight, max_price, initial_price,
-                                bid_price_levels, ask_order_distribution_list, BUY):
+def update_db_order_book_record(id, event_key, db_collection, order_book_info, weight, max_price, initial_price, buy_price,
+                                summary_jump_price_level, ask_order_distribution_list, BUY):
 
     new_data = []
     #new_data.append(order_book_info[0])  # bid_price
@@ -170,7 +170,8 @@ def update_db_order_book_record(id, event_key, db_collection, order_book_info, w
     now = datetime.now().replace(microsecond=0).isoformat()
     filter_query = {"_id": id}
     update_doc = {"$set": {f"data.{now}": new_data, "weight": weight, "max_price": max_price, "initial_price": initial_price,
-                           'summary_jump_price_level': summary_jump_price_level, 'ask_order_distribution_list': ask_order_distribution_list, 'buy': BUY}}
+                           'summary_jump_price_level': summary_jump_price_level, 'ask_order_distribution_list': ask_order_distribution_list,
+                             'buy': BUY, 'buy_price': buy_price}}
     
     result = db_collection.update_one(filter_query, update_doc)
 
@@ -259,6 +260,33 @@ def count_decimals(num):
   except ValueError:
     # If no decimal point is found, it's an integer
     return 1
+  
+def save_trading_event(id, coin, buy_price, ranking, initial_price, max_price):
+    client = DatabaseConnection()
+    db = client.get_db(DATABASE_TRADING)
+    user = os.getenv('SYS_ADMIN')
+    db_collection = db[user]
+    buy_ts = datetime.now().isoformat()
+    db_collection.insert_one( {"_id": id, "coin": coin, "gain": '', "buy_price": buy_price, "sell_price": '', "buy_ts": buy_ts, "sell_ts": '', "ranking": ranking, "initial_price": initial_price, "max_price": max_price} )
+    client.close()
+
+def update_trading_event(id, sell_price, buy_price):
+    client = DatabaseConnection()
+    db = client.get_db(DATABASE_TRADING)
+    user = os.getenv('SYS_ADMIN')
+    db_collection = db[user]
+    sell_ts = datetime.now().isoformat()
+    filter_query = {"_id": id}
+    gain = round_((sell_price - buy_price) / buy_price, 3)
+    update_doc = {"$set":{"gain": gain, "sell_ts": sell_ts, "sell_price": sell_price}}
+    logger.info(f'SELL EVENT: coin: {coin} - SELL price: {sell_price} - BUY price: {buy_price} - GAIN: {gain}')
+    
+    result = db_collection.update_one(filter_query, update_doc)
+    if result.modified_count != 1:
+        now = datetime.now().isoformat()
+        logger.info(f"{now}: Trading Collection update failed for {event_key} with id {id}.")
+
+    client.close()
         
 def get_price_levels(price, orders, cumulative_volume_jump=0.03, price_change_limit=0.4, price_change_jump=0.025):
     '''
@@ -385,16 +413,16 @@ def hit_jump_price_levels_range(coin, current_price, bid_price_levels_dt, summar
             
     #print(summary_jump_price_level)
     for x in summary_jump_price_level:
-        logger.info(summary_jump_price_level)
+        #logger.info(summary_jump_price_level)
         jump = abs((current_price - summary_jump_price_level[x][0] ) / current_price )
         historical_price_level_n_obs = summary_jump_price_level[x][1]
-        logger.info(f'jump price level - {coin}: {jump} vs {distance_jump_to_current_price}')
+        #logger.info(f'jump price level - {coin}: {jump} vs {distance_jump_to_current_price}')
         if jump <= distance_jump_to_current_price and historical_price_level_n_obs >= min_n_obs_jump_level:
             return True, summary_jump_price_level
             #print(current_price, dt)
     return False, summary_jump_price_level
 
-def trigger_entrypoint(coin, price, initial_price, max_price,
+def trigger_entrypoint(id, coin, price, initial_price, max_price,
                         bid_price_levels_dt, summary_jump_price_level, ask_order_distribution_list, price_change_jump,
                         max_limit, price_drop_limit, distance_jump_to_current_price,
                         max_ask_order_distribution_level, last_i_ask_order_distribution, min_n_obs_jump_level):
@@ -417,9 +445,9 @@ def trigger_entrypoint(coin, price, initial_price, max_price,
                                                         min_n_obs_jump_level=min_n_obs_jump_level)
     t2 = time()
     time_spent = round_(t2-t1,5)
-    logger.info(f'hit_jump_price_levels_range executed in {time_spent}s')
+    #logger.info(f'hit_jump_price_levels_range executed in {time_spent}s')
     
-    logger.info(f'{coin}: {current_price_drop} >= {price_drop_limit} and {max_change} <= {max_limit}')
+    #logger.info(f'{coin}: {current_price_drop} >= {price_drop_limit} and {max_change} <= {max_limit}')
     if is_jump_price_level and current_price_drop >= price_drop_limit and max_change <= max_limit:
                 
         # get keys of ask_order_distribution [0.025, 0.05, 0.075, ...]
@@ -441,17 +469,18 @@ def trigger_entrypoint(coin, price, initial_price, max_price,
                 avg_ask_order_distribution[lvl] = np_mean(avg_ask_order_distribution[lvl])
 
             # TODO: check only first level, or next ones too ?
-            logger.info(f'avg_ask_order_distribution: {avg_ask_order_distribution}')
+            #logger.info(f'avg_ask_order_distribution: {avg_ask_order_distribution}')
             if avg_ask_order_distribution[str(price_change_jump)] < max_ask_order_distribution_level:
                 BUY = True
                 x = avg_ask_order_distribution[str(price_change_jump)]
-                logger.info(f'BUY TRIGGER: coin: {coin} - price: {price} - avg_ask_order: {x}')
+                logger.info(f'BUY EVENT: coin: {coin} - price: {price} - avg_ask_order: {x}')
+                save_trading_event(id, coin, price, ranking, initial_price, max_price)
 
                 return max_price, selected_ask_order_distribution_list, BUY, price, summary_jump_price_level
         
     return max_price, selected_ask_order_distribution_list, BUY, None, summary_jump_price_level
 
-def analyze_ask_orders(coin, order_book_info, initial_price, max_price, summary_jump_price_level, ask_order_distribution_list,
+def analyze_ask_orders(id, coin, order_book_info, initial_price, max_price, summary_jump_price_level, ask_order_distribution_list,
                         strategy):
     '''
     order_book_info[0] --> bid_price
@@ -485,10 +514,10 @@ def analyze_ask_orders(coin, order_book_info, initial_price, max_price, summary_
     bid_price_level_dt, bid_order_distribution, bid_cumulative_level = get_price_levels(price, bid_orders, cumulative_volume_jump, price_change_limit, price_change_jump)
     t2 = time()
     time_spent = round_(t2-t1,5)
-    logger.info(f'get_price_levels executed in {time_spent}s')
+    #logger.info(f'get_price_levels executed in {time_spent}s')
 
     ask_order_distribution_list.append({'ask': ask_order_distribution, 'dt': dt})
-    max_price, ask_order_distribution_list, BUY, buy_price, summary_jump_price_level = trigger_entrypoint(
+    max_price, ask_order_distribution_list, BUY, buy_price, summary_jump_price_level = trigger_entrypoint(id,
                         coin, price, initial_price, max_price, bid_price_level_dt, summary_jump_price_level, ask_order_distribution_list, price_change_jump,
                         max_limit, price_drop_limit, distance_jump_to_current_price,
                         max_ask_order_distribution_level, last_i_ask_order_distribution, min_n_obs_jump_level)
@@ -511,11 +540,12 @@ if __name__ == "__main__":
     range_second_trigger = [round_(i,2) for i in linspace(10,58,20)]
 
     # STRATEGY VARIABLES
-    BUY = True
+    BUY = False
     summary_jump_price_level = {}
     ask_order_distribution_list = []
     max_price = 0
     initial_price = None
+    buy_price = None
 
     # INPUT VARIABLE SCRIPT
     coin = sys.argv[1]
@@ -539,7 +569,7 @@ if __name__ == "__main__":
     db_collection = db[event_key]
     event_key_docs = list( db_collection.find( {"_id": {"$gt": yesterday.isoformat()}}, {"_id": 1, "coin": 1,
                                                                                           "number": 1, "strategy_parameters": 1,
-                                                                                          "initial_price": 1, "max_price": 1, "buy":1,
+                                                                                          "initial_price": 1, "max_price": 1, "buy":1, "buy_price": 1,
                                                                                             "summary_jump_price_level":1, "ask_order_distribution_list": 1} ) )
     
     INITIALIZE_DOC_ORDERBOOK = True
@@ -565,6 +595,8 @@ if __name__ == "__main__":
                 summary_jump_price_level = doc['summary_jump_price_level']
             if 'ask_order_distribution_list' in doc: 
                 ask_order_distribution_list = doc['ask_order_distribution_list']
+            if 'buy_price' in doc:
+                buy_price = doc['buy_price']
                 
             second_binance_request = range_second_trigger[number_script % LIMIT]
 
@@ -583,7 +615,7 @@ if __name__ == "__main__":
         
 
         second_binance_request = range_second_trigger[number_script % LIMIT]
-        db_collection.insert_one( { "_id": id, "coin": coin, "ranking": ranking, "data": {}, "initial_price": initial_price, "max_price": max_price,
+        db_collection.insert_one( { "_id": id, "coin": coin, "ranking": ranking, "data": {}, "initial_price": initial_price, "max_price": max_price, "buy_price": '',
                                      "buy": BUY, "number": number_script, "strategy_parameters": strategy_parameters, "weight": 250,
                                      "summary_jump_price_level": summary_jump_price_level, "ask_order_distribution_list": ask_order_distribution_list} )
 
@@ -605,7 +637,7 @@ if __name__ == "__main__":
             if order_book_info != None:
                 
                 if not BUY:
-                    max_price, initial_price, summary_jump_price_level, ask_order_distribution_list, BUY, buy_price = analyze_ask_orders(
+                    max_price, initial_price, summary_jump_price_level, ask_order_distribution_list, BUY, buy_price = analyze_ask_orders(id,
                         coin, order_book_info, initial_price, max_price, summary_jump_price_level, ask_order_distribution_list, strategy_parameters
                         )
                 
@@ -615,7 +647,7 @@ if __name__ == "__main__":
                 limit_orderbook_api = order_book_info[6]
                 weight, efficient_limit = get_most_efficient_limit_orderbook_api(limit_orderbook_api)
                 update_db_order_book_record( id, event_key, db_collection, order_book_info, weight,
-                                            max_price, initial_price, 
+                                            max_price, initial_price, buy_price,
                                             summary_jump_price_level, ask_order_distribution_list, BUY)
 
 
@@ -641,6 +673,11 @@ if __name__ == "__main__":
         
         pid = os.getpid()
         logger.info(f'DONE: {number_script} - {coin} - killing pid {pid}')
+
+        if BUY:
+            sell_price = order_book_info[0] #bid_price
+            update_trading_event(id=id, sell_price=sell_price, buy_price=buy_price)
+
             
 
     client.close()
