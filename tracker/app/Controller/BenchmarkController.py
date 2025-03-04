@@ -313,9 +313,9 @@ class Benchmark:
         '''
 
         coins_list_benchmark = db_benchmark.list_collection_names()
-        coins_list_volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find({})
-        yesterday_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
+        # this function is executed at 23:59, so it is okay to compare the today_date
+        today_date = datetime.now().strftime("%Y-%m-%d")
         volume_list = [] # [{'coin': BTCUSDT, 'volume_30_avg': 10000000}, {'coin': ETHUSDT, 'volume_30_avg': 5000000}, ...]
         for coin in coins_list_benchmark:
             cursor_benchmark = list(db_benchmark[coin].find())
@@ -329,7 +329,7 @@ class Benchmark:
                 # Convert the sorted datetime objects back to strings
                 sorted_date_strings = [date_obj.strftime("%Y-%m-%d") for date_obj in date_objects]
                 last_date = sorted_date_strings[-1]
-                if last_date == yesterday_date:
+                if last_date == today_date:
                     volume_avg_30 = cursor_benchmark[0]['volume_30_avg']
                     volume_list.append({'coin': coin, 'volume_30_avg': volume_avg_30})
                 else:
