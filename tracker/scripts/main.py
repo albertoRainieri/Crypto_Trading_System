@@ -19,8 +19,8 @@ def main(db_trades, db_tracker, db_benchmark, db_logger, db_volume_standings, lo
     This function tracks the statistics of the most traded pairs each minute
     '''
 
-    best_x_coins = get_best_coins(db_volume_standings)
     volume_standings = get_volume_standings(db_volume_standings)
+    best_x_coins = get_best_coins(volume_standings)
 
     while True:
 
@@ -34,8 +34,8 @@ def main(db_trades, db_tracker, db_benchmark, db_logger, db_volume_standings, lo
                 t2 = time()
                 timespent = round_(t2-t1,3)
                 logger.info(f'start_tracking executed in {timespent}s')
-                best_x_coins = get_best_coins(db_volume_standings)
                 volume_standings = get_volume_standings(db_volume_standings)
+                best_x_coins = get_best_coins(volume_standings)
     
             # sleep until next run of tracking
             FIRST_RUN = False

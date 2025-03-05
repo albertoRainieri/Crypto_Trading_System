@@ -381,7 +381,7 @@ def on_message(ws, message):
         else:
             n_coins = len(n_list_coins)
             tot_coins = len(prices)
-            logger.info(f'{n_coins}/{tot_coins} coins have been traded in the last minute. {LIST}')
+            #logger.info(f'{n_coins}/{tot_coins} coins have been traded in the last minute. {LIST}')
             os.environ['NOW'] = formatted_date
             saveTrades_toDB(prices, doc_db, database)
             doc_db, prices, n_list_coins = initializeVariables(coin_list)
@@ -431,7 +431,7 @@ def getStatisticsOnTrades(trade, instrument_name, doc_db, prices):
         logger.info("Duplicate Aggregate Trade")
 
         
-@timer_func
+#@timer_func
 def saveTrades_toDB(prices, doc_db, database):
 
     

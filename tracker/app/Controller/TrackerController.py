@@ -61,6 +61,7 @@ class TrackerController:
 
         #coin_list_subset = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
         coin_list_subset = data["most_traded_coins"]
+        coins_not_traded = []
         # logger.info(coin_list_subset)
         # logger.info(len(coin_list_subset))
         
@@ -254,16 +255,13 @@ class TrackerController:
 
                 db_tracker[coin].insert(doc_db)
 
-            # if Bitcoin was not retrieved
-            elif best_x_coins == None:
-                msg = f'Something is wrong for db_volume_standings. last record was not computed'
-                logger.info(msg)
-                db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
-
             elif coin in best_x_coins:
-                msg = f'{coin} was not traded in the last minute'
-                logger.info(msg)
-                db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
-            
+                coins_not_traded.append(coin)
+
+        if len(coins_not_traded) != 0:
+            msg = f'WARNING: {coins_not_traded} not traded'
+            logger.info(msg)
+            db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+                
 
         
