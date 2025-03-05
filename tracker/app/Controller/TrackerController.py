@@ -259,7 +259,9 @@ class TrackerController:
                 coins_not_traded.append(coin)
 
         if len(coins_not_traded) != 0:
-            msg = f'WARNING: {coins_not_traded} not traded'
+            n = len(coins_not_traded)
+            tot = len(best_x_coins)
+            msg = f'WARNING: {n}/{tot}:  {coins_not_traded} not traded'
             logger.info(msg)
             db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
                 

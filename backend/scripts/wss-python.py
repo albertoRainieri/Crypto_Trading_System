@@ -30,64 +30,48 @@ SLEEP_LAST_LIST = int(os.getenv('SLEEP_LAST_LIST')) #60
 
 
 def on_error(ws, error):
-    error = str(error)    
+    global prices
+    global doc_db
+    error = str(error)
 
-    if error == "\'data\'":
-        msg = f'{LIST} Started'
-        logger.info(msg)
-        #db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
-        if datetime.now().second > 5:
-            sleep(60 - datetime.now().second)
-        
-    else:
-        logger.error(f'{LIST}: error is: {error}')
-        # db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': error})
-        #sleep(10)
+    if 'Connection to remote host was lost' in error:
+        ws.close()
+        ts = datetime.now().isoformat()
+        LOST_CONNECTION.append(ts)
+        discard_ts = []
+        conn_lost = 0
+        for ts in LOST_CONNECTION:
+            if datetime.fromisoformat(ts) > datetime.now() - timedelta(minutes=CHECK_PERIOD_MINUTES):
+                conn_lost += 1
+            else:
+                discard_ts.append(ts)
+        logger.error(f'{conn_lost}th LOST CONNECTION for {LIST}')
 
-        # In case there are too many lost connections, suspend last list for 1 hour, so you can preserve  the other n-1 lists
-        if 'Connection to remote host was lost' in error and LIST_N % 2 == 1:
-            
-            ts = datetime.now().isoformat()
-            LOST_CONNECTION.append(ts)
-            discard_ts = []
-            conn_lost = 0
-            for ts in LOST_CONNECTION:
-                if datetime.fromisoformat(ts) > datetime.now() - timedelta(minutes=CHECK_PERIOD_MINUTES):
-                    conn_lost += 1
-                else:
-                    discard_ts.append(ts)
-
-            logger.error(f'{conn_lost}th LOST CONNECTION for {LIST}')
-
-            for ts in discard_ts:
-                LOST_CONNECTION.remove(ts)
-            if conn_lost >= MAX_CONNECTION_LOST:
-                msg = f'SLEEP {LIST} for {SLEEP_LAST_LIST} minutes'
-                logger.info(msg)
-                ws.close()
-                sleep(60*SLEEP_LAST_LIST)
-
+        for ts in discard_ts:
+            LOST_CONNECTION.remove(ts)
+        if conn_lost >= MAX_CONNECTION_LOST:
+            msg = f'SLEEP {LIST} for {SLEEP_LAST_LIST} minutes'
+            logger.info(msg)
+            sleep(60*SLEEP_LAST_LIST)
+    
 
     
     # condition added because of bug error on 21/01/2025, the thread was stuck on "sell_volume" error...
     #  something wrong happened in variable initialization and this condition helps restarting the script in case of this error.
     if 'sell_volume' in error:
+        logger.info(f'{LIST}: sell_volume error')
         ws.close()
-        threading.Thread(target=restart_connection).start()
-        ws.run_forever()
         
         
 
 
 def on_close(*args):
-    if 'NOW' in os.environ:
-        del os.environ['NOW']
     
-        
-    sleep(10*LIST_N)
-    msg = f"on_close: Closing Wss Connection {LIST}"
+    if datetime.now().hour == 0 and datetime.now().minute == 0:
+        sleep(LIST_N)
+    #msg = f"on_close: Closing Wss Connection {LIST}"
     db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
-    logger.info(msg)
+    #logger.info(msg)
 
     threading.Thread(target=restart_connection).start()
     ws.run_forever()
@@ -97,7 +81,7 @@ def restart_connection():
     compute total seconds until next wss restart.
     This function restarts the wss connection every 24 hours
     '''
-
+    logger.info(f'{LIST}: ws_close')
     now = datetime.now()
     current_hour = now.hour
     current_minute = now.minute
@@ -115,8 +99,8 @@ def restart_connection():
     #total_remaining_seconds = 240 + remaining_seconds
     
     # define timestamp for next wss restart
-    wss_restart_timestamp = (now + timedelta(seconds=total_remaining_seconds)).isoformat()
-    logger.info(f'on_restart_connection: Next wss restart {wss_restart_timestamp} for {LIST}')
+    #wss_restart_timestamp = (now + timedelta(seconds=total_remaining_seconds)).isoformat()
+    #logger.info(f'on_restart_connection: Next wss restart {wss_restart_timestamp} for {LIST}')
     
     
     sleep(total_remaining_seconds)
@@ -231,9 +215,8 @@ def select_coins(LIST, db_benchmark, position_threshold):
                     coin_list[list_name].append(coin)
         else:
             coins_in_none_position.append(coin)
+    n_coins_benchmark = len(coin_list[LIST])
     
-    n_coins = len(coin_list[LIST])
-    logger.info(f'{LIST} - coins retrieved from top{position_threshold}: {n_coins} ' )
     
     coins_in_none_position = sorted(coins_in_none_position)
     for coin in coins_in_none_position:
@@ -242,8 +225,8 @@ def select_coins(LIST, db_benchmark, position_threshold):
                 if position % SETS_WSS_BACKEND == legend_list[list_name]['position']:
                     coin_list[list_name].append(coin)
     
-    n_coins = len(coin_list[LIST])
-    logger.info(f'{LIST} - total n_coins: {n_coins}' )
+    n_coins_binance = len(coin_list[LIST]) - n_coins_benchmark
+    logger.info(f'{LIST} - coins from benchmark + coins from binance: {n_coins_benchmark} + {n_coins_binance}' )
 
     # Convert lists to sets
     all_lists = []
@@ -265,23 +248,23 @@ def select_coins(LIST, db_benchmark, position_threshold):
             logger.info(f"Common elements between list{pair[0] + 1} and list{pair[1] + 1}: {common}")
     
     coin_list = coin_list[LIST]
-    logger.info(f'{LIST}: {coin_list}')
-
-    if LIST == f'list{str(SETS_WSS_BACKEND)}':
-        n_coins_back = position_threshold - n_summary
-        n_discarded_coins = len(coins_no_longer_traded)
-        n_coins_traded = len(most_traded_coins_first_filter)
-        n_coins_brought_back = len(coins_brought_back)
-        logger.info('')
-        logger.info('##### BACKEND INFO #####')
-        logger.info(f'Number of coins traded in the last day FROM db_Bencharmk: {n_summary}')
-        logger.info(f'Number of coins that have not been traded in the last day FROM db_Benchmark: {n_discarded_coins}')
-        logger.info(f'Number of coins that are going to be brought back: {n_coins_back}')
-        logger.info(f'Number of coins that are  brought back: {n_coins_brought_back}')
-        logger.info(f'Coins List Brought Back: {coins_brought_back}')
-        logger.info(f'Total Number of Coins traded: {n_coins_traded}')
-        logger.info('##### BACKEND INFO #####')
-        logger.info('')
+    if datetime.now().hour == 0 and datetime.now().minute == 0:
+        logger.info(f'{LIST}: {coin_list}')
+        if LIST == f'list{str(SETS_WSS_BACKEND)}':
+            n_coins_back = position_threshold - n_summary
+            n_discarded_coins = len(coins_no_longer_traded)
+            n_coins_traded = len(most_traded_coins_first_filter)
+            n_coins_brought_back = len(coins_brought_back)
+            logger.info('')
+            logger.info('##### BACKEND INFO #####')
+            logger.info(f'Number of coins traded in the last day FROM db_Bencharmk: {n_summary}')
+            logger.info(f'Number of coins that have not been traded in the last day FROM db_Benchmark: {n_discarded_coins}')
+            logger.info(f'Number of coins that are going to be brought back: {n_coins_back}')
+            logger.info(f'Number of coins that are  brought back: {n_coins_brought_back}')
+            logger.info(f'Coins List Brought Back: {coins_brought_back}')
+            logger.info(f'Total Number of Coins traded: {n_coins_traded}')
+            logger.info('##### BACKEND INFO #####')
+            logger.info('')
     return coin_list
 
 
@@ -306,32 +289,23 @@ def sort_object_by_position(obj):
   return sorted(obj.items(), key=sort_key)         
 
 
-    
-
-
-    
 
 def on_open(ws):
-    # Combined streams arec acessed at /stream?streams=<streamName1>/<streamName2>/<streamName3>
-    if 'NOW' in os.environ:
-        del os.environ['NOW']
 
     global prices
     global doc_db
     global coin_list
-    global n_list_coins # this variable is used to count number of coins in the last mu
 
     # msg = 'WSS CONNECTION STARTED'
     # logger.info(msg)
     # db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
 
-
-    msg = f'on_open: Wss Started for {LIST}'
-    logger.info(msg)
+    # now = datetime.now().isoformat()
+    # msg = f'{LIST}: on_open: Wss Started: {now}'
+    # logger.info(msg)
 
     coin_list = select_coins(LIST, db_benchmark, position_threshold)
-
-    doc_db, prices, n_list_coins = initializeVariables(coin_list)
+    #doc_db, prices = initializeVariables(coin_list)
     
 
     parameters = []
@@ -350,44 +324,39 @@ def on_message(ws, message):
     global prices
     global doc_db
     global coin_list
-    global n_list_coins
+    global now_ts
     
     data = json.loads(message)
 
     # LOCAL TEST
-    # if datetime.now().minute == 45:
+    # if LIST == 'list1' and datetime.now().minute == 48 and datetime.now().second == 57:
     #     raise ValueError("Connection to remote host was lost")
-        
+    # if LIST == 'list1' and datetime.now().minute == 48 and datetime.now().second == 59:
+    #     logger.info(doc_db)
 
     #get data and symbol
-    
-    data = data['data']
-    instrument_name = data['s']
-    if instrument_name not in n_list_coins:
-        n_list_coins.append(instrument_name)
+    # if 'ping' in data:
+    #     logger.info(f'ping: {data}')
+    # if 'data' not in data or 'stream' not in data:
+    #     logger.info(f'data: {data}')
+    if 'data' in data:
+        data = data['data']
+        instrument_name = data['s']
 
-    now = datetime.now()
-    formatted_date = now.strftime("%Y-%m-%d:%H:%M")
-    NOW = os.getenv('NOW')
-
-
-    # if data['s'] == 'BTCUSDT':
-    #     print(data)
-    if NOW is not None:
-        # if same minute then keep on getting statistics
-        if NOW == formatted_date:
-            getStatisticsOnTrades(data, instrument_name, doc_db, prices)
-        # otherwise let's save it to db
+        if now_ts is not None:
+            # if same minute then keep on getting statistics
+            if now_ts == datetime.now().strftime("%Y-%m-%d:%H:%M"):
+                getStatisticsOnTrades(data, instrument_name, doc_db, prices)
+            # otherwise let's save it to db
+            else:
+                #logger.info(f'{n_coins}/{tot_coins} coins have been traded in the last minute. {LIST}')
+                now_ts = datetime.now().strftime("%Y-%m-%d:%H:%M")
+                saveTrades_toDB(prices, doc_db, database)
+                doc_db, prices = initializeVariables(coin_list)
         else:
-            n_coins = len(n_list_coins)
-            tot_coins = len(prices)
-            #logger.info(f'{n_coins}/{tot_coins} coins have been traded in the last minute. {LIST}')
-            os.environ['NOW'] = formatted_date
-            saveTrades_toDB(prices, doc_db, database)
-            doc_db, prices, n_list_coins = initializeVariables(coin_list)
-    else:
-        os.environ['NOW'] = formatted_date
-        doc_db, prices, n_list_coins = initializeVariables(coin_list)
+            sleep(60 - datetime.now().second + 1)
+            now_ts = datetime.now().strftime("%Y-%m-%d:%H:%M")
+            doc_db, prices = initializeVariables(coin_list)
 
     
     
@@ -399,9 +368,8 @@ def initializeVariables(coin_list):
     for instrument_name in coin_list:
         doc_db[instrument_name] = {"_id": None, "price": None, "n_trades": 0, "buy_n": 0, "volume": 0 , "buy_volume": 0, "sell_volume": 0}
         prices[instrument_name] = None
-    n_list_coins = []
 
-    return doc_db, prices, n_list_coins
+    return doc_db, prices
 
 
 def getStatisticsOnTrades(trade, instrument_name, doc_db, prices):
@@ -433,8 +401,6 @@ def getStatisticsOnTrades(trade, instrument_name, doc_db, prices):
         
 #@timer_func
 def saveTrades_toDB(prices, doc_db, database):
-
-    
     path = legend_list[LIST]['path']
         
     if os.path.exists(path):
@@ -486,6 +452,9 @@ if __name__ == "__main__":
     db_benchmark = client.get_db(DATABASE_BENCHMARK)
     logger = LoggingController.start_logging()
     position_threshold = int(os.getenv('COINS_TRADED'))
+    doc_db = None
+    prices = None
+    now_ts = None
 
     legend_list = {}
     x = [i for i in range(1,SETS_WSS_BACKEND+1)]
