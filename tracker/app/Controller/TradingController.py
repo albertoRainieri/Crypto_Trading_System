@@ -227,7 +227,9 @@ class TradingController:
 
             # check if coin is already on trade for this specific event, if True, pass
             vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
-            ranking = int(volume_standings["standings"][coin]["rank"])
+            if coin in volume_standings["standings"]:
+                ranking = int(volume_standings["standings"][coin]["rank"])
+                
             if ranking > int(lvl):
                 continue
 
