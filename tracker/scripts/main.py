@@ -42,8 +42,6 @@ def main(db_trades, db_tracker, db_benchmark, db_logger, db_volume_standings, lo
             time_delta = (datetime.now() + timedelta(minutes=1)).replace(second=SECOND_START_TRACKING, microsecond=0) - datetime.now()
             sleep_seconds = time_delta.seconds + (time_delta.microseconds / 10**6)
             sleep(sleep_seconds)
-
-            
             
 
         if FIRST_RUN:
@@ -60,7 +58,7 @@ if __name__ == '__main__':
     db_volume_standings = client.get_db(DATABASE_VOLUME_STANDINGS)
     db_logger = client.get_db(DATABASE_LOGGING)
 
-    SECOND_START_TRACKING = 2
+    SECOND_START_TRACKING = 3
     FIRST_RUN = True
 
 
