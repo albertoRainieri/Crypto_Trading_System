@@ -69,9 +69,6 @@ def on_close(*args):
     
     if datetime.now().hour == 0 and datetime.now().minute == 0:
         sleep(LIST_N)
-    #msg = f"on_close: Closing Wss Connection {LIST}"
-    db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
-    #logger.info(msg)
 
     threading.Thread(target=restart_connection).start()
     ws.run_forever()
