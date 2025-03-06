@@ -261,13 +261,13 @@ def count_decimals(num):
     # If no decimal point is found, it's an integer
     return 1
   
-def save_trading_event(id, coin, buy_price, ranking, initial_price, max_price):
+def save_trading_event(id, coin, buy_price, ranking, initial_price, max_price, strategy):
     client = DatabaseConnection()
     db = client.get_db(DATABASE_TRADING)
     user = os.getenv('SYS_ADMIN')
     db_collection = db[user]
     buy_ts = datetime.now().isoformat()
-    db_collection.insert_one( {"_id": id, "coin": coin, "gain": '', "buy_price": buy_price, "sell_price": '', "buy_ts": buy_ts, "sell_ts": '', "ranking": ranking, "initial_price": initial_price, "max_price": max_price} )
+    db_collection.insert_one( {"_id": id, "coin": coin, "gain": '', "buy_price": buy_price, "sell_price": '', "buy_ts": buy_ts, "sell_ts": '', "ranking": ranking, "initial_price": initial_price, "max_price": max_price, "strategy": strategy} )
     client.close()
 
 def update_trading_event(id, sell_price, buy_price):
@@ -425,7 +425,7 @@ def hit_jump_price_levels_range(coin, current_price, bid_price_levels_dt, summar
 def trigger_entrypoint(id, coin, price, initial_price, max_price,
                         bid_price_levels_dt, summary_jump_price_level, ask_order_distribution_list, price_change_jump,
                         max_limit, price_drop_limit, distance_jump_to_current_price,
-                        max_ask_order_distribution_level, last_i_ask_order_distribution, min_n_obs_jump_level):
+                        max_ask_order_distribution_level, last_i_ask_order_distribution, min_n_obs_jump_level, strategy):
     
     BUY = False
     dt_ask = datetime.now() - timedelta(minutes=last_i_ask_order_distribution) + timedelta(seconds=10)
@@ -474,7 +474,7 @@ def trigger_entrypoint(id, coin, price, initial_price, max_price,
                 BUY = True
                 x = avg_ask_order_distribution[str(price_change_jump)]
                 logger.info(f'BUY EVENT: coin: {coin} - price: {price} - avg_ask_order: {x}')
-                save_trading_event(id, coin, price, ranking, initial_price, max_price)
+                save_trading_event(id, coin, price, ranking, initial_price, max_price, strategy)
 
                 return max_price, selected_ask_order_distribution_list, BUY, price, summary_jump_price_level
         
@@ -520,7 +520,7 @@ def analyze_ask_orders(id, coin, order_book_info, initial_price, max_price, summ
     max_price, ask_order_distribution_list, BUY, buy_price, summary_jump_price_level = trigger_entrypoint(id,
                         coin, price, initial_price, max_price, bid_price_level_dt, summary_jump_price_level, ask_order_distribution_list, price_change_jump,
                         max_limit, price_drop_limit, distance_jump_to_current_price,
-                        max_ask_order_distribution_level, last_i_ask_order_distribution, min_n_obs_jump_level)
+                        max_ask_order_distribution_level, last_i_ask_order_distribution, min_n_obs_jump_level, strategy)
 
     return max_price, initial_price, summary_jump_price_level, ask_order_distribution_list, BUY, buy_price
 

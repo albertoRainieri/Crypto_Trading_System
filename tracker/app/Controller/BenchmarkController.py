@@ -58,7 +58,7 @@ class Benchmark:
         #coin_list_subset = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
         coin_list_subset = data["most_traded_coins"]
         len_coin_list_subset = len(coin_list_subset)
-        logger.info(f'len of coin_list_subset in benchmark: {len_coin_list_subset}')
+        logger.info(f'Number of coins in Db Benchmark: {len_coin_list_subset}')
         #coin_list_subset = ['BTC_USD']
 
         now_datetime = datetime.now() + timedelta(minutes=1)
@@ -313,6 +313,14 @@ class Benchmark:
         '''
 
         coins_list_benchmark = db_benchmark.list_collection_names()
+        dt_7days_ago = datetime.now() - timedelta(days=7)
+        dt_14days_ago = datetime.now() - timedelta(days=14)
+        dt_28days_ago = datetime.now() - timedelta(days=28)
+
+        dt_7 = []
+        dt_14 = []
+        dt_28 = []
+        dt_all = []
 
         # this function is executed at 23:59, so it is okay to compare the today_date
         today_date = datetime.now().strftime("%Y-%m-%d")
@@ -332,8 +340,24 @@ class Benchmark:
                 if last_date == today_date:
                     volume_avg_30 = cursor_benchmark[0]['volume_30_avg']
                     volume_list.append({'coin': coin, 'volume_30_avg': volume_avg_30})
+                elif datetime.strptime(last_date, "%Y-%m-%d") > dt_7days_ago:
+                    dt_7.append(coin)
+                elif datetime.strptime(last_date, "%Y-%m-%d") > dt_14days_ago:
+                    dt_14.append(coin)
+                elif datetime.strptime(last_date, "%Y-%m-%d") > dt_28days_ago:
+                    dt_28.append(coin)
                 else:
-                    print(f'ERROR: computeVolumeStandings: {coin}\'s last date is {last_date}. It is not in standings')
+                    dt_all.append(coin)
+
+        n_dt_7 = len(dt_7)
+        n_dt_14 = len(dt_14)
+        n_dt_28 = len(dt_28)
+        n_dt_all = len(dt_all)
+
+        print(f'Volume Standings {n_dt_7} coins have benchmark are < 7 days')
+        print(f'Volume Standings {n_dt_14} coins have benchmark are 7-14 days old')
+        print(f'Volume Standings {n_dt_28} coins have benchmark are 14-28 days old')
+        print(f'Volume Standings {n_dt_all} coins have benchmark are > 28 days old')
         
         if len(volume_list) != 0:
             volume_standings = Benchmark.sort_and_rank_by_volume(volume_list)
