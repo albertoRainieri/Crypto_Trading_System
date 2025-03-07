@@ -354,6 +354,8 @@ def on_message(ws, message):
             sleep(60 - datetime.now().second + 1)
             now_ts = datetime.now().strftime("%Y-%m-%d:%H:%M")
             doc_db, prices = initializeVariables(coin_list)
+    else:
+        logger.info(data)
 
     
     
@@ -439,6 +441,18 @@ def saveTrades_toDB(prices, doc_db, database):
 
     with open(path, "w") as outfile_volume:
         outfile_volume.write(json.dumps(last_prices))
+
+def on_ping(ws, message):
+    # global pings
+    # global last_multiple_100
+
+    # pings += 1
+    ws.send(message, websocket.ABNF.OPCODE_PONG)
+    # if pings // 100 != last_multiple_100:
+    #     last_multiple_100 = pings // 100
+    #     logger.info(f'{pings} pings')
+
+    #print(f"Sent pong: {message}")
     
 
 if __name__ == "__main__":
@@ -449,6 +463,8 @@ if __name__ == "__main__":
     db_benchmark = client.get_db(DATABASE_BENCHMARK)
     logger = LoggingController.start_logging()
     position_threshold = int(os.getenv('COINS_TRADED'))
+    pings = 0
+    last_multiple_100 = 0
     doc_db = None
     prices = None
     now_ts = None
@@ -465,7 +481,8 @@ if __name__ == "__main__":
                               on_open = on_open,
                               on_message = on_message,
                               on_error = on_error,
-                              on_close = on_close
+                              on_close = on_close,
+                              on_ping = on_ping
                               )
     threading.Thread(target=restart_connection).start()
     ws.run_forever()

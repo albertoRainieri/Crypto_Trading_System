@@ -1136,30 +1136,31 @@ def get_full_timeseries(event_key, metadata_order_book):
 
             for start_timestamp in create_full_timeseries_summary[event_key][coin]:
                 if coin in order_book_json and len(order_book_json[coin][start_timestamp]) != 0:
-                    timeseries = timeseries_json[coin][start_timestamp]['data']
-                    order_book = order_book_json[coin][start_timestamp][0]['data']
-                    ranking = order_book_json[coin][start_timestamp][0]['ranking']
-                    full_timeseries[coin][start_timestamp] = {'data':{}, 'ranking': ranking}
-                    for obs_timeseries in timeseries:
-                        ts = extract_date_time(obs_timeseries['_id'])
-                        data = [obs_timeseries['price'], obs_timeseries[vol_field], obs_timeseries[buy_vol_field], None, None, None, None]
-                        full_timeseries[coin][start_timestamp]['data'][ts] = data
-                    for obs_timestamp in order_book:
-                        ts = extract_date_time(obs_timestamp)
-                        price = order_book[obs_timestamp][0]
-                        bid_volume = order_book[obs_timestamp][1]
-                        ask_volume = order_book[obs_timestamp][2]
-                        bid_orders = order_book[obs_timestamp][3]
-                        ask_orders = order_book[obs_timestamp][4]
+                    if coin in timeseries_json:
+                        timeseries = timeseries_json[coin][start_timestamp]['data']
+                        order_book = order_book_json[coin][start_timestamp][0]['data']
+                        ranking = order_book_json[coin][start_timestamp][0]['ranking']
+                        full_timeseries[coin][start_timestamp] = {'data':{}, 'ranking': ranking}
+                        for obs_timeseries in timeseries:
+                            ts = extract_date_time(obs_timeseries['_id'])
+                            data = [obs_timeseries['price'], obs_timeseries[vol_field], obs_timeseries[buy_vol_field], None, None, None, None]
+                            full_timeseries[coin][start_timestamp]['data'][ts] = data
+                        for obs_timestamp in order_book:
+                            ts = extract_date_time(obs_timestamp)
+                            price = order_book[obs_timestamp][0]
+                            bid_volume = order_book[obs_timestamp][1]
+                            ask_volume = order_book[obs_timestamp][2]
+                            bid_orders = order_book[obs_timestamp][3]
+                            ask_orders = order_book[obs_timestamp][4]
 
-                        if ts not in full_timeseries[coin][start_timestamp]['data']:
-                            full_timeseries[coin][start_timestamp]['data'][ts] = [None, None, None, None, None, None, None]
+                            if ts not in full_timeseries[coin][start_timestamp]['data']:
+                                full_timeseries[coin][start_timestamp]['data'][ts] = [None, None, None, None, None, None, None]
 
-                        full_timeseries[coin][start_timestamp]['data'][ts][0] = price
-                        full_timeseries[coin][start_timestamp]['data'][ts][3] = bid_volume
-                        full_timeseries[coin][start_timestamp]['data'][ts][4] = ask_volume
-                        full_timeseries[coin][start_timestamp]['data'][ts][5] = bid_orders
-                        full_timeseries[coin][start_timestamp]['data'][ts][6] = ask_orders
+                            full_timeseries[coin][start_timestamp]['data'][ts][0] = price
+                            full_timeseries[coin][start_timestamp]['data'][ts][3] = bid_volume
+                            full_timeseries[coin][start_timestamp]['data'][ts][4] = ask_volume
+                            full_timeseries[coin][start_timestamp]['data'][ts][5] = bid_orders
+                            full_timeseries[coin][start_timestamp]['data'][ts][6] = ask_orders
         
     if not data_uploaded:
         print(f'Full Timeseries is up to date ')
@@ -1245,6 +1246,8 @@ def simulate_entry_position(price_list, list_datetime, start_datetime,
     dt = list_datetime[-1]
     dt_ask = dt - timedelta(minutes=last_i_ask_order_distribution) + timedelta(seconds=10)
     price = price_list[-1]
+    if start_datetime not in list_datetime:
+        return None
     position_start_datetime = list_datetime.index(start_datetime)
     price_list = price_list[position_start_datetime:]
     max_price = max(price_list)
@@ -1648,16 +1651,24 @@ def print_event_key(event_key_i, n_event_keys, event_key):
     print('#####################################################################')
             
 
-def get_timeseries(info, check_past=1440, check_future=1440, jump=0.03, limit=0.15, event_keys_filter = [],
-                   price_change_jump = 0.025, max_limit = 0.1, price_drop_limit = 0.05, distance_jump_to_current_price = 0.03,
-                        max_ask_order_distribution_level = 0.2, last_i_ask_order_distribution= 1, min_n_obs_jump_level=5,
-                        save_plot=False, analyze=True):
+def get_timeseries(info, check_past=1440, check_future=1440, info_strategy = {},
+                        save_plot=False, analyze=True, event_keys_filter=[]):
     '''
     check_past: minutes before event trigger
     check_future: minutes after the end of event (usually after 1 days from event trigger)
     jump: jump from price levels in terms of cumulative volume order (from 0 to 1)
     limit: get the window of price change (from 0 to 1) (e.g. 0.15 check only the orders whose level is within 15% price change from current price)
     '''
+    jump = info_strategy['strategy_jump']
+    limit = info_strategy['limit']
+    price_change_jump = info_strategy['price_change_jump']
+    max_limit = info_strategy['max_limit']
+    price_drop_limit = info_strategy['price_drop_limit']
+    distance_jump_to_current_price = info_strategy['distance_jump_to_current_price']
+    max_ask_order_distribution_level = info_strategy['max_ask_order_distribution_level']
+    last_i_ask_order_distribution = info_strategy['last_i_ask_order_distribution']
+    min_n_obs_jump_level = info_strategy['min_n_obs_jump_level']
+
 
     name_strategy = f'strategy_jump={jump}_limit={limit}_price_change_jump={price_change_jump}_max_limit={max_limit}_price_drop_limit={price_drop_limit}'
     name_strategy += f'_distance_jump_to_current_price={distance_jump_to_current_price}_max_ask_order_distribution_level={max_ask_order_distribution_level}_last_i_ask_order_distribution={last_i_ask_order_distribution}_min_n_obs_jump_level={min_n_obs_jump_level}'
@@ -1951,7 +1962,7 @@ def get_volume_standings_file(path_volume_standings, benchmark_json=None):
         with open(path_volume_standings, 'w') as f:
             json.dump(final_standings, f, indent=4)
     
-    return standings
+    return final_standings
 
 def load_volume_standings():
     now = datetime.now()
@@ -1968,6 +1979,26 @@ def load_volume_standings():
         volume_standings = get_volume_standings_file(path_volume_standings, benchmark_json)
     
     return volume_standings
+
+def get_volatility_binance():
+    benchmark_json, df_benchmark, volatility = get_benchmark_info()
+    volume_standings = load_volume_standings()
+    summary = {}
+    for coin in benchmark_json:
+        for date in benchmark_json[coin]['volume_series']:
+            dt = datetime.strptime(date, '%Y-%m-%d')
+            if dt > datetime(2025,1,15):
+                volume_coin = benchmark_json[coin]['volume_series'][date][0]
+                position = volume_standings[date][coin]
+                if volume_coin == 0 and position > 300:
+                    continue
+                if date not in summary:
+                    summary[date] = 0
+                summary[date] += volume_coin
+
+    list_dts = list(summary.keys())
+    list_volumes = [round_(summary[i], 3) for i in summary]
+    return list_dts, list_volumes
 
 def get_currency_coin():
     return ['GBUSDT', 'FDUSDUSDT', 'EURUSDT']
@@ -2756,6 +2787,14 @@ def plot_strategy_result(info_strategy, limit_n_transactions = None):
     plt.gcf().autofmt_xdate() # Automatically rotate the date labels
     plt.tight_layout()
     plt.title('Number of Cuncurrent Orders')
+    plt.show()
+
+    list_dts, list_volumes = get_volatility_binance()
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(list_dts, list_volumes)
+    plt.gcf().autofmt_xdate() # Automatically rotate the date labels
+    plt.tight_layout()
+    plt.title('Binance Volatility (Total Usd Traded)')
     plt.show()
 
 

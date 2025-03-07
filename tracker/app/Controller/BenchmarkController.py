@@ -303,11 +303,11 @@ class Benchmark:
                     db_benchmark[coin].update_one(filter, new_volume_series)
                     #print(f'{coin} has been updated')                    
 
-        Benchmark.computeVolumeStandings(db_benchmark, db_volume_standings)
+        Benchmark.computeVolumeStandings(db_benchmark, db_volume_standings, logger)
 
 
     
-    def computeVolumeStandings(db_benchmark, db_volume_standings):
+    def computeVolumeStandings(db_benchmark, db_volume_standings, logger):
         '''
         This function gets executed everyday at midnight and creates a standings for all the coins based on the Benchmark Database
         '''
@@ -354,10 +354,10 @@ class Benchmark:
         n_dt_28 = len(dt_28)
         n_dt_all = len(dt_all)
 
-        print(f'Volume Standings {n_dt_7} coins have benchmark are < 7 days')
-        print(f'Volume Standings {n_dt_14} coins have benchmark are 7-14 days old')
-        print(f'Volume Standings {n_dt_28} coins have benchmark are 14-28 days old')
-        print(f'Volume Standings {n_dt_all} coins have benchmark are > 28 days old')
+        logger.info(f'Volume Standings {n_dt_7} coins have benchmark are < 7 days')
+        logger.info(f'Volume Standings {n_dt_14} coins have benchmark are 7-14 days old')
+        logger.info(f'Volume Standings {n_dt_28} coins have benchmark are 14-28 days old')
+        logger.info(f'Volume Standings {n_dt_all} coins have benchmark are > 28 days old')
         
         if len(volume_list) != 0:
             volume_standings = Benchmark.sort_and_rank_by_volume(volume_list)

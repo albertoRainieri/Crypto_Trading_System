@@ -21,8 +21,8 @@ class AnalysisController:
     def getDataTracker(datetime_start, datetime_end):
 
         client = DatabaseConnection()
-        db_market = client.get_db(DATABASE_TRACKER)
-        coins_list = db_market.list_collection_names()
+        db_tracker = client.get_db(DATABASE_TRACKER)
+        coins_list = db_tracker.list_collection_names()
 
         dict_ = {}
 
@@ -31,15 +31,12 @@ class AnalysisController:
                         'vol_5m': 1, 'buy_vol_5m': 1,
                             'vol_15m': 1, 'buy_vol_15m': 1,
                             'vol_30m': 1, 'buy_vol_30m': 1,
-                                'vol_60m': 1, 'buy_vol_60m': 1,
-                                'vol_3h': 1, 'buy_vol_3h': 1,
-                                    'vol_6h': 1, 'buy_vol_6h': 1,
-                                    'vol_24h': 1, 'buy_vol_24h': 1}
+                                'vol_60m': 1, 'buy_vol_60m': 1}
                         
 
 
         for instrument_name in coins_list:
-            docs = list(db_market[instrument_name].find({"_id": {"$gte": datetime_start, "$lt": datetime_end}}, filter_query))
+            docs = list(db_tracker[instrument_name].find({"_id": {"$gte": datetime_start, "$lt": datetime_end}}, filter_query))
             dict_[instrument_name] = docs
         
         client.close()
@@ -303,6 +300,8 @@ class AnalysisController:
         Coin, timestamp, timeframe must be given for each event
         '''
 
+        if os.getenv('ANALYSIS') == '0':
+            return 'CHANGE THIS ENV VAR: ANALYSIS TO 1. wrong db selected'
         #print(request)
         #request = json.loads(request)
         #let's define a limit number of events for each coin. This is to avoid responses too heavy.
