@@ -72,7 +72,7 @@ def total_function_multiprocessing(event_keys, analysis_timeframe, n_processes, 
 
     # define "end_interval_analysis". this is variable says "do not analyze events that are older than this date".
     # Since "minutes_price_windows" looks for N minutes observations after a specific event, I might get smaller time windows than expected (the most recent ones). This check should avoid this problem.
-    end_interval_analysis = datetime.fromisoformat(data['BTCUSDT'][-1]['_id']) - timedelta(days=1) #last datetime from btcusdt - 3 days
+    end_interval_analysis = datetime.fromisoformat(data['SOLUSDT'][-1]['_id']) - timedelta(days=1) #last datetime from btcusdt - 3 days
     del data
     # This is going to be also the starting time for next analysis
     start_next_analysis = end_interval_analysis.isoformat()
