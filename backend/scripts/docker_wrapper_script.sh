@@ -11,7 +11,6 @@ then
     /bin/bash /backend/scripts/analysis_mode.sh &
 else
     for i in $(seq 1 "${SETS_WSS_BACKEND}"); do  # Double quotes are important!
-        echo "starting wss-python list${i}"
         /bin/bash /backend/scripts/wss_python_process.sh list${i} &
         sleep 2
     done

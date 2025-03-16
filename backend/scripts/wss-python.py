@@ -22,63 +22,52 @@ PRICE = "p"
 QUANTITY = "q"
 ORDER = "m"
 METHOD = 'aggTrades'
+TRADEID = 'a'
 LOST_CONNECTION = []
 MAX_CONNECTION_LOST = int(os.getenv('MAX_CONNECTION_LOST')) #2
 CHECK_PERIOD_MINUTES = int(os.getenv('CHECK_PERIOD_MINUTES')) #60
 SLEEP_LAST_LIST = int(os.getenv('SLEEP_LAST_LIST')) #60
 
 
-
 def on_error(ws, error):
-    global prices
-    global doc_db
+    global error_summary
+
     error = str(error)
+    logger.error(f'{LIST}: {error}')
+
+    if error in error_summary:
+        error_summary[error] += 1
+    else:
+        error_summary[error] = 1
+    
+    #logger.info(f"{LIST}: {error_summary}")
+    # test_date =  (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    # test_date2 = datetime.now().strftime("%Y-%m-%d")
+    error_summary = manage_update(error_summary)#, current_date=test_date, yesterday_date=test_date2)
 
     if 'Connection to remote host was lost' in error:
         ws.close()
-        ts = datetime.now().isoformat()
-        LOST_CONNECTION.append(ts)
-        discard_ts = []
-        conn_lost = 0
-        for ts in LOST_CONNECTION:
-            if datetime.fromisoformat(ts) > datetime.now() - timedelta(minutes=CHECK_PERIOD_MINUTES):
-                conn_lost += 1
-            else:
-                discard_ts.append(ts)
-        logger.error(f'{conn_lost}th LOST CONNECTION for {LIST}')
-
-        for ts in discard_ts:
-            LOST_CONNECTION.remove(ts)
-        if conn_lost >= MAX_CONNECTION_LOST:
-            msg = f'SLEEP {LIST} for {SLEEP_LAST_LIST} minutes'
-            logger.info(msg)
-            sleep(60*SLEEP_LAST_LIST)
-    
-
-    
-    # condition added because of bug error on 21/01/2025, the thread was stuck on "sell_volume" error...
-    #  something wrong happened in variable initialization and this condition helps restarting the script in case of this error.
     if 'sell_volume' in error:
-        logger.info(f'{LIST}: sell_volume error')
         ws.close()
-        
-        
+    else:
+        logger.error(f'Error not caught: #{error}#')
 
 
 def on_close(*args):
-    
     if datetime.now().hour == 0 and datetime.now().minute == 0:
         sleep(LIST_N)
 
     threading.Thread(target=restart_connection).start()
     ws.run_forever()
 
-def restart_connection():
+def restart_logic():
     '''
     compute total seconds until next wss restart.
     This function restarts the wss connection every 24 hours
     '''
-    logger.info(f'{LIST}: ws_close')
+    global error_summary
+
+
     now = datetime.now()
     current_hour = now.hour
     current_minute = now.minute
@@ -98,13 +87,256 @@ def restart_connection():
     # define timestamp for next wss restart
     #wss_restart_timestamp = (now + timedelta(seconds=total_remaining_seconds)).isoformat()
     #logger.info(f'on_restart_connection: Next wss restart {wss_restart_timestamp} for {LIST}')
-    
-    
-    sleep(total_remaining_seconds)
-    #sleep(70)
-    ws.close()
 
-def select_coins(LIST, db_benchmark, position_threshold):
+    sleep(total_remaining_seconds)
+    logger.info(f'{LIST}: restart connection')
+
+def on_message(ws, message):
+    global prices
+    global doc_db
+    global coin_list
+    global now_ts
+    global trade_ids
+    
+    data = json.loads(message)
+
+    if 'data' in data:
+        data = data['data']
+        trade_id = data['a']
+        instrument_name = data['s']
+
+        # LOCAL TEST
+        # if (datetime.now().minute in [i for i in range(60)]) and datetime.now().second in [30]:
+        #     raise ValueError("Connection to remote host was lost")
+
+        if trade_id not in trade_ids[instrument_name]:
+            trade_ids[instrument_name].append(trade_id)
+
+            if now_ts is not None:
+                # if same minute then keep on getting statistics
+                if now_ts == datetime.now().strftime("%Y-%m-%d:%H:%M"):
+                    getStatisticsOnTrades(data, instrument_name, doc_db, prices)
+                # otherwise let's save it to db
+                else:
+                    #logger.info(f'{n_coins}/{tot_coins} coins have been traded in the last minute. {LIST}')
+                    now_ts = datetime.now().strftime("%Y-%m-%d:%H:%M")
+                    # logger.info('save')
+                    saveTrades_toDB(prices, doc_db, database)
+                    #logger.info(trade_ids)
+                    doc_db, prices, trade_ids = initializeVariables(coin_list)
+            else:
+                sleep(60 - datetime.now().second + 1)
+                now_ts = datetime.now().strftime("%Y-%m-%d:%H:%M")
+                doc_db, prices, trade_ids = initializeVariables(coin_list)
+    # else:
+    #     logger.info(data)
+
+def on_open(ws):
+
+    global prices
+    global doc_db
+    global coin_list
+
+    # msg = 'WSS CONNECTION STARTED'
+    # logger.info(msg)
+    # db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+
+    # now = datetime.now().isoformat()
+    # msg = f'{LIST}: on_open'
+    # logger.info(msg)
+
+    coin_list = select_coins(LIST, db_benchmark, position_threshold)
+    parameters = []
+    for coin in coin_list:
+        parameters.append(coin.lower() + "@aggTrade")
+
+    #print("### Opened ###")
+    subscribe_message = {
+        "method": "SUBSCRIBE",
+        "params": parameters,
+        "id": 1
+    }
+    ws.send(json.dumps(subscribe_message))
+
+def restart_connection():
+    '''
+    this function is implemented for avoiding multiple restarts
+    '''
+    global connection_restart_running
+    with connection_restart_lock:
+        if connection_restart_running:
+            logger.info(f"{LIST}: Connection restart already in progress.")
+            return
+        connection_restart_running = True
+
+    try:
+        restart_logic()
+    finally:
+        with connection_restart_lock:
+            connection_restart_running = False
+            ws.close()
+
+
+
+
+def sort_object_by_position(obj):
+  """
+  Sorts the child objects of a dictionary based on their 'position' key.
+
+  Args:
+    obj: A dictionary where child objects have a 'position' key.
+
+  Returns:
+    A list of tuples, where each tuple contains the key and its corresponding 
+    child object, sorted by the 'position' key. 
+    Child objects with 'position' equal to None are placed last.
+  """
+
+  def sort_key(item):
+    position = item[1].get('position')
+    return float('inf') if position is None else position
+
+  return sorted(obj.items(), key=sort_key)         
+
+
+def initializeVariables(coin_list):
+    #logger.info(f'{LIST} initializeVariables')
+    
+    doc_db = {}
+    prices = {}
+    trade_ids = {}
+
+    for instrument_name in coin_list:
+        doc_db[instrument_name] = {"_id": None, "price": None, "n_trades": 0, "buy_n": 0, "volume": 0 , "buy_volume": 0, "sell_volume": 0}
+        prices[instrument_name] = None
+        trade_ids[instrument_name] = []
+    
+
+    return doc_db, prices, trade_ids
+
+
+def getStatisticsOnTrades(trade, instrument_name, doc_db, prices):
+
+    if instrument_name in doc_db:
+        doc_db[instrument_name]['n_trades'] += 1
+
+        if trade[ORDER]:
+            order = 'SELL'
+        else:
+            order = 'BUY'
+
+        quantity  = trade[QUANTITY]
+        price =  trade[PRICE]
+
+        if price != 0 and quantity != 0:
+            prices[instrument_name] = float(price)
+
+            #doc_db[instrument_name]["quantity"] += float(quantity)
+            
+            if order == "BUY":
+                doc_db[instrument_name]["buy_n"] += 1
+                doc_db[instrument_name]["buy_volume"] += float(quantity) * float(price)
+            else:
+                #doc_db[instrument_name]["sell_n"] += 1
+                doc_db[instrument_name]["sell_volume"] += float(quantity) * float(price)
+        else:
+            logger.info("Duplicate Aggregate Trade")
+
+        
+#@timer_func
+def saveTrades_toDB(prices, doc_db, database):
+
+    
+    path = legend_list[LIST]['path']
+        
+    if os.path.exists(path):
+        f = open (path, "r")
+        last_prices = json.loads(f.read())
+    else:
+        last_prices = {}
+        for instrument_name in prices:
+            last_prices[instrument_name] = None
+
+    for instrument_name in prices:
+        if doc_db[instrument_name]['n_trades'] != 0:
+            last_prices[instrument_name] = prices[instrument_name]
+            doc_db[instrument_name]["price"]=prices[instrument_name]
+            #doc_db[instrument_name]["quantity"] = round_(doc_db[instrument_name]["quantity"],2)
+            doc_db[instrument_name]["volume"] =  int(doc_db[instrument_name]["buy_volume"] + doc_db[instrument_name]["sell_volume"])
+            #doc_db[instrument_name]["sell_volume"] = round_(doc_db[instrument_name]["sell_volume"],2)
+            del doc_db[instrument_name]["sell_volume"]
+            doc_db[instrument_name]["buy_volume"] = int(doc_db[instrument_name]["buy_volume"])
+            doc_db[instrument_name]['_id']= datetime.now().isoformat()
+            database[instrument_name].insert_one(doc_db[instrument_name])
+        else:
+            if instrument_name in last_prices:
+                doc_db[instrument_name]["price"]=last_prices[instrument_name]
+            else:
+                continue
+
+            if doc_db[instrument_name]["price"] == None:
+                continue
+
+            #doc_db[instrument_name]["quantity"] = 0
+            doc_db[instrument_name]["volume"] = 0
+            #doc_db[instrument_name]["sell_volume"] = 0
+            del doc_db[instrument_name]["sell_volume"]
+            doc_db[instrument_name]["buy_volume"] = 0
+            doc_db[instrument_name]['_id']= datetime.now().isoformat()
+            database[instrument_name].insert_one(doc_db[instrument_name])
+
+    with open(path, "w") as outfile_volume:
+        outfile_volume.write(json.dumps(last_prices))
+
+def initialize_new_doc_db_logging(current_date=datetime.now().strftime("%Y-%m-%d")):
+
+    last_doc = list(logging_collection.find({"_id": current_date}))
+    if len(last_doc)==0:
+        doc = {'_id': current_date}
+        logging_collection.insert(doc)
+        error_summary = {}
+    elif LIST in last_doc[0]:
+        error_summary =  last_doc[0][LIST]
+    else:
+        error_summary = {}
+    
+    return error_summary
+
+def update_db_logging(error_summary, date):
+
+    filter_query = {"_id": date}
+    #last_doc = last_doc[0]
+    #last_doc[LIST] = error_summary
+    update_doc = {"$set": {LIST: error_summary}}
+    #logger.info(f'update_doc {update_doc}')
+    result = logging_collection.update_one(filter_query, update_doc)
+    if result.modified_count != 1:
+        logger.info(f"Update DB Logging failed.")
+
+    
+def manage_update(error_summary, current_date = datetime.now().strftime("%Y-%m-%d"), yesterday_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")):
+
+    last_doc = list(logging_collection.find({"_id": current_date}))
+    # in this scenario, it is midnight (restart is ), update logging collections and initialize a new error summary
+    if len(last_doc)==0:
+        last_doc = list(logging_collection.find({"_id": yesterday_date}))
+        if len(last_doc)!=0:
+            #logger.info('update')
+            update_db_logging(error_summary, yesterday_date)
+        else:
+            logger.info('Disconnection at the first run ever')
+            pass # disconnection at the first run ever
+        error_summary = initialize_new_doc_db_logging()
+    # this is the case where an error has occurred (likely connection error), just update logging collection
+    else:
+        update_db_logging(error_summary, current_date)
+    return error_summary
+        
+
+def on_ping(ws, message):
+    ws.send(message, websocket.ABNF.OPCODE_PONG)
+
+def select_coins(LIST, db_benchmark, position_threshold, logging=True):
     f = open ('/backend/json/most_traded_coins.json', "r")
     data = json.loads(f.read())
     #coin_list = data["most_traded_coins"][:NUMBER_COINS_TO_TRADE_WSS]
@@ -223,7 +455,8 @@ def select_coins(LIST, db_benchmark, position_threshold):
                     coin_list[list_name].append(coin)
     
     n_coins_binance = len(coin_list[LIST]) - n_coins_benchmark
-    logger.info(f'{LIST} - coins from benchmark + coins from binance: {n_coins_benchmark} + {n_coins_binance}' )
+    if logging:
+        logger.info(f'on_open: {LIST}: {n_coins_benchmark} + {n_coins_binance}' )
 
     # Convert lists to sets
     all_lists = []
@@ -242,232 +475,56 @@ def select_coins(LIST, db_benchmark, position_threshold):
     
     for pair, common in common_pairs.items():
         if len(common) != 0:
-            logger.info(f"Common elements between list{pair[0] + 1} and list{pair[1] + 1}: {common}")
+            if logging:
+                logger.info(f"Common elements between list{pair[0] + 1} and list{pair[1] + 1}: {common}")
     
     coin_list = coin_list[LIST]
     if datetime.now().hour == 0 and datetime.now().minute == 0:
-        logger.info(f'{LIST}: {coin_list}')
+        if logging:
+            logger.info(f'{LIST}: {coin_list}')
         if LIST == f'list{str(SETS_WSS_BACKEND)}':
             n_coins_back = position_threshold - n_summary
             n_discarded_coins = len(coins_no_longer_traded)
             n_coins_traded = len(most_traded_coins_first_filter)
             n_coins_brought_back = len(coins_brought_back)
-            logger.info('')
-            logger.info('##### BACKEND INFO #####')
-            logger.info(f'Number of coins traded in the last day FROM db_Bencharmk: {n_summary}')
-            logger.info(f'Number of coins that have not been traded in the last day FROM db_Benchmark: {n_discarded_coins}')
-            logger.info(f'Number of coins that are going to be brought back: {n_coins_back}')
-            logger.info(f'Number of coins that are  brought back: {n_coins_brought_back}')
-            logger.info(f'Coins List Brought Back: {coins_brought_back}')
-            logger.info(f'Total Number of Coins traded: {n_coins_traded}')
-            logger.info('##### BACKEND INFO #####')
-            logger.info('')
+            if logging:
+                logger.info('')
+                logger.info('##### BACKEND INFO #####')
+                logger.info(f'Number of coins traded in the last day FROM db_Bencharmk: {n_summary}')
+                logger.info(f'Number of coins that have not been traded in the last day FROM db_Benchmark: {n_discarded_coins}')
+                logger.info(f'Number of coins that are going to be brought back: {n_coins_back}')
+                logger.info(f'Number of coins that are  brought back: {n_coins_brought_back}')
+                logger.info(f'Coins List Brought Back: {coins_brought_back}')
+                logger.info(f'Total Number of Coins traded: {n_coins_traded}')
+                logger.info('##### BACKEND INFO #####')
+                logger.info('')
+    
+
     return coin_list
-
-
-
-def sort_object_by_position(obj):
-  """
-  Sorts the child objects of a dictionary based on their 'position' key.
-
-  Args:
-    obj: A dictionary where child objects have a 'position' key.
-
-  Returns:
-    A list of tuples, where each tuple contains the key and its corresponding 
-    child object, sorted by the 'position' key. 
-    Child objects with 'position' equal to None are placed last.
-  """
-
-  def sort_key(item):
-    position = item[1].get('position')
-    return float('inf') if position is None else position
-
-  return sorted(obj.items(), key=sort_key)         
-
-
-
-def on_open(ws):
-
-    global prices
-    global doc_db
-    global coin_list
-
-    # msg = 'WSS CONNECTION STARTED'
-    # logger.info(msg)
-    # db_logger[DATABASE_API_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
-
-    # now = datetime.now().isoformat()
-    # msg = f'{LIST}: on_open: Wss Started: {now}'
-    # logger.info(msg)
-
-    coin_list = select_coins(LIST, db_benchmark, position_threshold)
-    #doc_db, prices = initializeVariables(coin_list)
-    
-
-    parameters = []
-    for coin in coin_list:
-        parameters.append(coin.lower() + "@aggTrade")
-
-    print("### Opened ###")
-    subscribe_message = {
-        "method": "SUBSCRIBE",
-        "params": parameters,
-        "id": 1
-    }
-    ws.send(json.dumps(subscribe_message))
-
-def on_message(ws, message):
-    global prices
-    global doc_db
-    global coin_list
-    global now_ts
-    
-    data = json.loads(message)
-
-    # LOCAL TEST
-    # if LIST == 'list1' and datetime.now().minute == 48 and datetime.now().second == 57:
-    #     raise ValueError("Connection to remote host was lost")
-    # if LIST == 'list1' and datetime.now().minute == 48 and datetime.now().second == 59:
-    #     logger.info(doc_db)
-
-    #get data and symbol
-    # if 'ping' in data:
-    #     logger.info(f'ping: {data}')
-    # if 'data' not in data or 'stream' not in data:
-    #     logger.info(f'data: {data}')
-    if 'data' in data:
-        data = data['data']
-        instrument_name = data['s']
-
-        if now_ts is not None:
-            # if same minute then keep on getting statistics
-            if now_ts == datetime.now().strftime("%Y-%m-%d:%H:%M"):
-                getStatisticsOnTrades(data, instrument_name, doc_db, prices)
-            # otherwise let's save it to db
-            else:
-                #logger.info(f'{n_coins}/{tot_coins} coins have been traded in the last minute. {LIST}')
-                now_ts = datetime.now().strftime("%Y-%m-%d:%H:%M")
-                saveTrades_toDB(prices, doc_db, database)
-                doc_db, prices = initializeVariables(coin_list)
-        else:
-            sleep(60 - datetime.now().second + 1)
-            now_ts = datetime.now().strftime("%Y-%m-%d:%H:%M")
-            doc_db, prices = initializeVariables(coin_list)
-    else:
-        logger.info(data)
-
-    
-    
-
-def initializeVariables(coin_list):
-    
-    doc_db = {}
-    prices = {}
-    for instrument_name in coin_list:
-        doc_db[instrument_name] = {"_id": None, "price": None, "n_trades": 0, "buy_n": 0, "volume": 0 , "buy_volume": 0, "sell_volume": 0}
-        prices[instrument_name] = None
-
-    return doc_db, prices
-
-
-def getStatisticsOnTrades(trade, instrument_name, doc_db, prices):
-
-    doc_db[instrument_name]['n_trades'] += 1
-
-    if trade[ORDER]:
-        order = 'SELL'
-    else:
-        order = 'BUY'
-
-    quantity  = trade[QUANTITY]
-    price =  trade[PRICE]
-
-    if price != 0 and quantity != 0:
-        prices[instrument_name] = float(price)
-
-        #doc_db[instrument_name]["quantity"] += float(quantity)
-        
-        if order == "BUY":
-            doc_db[instrument_name]["buy_n"] += 1
-            doc_db[instrument_name]["buy_volume"] += float(quantity) * float(price)
-        else:
-            #doc_db[instrument_name]["sell_n"] += 1
-            doc_db[instrument_name]["sell_volume"] += float(quantity) * float(price)
-    else:
-        logger.info("Duplicate Aggregate Trade")
-
-        
-#@timer_func
-def saveTrades_toDB(prices, doc_db, database):
-    path = legend_list[LIST]['path']
-        
-    if os.path.exists(path):
-        f = open (path, "r")
-        last_prices = json.loads(f.read())
-    else:
-        last_prices = {}
-        for instrument_name in prices:
-            last_prices[instrument_name] = None
-
-    for instrument_name in prices:
-        if doc_db[instrument_name]['n_trades'] != 0:
-            last_prices[instrument_name] = prices[instrument_name]
-            doc_db[instrument_name]["price"]=prices[instrument_name]
-            #doc_db[instrument_name]["quantity"] = round_(doc_db[instrument_name]["quantity"],2)
-            doc_db[instrument_name]["volume"] =  int(doc_db[instrument_name]["buy_volume"] + doc_db[instrument_name]["sell_volume"])
-            #doc_db[instrument_name]["sell_volume"] = round_(doc_db[instrument_name]["sell_volume"],2)
-            del doc_db[instrument_name]["sell_volume"]
-            doc_db[instrument_name]["buy_volume"] = int(doc_db[instrument_name]["buy_volume"])
-            doc_db[instrument_name]['_id']= datetime.now().isoformat()
-            database[instrument_name].insert_one(doc_db[instrument_name])
-        else:
-            if instrument_name in last_prices:
-                doc_db[instrument_name]["price"]=last_prices[instrument_name]
-            else:
-                continue
-
-            if doc_db[instrument_name]["price"] == None:
-                continue
-
-            #doc_db[instrument_name]["quantity"] = 0
-            doc_db[instrument_name]["volume"] = 0
-            #doc_db[instrument_name]["sell_volume"] = 0
-            del doc_db[instrument_name]["sell_volume"]
-            doc_db[instrument_name]["buy_volume"] = 0
-            doc_db[instrument_name]['_id']= datetime.now().isoformat()
-            database[instrument_name].insert_one(doc_db[instrument_name])
-    
-
-    with open(path, "w") as outfile_volume:
-        outfile_volume.write(json.dumps(last_prices))
-
-def on_ping(ws, message):
-    # global pings
-    # global last_multiple_100
-
-    # pings += 1
-    ws.send(message, websocket.ABNF.OPCODE_PONG)
-    # if pings // 100 != last_multiple_100:
-    #     last_multiple_100 = pings // 100
-    #     logger.info(f'{pings} pings')
-
-    #print(f"Sent pong: {message}")
     
 
 if __name__ == "__main__":
+
     client = DatabaseConnection()
     SETS_WSS_BACKEND = int(os.getenv('SETS_WSS_BACKEND'))
     db_logger = client.get_db(DATABASE_LOGGING)
     database = client.get_db(DATABASE_MARKET)
     db_benchmark = client.get_db(DATABASE_BENCHMARK)
+    db_logging = client.get_db(DATABASE_LOGGING)
+    logging_collection = db_logging['Binance']
+    error_summary = initialize_new_doc_db_logging()
+
     logger = LoggingController.start_logging()
+    logger.info('#########################')
+    logger.info(f' {LIST}: script started')
+    logger.info('#########################')
     position_threshold = int(os.getenv('COINS_TRADED'))
-    pings = 0
-    last_multiple_100 = 0
     doc_db = None
     prices = None
     now_ts = None
+    connection_restart_running = False
+    connection_restart_lock = threading.Lock() #Add a lock to avoid race conditions
+
 
     legend_list = {}
     x = [i for i in range(1,SETS_WSS_BACKEND+1)]
@@ -476,6 +533,9 @@ if __name__ == "__main__":
         legend_list[list_name] = {'position': i % SETS_WSS_BACKEND,
                                   'best_coin': x[-i],
                                   'path': f'/backend/info/prices{i}.json'}
+        
+    coin_list = select_coins(LIST, db_benchmark, position_threshold, logging=False)
+    doc_db, prices, trade_ids = initializeVariables(coin_list)
     
     ws = websocket.WebSocketApp("wss://stream.binance.com:9443/stream?streams=",
                               on_open = on_open,
