@@ -31,26 +31,31 @@ SLEEP_LAST_LIST = int(os.getenv('SLEEP_LAST_LIST')) #60
 
 def on_error(ws, error):
     global error_summary
+    global coin_list
 
     error = str(error)
-    logger.error(f'{LIST}: {error}')
+    if error not in coin_list:
+        logger.error(f'{LIST}: {error}')
 
-    if error in error_summary:
-        error_summary[error] += 1
-    else:
-        error_summary[error] = 1
-    
-    #logger.info(f"{LIST}: {error_summary}")
-    # test_date =  (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-    # test_date2 = datetime.now().strftime("%Y-%m-%d")
-    error_summary = manage_update(error_summary)#, current_date=test_date, yesterday_date=test_date2)
 
-    if 'Connection to remote host was lost' in error:
-        ws.close()
-    if 'sell_volume' in error:
-        ws.close()
+        if error in error_summary:
+            error_summary[error] += 1
+        else:
+            error_summary[error] = 1
+        
+        #logger.info(f"{LIST}: {error_summary}")
+        # test_date =  (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        # test_date2 = datetime.now().strftime("%Y-%m-%d")
+        error_summary = manage_update(error_summary)#, current_date=test_date, yesterday_date=test_date2)
+
+        if 'Connection to remote host was lost' in error:
+            ws.close()
+        if 'sell_volume' in error:
+            ws.close()
+        else:
+            logger.error(f'Error not caught: #{error}#')
     else:
-        logger.error(f'Error not caught: #{error}#')
+        sleep(60- (datetime.now().second + (datetime.now().microsecond // 10**6)))
 
 
 def on_close(*args):
