@@ -24,6 +24,13 @@ def timer_func(func):
         return result
     return wrap_func
 
+def get_coins_list():
+    dir_info = '/tracker/json'
+    coins_list_path = f'{dir_info}/coins_list.json'
+    f = open (coins_list_path, "r")
+    coins_list = json.loads(f.read())
+    return coins_list
+
 def discard_coin_list():
     return ['GBUSDT', 'FDUSDUSDT', 'EURUSDT', 'BTCUSDT', 'ETHUSDT']
 
@@ -37,6 +44,7 @@ def get_best_coins(volume_standings):
 def get_volume_standings(db_volume_standings):
     today_date = datetime.now().strftime("%Y-%m-%d")
     volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find().sort([('_id', DESCENDING)]).limit(1).next()
+    
     if volume_standings['_id'] != today_date:
         logger.info(f"WARNING: LAST DOC for  DB_VOLUME_STANDINGS is {volume_standings['_id']}")
 

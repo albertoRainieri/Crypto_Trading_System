@@ -705,7 +705,11 @@ def updateAnalysisJson(shared_data_value, file_path, start_next_analysis, slice_
                 if coin not in analysis_json['data'][key]['info']:
                     analysis_json['data'][key]['info'][coin] = []
                 for event in new_data[key]['info'][coin]:
-                    analysis_json['data'][key]['info'][coin].append(event)
+                    if event not in analysis_json['data'][key]['info'][coin]:
+                        analysis_json['data'][key]['info'][coin].append(event)
+                        print(event)
+                        if coin == 'TROYUSDT':
+                            print(f'{coin}: {event}')
             
             del new_data[key]
 
@@ -1305,6 +1309,42 @@ def simulate_entry_position(price_list, list_datetime, start_datetime,
                     return info_buy
     return None
 
+def simulate_exit_position(price_list, bid_order_distribution_list, list_datetime, price_change_jump, last_i_bid_order_distribution, max_bid_order_distribution_level):
+
+    bid_price = price_list[-1]
+    dt = list_datetime[-1]
+    dt_bid = dt - timedelta(minutes=last_i_bid_order_distribution) + timedelta(seconds=10)
+    # get keys of bid_order_distribution [0.025, 0.05, 0.075, ...]
+    if len(bid_order_distribution_list) >= last_i_bid_order_distribution:
+        keys_bid_order_distribution = list(bid_order_distribution_list[-1]['bid'].keys())
+
+        # initialize new var for average bid order distribution
+        selected_bid_order_distribution_list = []
+        avg_bid_order_distribution = {}
+
+        for lvl in keys_bid_order_distribution:
+            avg_bid_order_distribution[lvl] = []
+
+        # determine how many of the last x elements of bid_order_distribution_list to select.
+        # based on the "dt_bid" variable
+        for bid_order_distribution in bid_order_distribution_list:
+            if datetime.fromisoformat(bid_order_distribution['dt']) > dt_bid:
+                selected_bid_order_distribution_list.append(bid_order_distribution)
+                for lvl in bid_order_distribution['bid']:
+                    avg_bid_order_distribution[lvl].append(bid_order_distribution['bid'][lvl])
+        
+        # compute the mean
+        for lvl in avg_bid_order_distribution:
+            avg_bid_order_distribution[lvl] = np.mean(avg_bid_order_distribution[lvl])
+
+        # TODO: check only first level, or next ones too ?
+        if avg_bid_order_distribution[str(price_change_jump)] < max_bid_order_distribution_level:
+            info_sell = (bid_price, dt, selected_bid_order_distribution_list)
+            print(f'n_bid_order: {len(selected_bid_order_distribution_list)}')
+            #print(price, dt, bid_order_distribution[str(price_change_jump)], bid_order_distribution[str(price_change_jump+price_change_jump)])
+            return info_sell
+    return None
+
 
 def analyze_timeseries(event_key, check_past, check_future, jump, limit, price_change_jump,
                                 max_limit, price_drop_limit, distance_jump_to_current_price,
@@ -1398,6 +1438,7 @@ def analyze_timeseries(event_key, check_past, check_future, jump, limit, price_c
             if save_plot:
                 fig, ax = plt.subplots(5, 1, sharex=True, figsize=(20, 10))
             info_buy = None
+            info_sell = None
             SELL = False
             END_DATETIME_PASS = False
 
@@ -1437,6 +1478,7 @@ def analyze_timeseries(event_key, check_past, check_future, jump, limit, price_c
                     ask_price_level, ask_order_distribution, ask_cumulative_level = get_price_levels(price, ask_orders, jump, limit, price_change_jump)
                     ask_order_distribution_list.append({'ask': ask_order_distribution, 'bid_level': bid_cumulative_level, 'ask_level': ask_cumulative_level,
                                                          'total_bid_volume': total_bid_volume, 'total_ask_volume': total_ask_volume, 'dt': ts})
+                    bid_order_distribution_list.append({'bid': bid_order_distribution, 'dt': ts})
                     #print(bid_order_distribution)
 
                     # bid/ask_actual_jump can be a number or False, it checks if there a was a jump, otherwise just the get the cumulative volume at the limit price change
@@ -1503,14 +1545,25 @@ def analyze_timeseries(event_key, check_past, check_future, jump, limit, price_c
                                                         bid_price_levels, ask_order_distribution_list, price_change_jump,
                                                         max_limit, price_drop_limit, distance_jump_to_current_price,
                                                           max_ask_order_distribution_level, last_i_ask_order_distribution, min_n_obs_jump_level)
+                #TODO: SIMULATE EXIT POSITION:
+                # if info_buy != None and not SELL and info_sell == None:
+                #     info_sell = simulate_exit_position(price_list, bid_order_distribution_list, list_datetime, price_change_jump, last_i_ask_order_distribution, max_ask_order_distribution_level)
+
+                ###################################
+
 
                 if info_buy != None and dt >= end_datetime and not SELL:
                     SELL = True
-                    sell_price = price
+                    if info_sell == None:
+                        sell_price = price
+                        datetime_sell = dt
+                    else:
+                        sell_price = info_sell[0]
+                        datetime_sell = info_sell[1]
+
                     buy_price = info_buy[0]
                     dt_buy = info_buy[1]
                     ask_order_distribution_buy = info_buy[2]
-                    datetime_sell = dt
                     dt_buy_isoformat = dt_buy.isoformat()
                     gain = round_((( sell_price - buy_price ) / buy_price ) * 100,2)
                     print(f'Gain: {gain} - buy-price = {buy_price} - sell-price = {sell_price} -dt_buy: {dt_buy_isoformat}')
@@ -1980,14 +2033,16 @@ def load_volume_standings():
     
     return volume_standings
 
-def get_volatility_binance():
+def get_volatility_binance(start_dt = datetime(2025,1,15)):
     benchmark_json, df_benchmark, volatility = get_benchmark_info()
     volume_standings = load_volume_standings()
     summary = {}
     for coin in benchmark_json:
+        if coin in ['BTCUSDT', 'ETHUSDT']:
+            continue
         for date in benchmark_json[coin]['volume_series']:
             dt = datetime.strptime(date, '%Y-%m-%d')
-            if dt > datetime(2025,1,15):
+            if dt > start_dt:
                 volume_coin = benchmark_json[coin]['volume_series'][date][0]
                 position = volume_standings[date][coin]
                 if volume_coin == 0 and position > 300:
@@ -2248,19 +2303,9 @@ def get_analysis():
   return output, complete_info
 
 
-def get_plots(min_gain, max_gain, buy_events=True):
+def get_plots(info_strategy, min_gain, max_gain, buy_events=True):
     from IPython.display import Image, display
-    info_strategy = {
-        'strategy_jump': 0.04,
-        'limit': 0.25,
-        'price_change_jump': 0.025,
-        'max_limit': 0.2,
-        'price_drop_limit': 0.05,
-        'distance_jump_to_current_price': 0.01,
-        'max_ask_order_distribution_level': 0.1,
-        'last_i_ask_order_distribution': 1,
-        'min_n_obs_jump_level': 5
-    }
+
     strategy = ''
     print('')
     print('##################### STRATEGY INFO #####################')
@@ -2504,14 +2549,14 @@ def clean_obs(dict_, delete_obs):
 def plot_strategy_result(info_strategy, limit_n_transactions = None):
     
     strategy = ''
-    print('')
-    print('##################### STRATEGY INFO #####################')
+    # print('')
+    # print('##################### STRATEGY INFO #####################')
     for parameter_key, value  in info_strategy.items():
-        print(f'{parameter_key}: {value} ')
+        # print(f'{parameter_key}: {value} ')
         strategy += f'{parameter_key}={value}_'
     strategy=strategy[:-1]
-    print('##################### STRATEGY INFO #####################')
-    print('')
+    # print('##################### STRATEGY INFO #####################')
+    # print('')
 
     path = f'/Users/albertorainieri/Personal/analysis/Analysis2024/strategy/{strategy}/result.json'
 
@@ -2519,7 +2564,7 @@ def plot_strategy_result(info_strategy, limit_n_transactions = None):
         result = json.load(file)
 
     events = 0
-    initial_investment = 1000
+    initial_investment = 10000
     current_investment = initial_investment
     current_investment_2 = initial_investment
     total_current_investment = initial_investment
@@ -2691,7 +2736,7 @@ def plot_strategy_result(info_strategy, limit_n_transactions = None):
                 if dt_s < dt + timedelta(hours=3) and obs_s[7] == coin:
                     if id_s not in delete_obs:
                         assert event_key != event_key_s
-                        print(f'{coin}, dt: {dt} --- dt_s: {dt_s}')
+                        # print(f'{coin}, dt: {dt} --- dt_s: {dt_s}')
                         delete_obs.append(id_s)
 
     n_delete_obs = len(delete_obs)
@@ -2775,6 +2820,7 @@ def plot_strategy_result(info_strategy, limit_n_transactions = None):
     if len(delete_obs) != 0:
         dt_buy_sell_list_ascending_order = clean_obs(dt_buy_sell_list_ascending_order, delete_obs)
         dt_total_list_ascending_order = clean_obs(dt_total_list_ascending_order, delete_obs)
+        buy_events_list_ascending_order = clean_obs(buy_events_list_ascending_order, delete_obs)
     
 
     #print(buy_current_number_orders)
@@ -2790,8 +2836,10 @@ def plot_strategy_result(info_strategy, limit_n_transactions = None):
     plt.show()
 
     list_dts, list_volumes = get_volatility_binance()
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.plot(list_dts, list_volumes)
+    fig, axes = plt.subplots(figsize=(12, 6))
+    #ax.plot(list_dts, list_volumes)
+    axes.bar(list_dts, list_volumes, color='skyblue')
+    axes.set_xticks(list_dts[::4]) 
     plt.gcf().autofmt_xdate() # Automatically rotate the date labels
     plt.tight_layout()
     plt.title('Binance Volatility (Total Usd Traded)')
@@ -2866,7 +2914,7 @@ def plot_strategy_result(info_strategy, limit_n_transactions = None):
 
     #print(start_amount)
     fig, ax = plt.subplots(figsize=(12, 6))
-    crypto_performance, list_datetime = get_top_crypto()
+    crypto_performance, list_datetime = get_top_crypto(initial_investment=initial_investment)
     for topx in crypto_performance:
         if topx == 'top_250' or topx == 'btc' or topx == 'top_10':
             ax.plot(list_datetime, crypto_performance[topx], label=topx)
@@ -2920,9 +2968,9 @@ def plot_strategy_result(info_strategy, limit_n_transactions = None):
     # for key in list(df_event_keys_overview.keys()):
     #     print(key)
     #     print(len(df_event_keys_overview[key]))
-    for key, values in df_event_keys_overview.items():
-        x = len(values)
-        print(f'{key}: {x}')
+    # for key, values in df_event_keys_overview.items():
+    #     x = len(values)
+    #     print(f'{key}: {x}')
     df_event_keys_overview = pd.DataFrame(df_event_keys_overview)
 
 

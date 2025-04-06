@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from operator import itemgetter
 from database.DatabaseConnection import DatabaseConnection
 from app.Controller.LoggingController import LoggingController
+from app.Controller.TradingController import TradingController
 from tracker.app.Helpers.Helpers import round_, timer_func
 import numpy as np
 from binance import AsyncClient
@@ -267,7 +268,145 @@ class BinanceController:
             info = loop.run_until_complete(BinanceController.exchange_info())
 
         BinanceController.sort_pairs_by_volume(client=client, res=info, logger=logger, db_logger=db_logger)
+
+
+    def extract_substring_excluding_usdc(input_string, usd):
+        """
+        Extracts the substring from a string, excluding "usdc".
+
+        Args:
+            input_string: The input string.
+
+        Returns:
+            The substring excluding "usdc", or None if "usdc" is not found.
+        """
+        if usd in input_string:
+            parts = input_string.split(usd) #splits the string using usdc as a delimiter
+            if len(parts) > 1: # if usdc is found, parts will have more than one element.
+                return "".join(parts[:1] + parts[1:]) #rejoins all parts excluding the delimiter.
+            else:
+                return parts[0] #usdc was at the end of the string
+        else:
+            return None  # "usdc" not found
         
+    def get_common_elements_set(list1, list2):
+        """
+        Returns a list of common elements using sets.
+
+        Args:
+            list1: The first list.
+            list2: The second list.
+
+        Returns:
+            A list of common elements.
+        """
+        set1 = set(list1)
+        set2 = set(list2)
+        common_elements = list(set1.intersection(set2))
+        only_list1 = set1.difference(set2)
+        only_list2 = set1.difference(set1)
+        return common_elements, only_list1, only_list2
+
+    async def binance_exchange_info():
+        client = await AsyncClient.create()
+
+        # fetch exchange info
+        try:
+            res = await client.get_exchange_info()
+            await client.close_connection()
+            return res
+        except:
+            sleep(5)
+            return False
+    
+    async def get_exchange_info(logger=None):
+        '''
+        This function call "ExchangeInfo" Binance API for all the available pairs
+        '''
+
+        ### GET EXCHANGE INFO, LOAD IF EXISTS, OR DOWNLOAD FROM BINANCE OTHERWISE, OR LOAD LAST ONE
+
+        # LOAD
+        if logger == None:
+            logger = LoggingController.start_logging()
+        exchange = False
+        dir_info = '/tracker/json'
+        dir_exchange = f'{dir_info}/exchange'
+        if not os.path.exists(dir_exchange):
+            os.mkdir(dir_exchange)
+        day = (datetime.now() + timedelta(minutes=1)).strftime("%d")
+        path_exchange = f'{dir_exchange}/exchange-{day}.json'
+        if os.path.exists(path_exchange):
+            with open(path_exchange, 'r') as file:
+                exchange = json.load(file)
+        else:
+             
+            # DOWNLOAD
+            exchange = await BinanceController.binance_exchange_info()
+
+            # GET LAST ONE AVAILABLE
+            if not isinstance(exchange, dict):
+                logger.info('WARNING: GET EXCHANGE INFO WAS NOT SUCCESFULL')
+                exchange_files = [f for f in dir_exchange.glob("exchange*") if f.is_file()]
+                latest_path_exchange = max(exchange_files, key=lambda f: f.stat().st_mtime)
+                print(F'LAST PATH EXCHANGE: {latest_path_exchange}')
+                with open(f'{dir_exchange}/{latest_path_exchange}', 'r') as file:
+                    exchange = json.load(file)
+            else:
+                print('The request to the API "ExchangeInfo" was succesfull')
+                with open(path_exchange, 'w') as f: # 'w' opens the file for writing.
+                    json.dump(exchange, f, indent=4)
+        
+        # GET USDT COINS AND USDC COINS
+        usdc_coins = []
+        usdc_coin_complete = []
+        usdt_coins = []
+        usdt_coin_complete = []
+        for symbol in exchange["symbols"]:
+            if "USDC" in symbol["symbol"] and 'USDT' not in symbol:
+                usdc_coins.append(BinanceController.extract_substring_excluding_usdc(symbol["symbol"], "USDC"))
+                usdc_coin_complete.append(symbol["symbol"])
+
+            elif symbol["symbol"][-4:] == 'USDT' and 'USDC' not in symbol:
+                usdt_coins.append(BinanceController.extract_substring_excluding_usdc(symbol["symbol"], "USDT"))
+                usdt_coin_complete.append(symbol["symbol"])
+        
+        common_usd, only_usdc, only_usdt = BinanceController.get_common_elements_set(usdc_coins, usdt_coins)
+
+        # GET USDC THAT ARE ALSO TRADED IN USDT (USDC IS A SUBSET OF USDT)
+        list_usdt_common_usdc = [coin + 'USDT' for coin in common_usd]
+        list_usdc_common_usdt = []
+        for coin in list_usdt_common_usdc:
+            coin_w_usdt = BinanceController.extract_substring_excluding_usdc(coin, "USDT")
+            if coin_w_usdt + 'USDC' in usdc_coin_complete:
+                list_usdc_common_usdt.append(coin_w_usdt + 'USDC')
+            elif 'USDC' + coin_w_usdt in usdc_coin_complete:
+                list_usdc_common_usdt.append('USDC' + coin_w_usdt)
+            
+        coins_list = {'usdt_coins': usdt_coin_complete, 'usdc_coins': usdc_coin_complete,
+                      'list_usdt_common_usdc': list_usdt_common_usdc, 'list_usdc_common_usdt':list_usdc_common_usdt}
+
+        # GET OFFICIALE PAIR TRADE IN USDT AND USDC, FOR EASY CONVERSION
+        convert_usdc_usdt = {}
+        for coin in list_usdt_common_usdc + list_usdc_common_usdt:
+            if 'USDC' in coin:
+                twin_coin = BinanceController.extract_substring_excluding_usdc(coin, "USDC") + 'USDT'
+            else:
+                coin_w_usdt = BinanceController.extract_substring_excluding_usdc(coin, "USDT")
+                if coin_w_usdt + 'USDC' in list_usdc_common_usdt:
+                    twin_coin = coin_w_usdt + 'USDC'
+                else:
+                    twin_coin = 'USDC' + coin_w_usdt
+            
+            convert_usdc_usdt[coin] = twin_coin
+
+        TradingController.get_minimal_notional_value(logger=logger)
+
+        with open(f'{dir_info}/coins_list.json', 'w') as f: # 'w' opens the file for writing.
+            json.dump(coins_list, f, indent=4) 
+        with open(f'{dir_info}/convert_usdc_usdt.json', 'w') as f: # 'w' opens the file for writing.
+            json.dump(convert_usdc_usdt, f, indent=4)  
+              
 
     def get_or_create_eventloop():
         try:

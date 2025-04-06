@@ -15,6 +15,7 @@ import base64
 from pymongo import DESCENDING
 from pathlib import Path
 import re
+from time import sleep
 
 
 
@@ -673,22 +674,24 @@ class TradingController:
         params['signature'] = signature
 
         if method == 'GET':
-            data = requests.request(method=method ,url="https://api.binance.com" + api_path,
+            response = requests.request(method=method ,url="https://api.binance.com" + api_path,
                 params = params,
                 headers = {
                     "X-MBX-APIKEY" : API_KEY,
                 }
             )
         else:
-            data = requests.request(method=method ,url="https://api.binance.com" + api_path,
+            print(params)
+            response = requests.request(method=method ,url="https://api.binance.com" + api_path,
                 data = params,
                 headers = {
                     "X-MBX-APIKEY" : API_KEY,
                 }
             )
 
-        status_code = data.status_code
-        return data, status_code
+        status_code = response.status_code
+        response = json.loads(response.text)
+        return response, status_code
 
 
 
@@ -703,7 +706,7 @@ class TradingController:
 
         if status_code == 200:
             # fetch asset whose balance is different from zero
-            data = data.json()
+
             data = data['balances']
             #print(data)
             current_wallet = {}
@@ -716,9 +719,99 @@ class TradingController:
         else:
             msg = f'Status Code: {status_code}: get_asset_composition did not work as expected'
             return msg, status_code
+    
+    def load_user_configuration():
+        """Loads a JSON file in a single line (excluding import)."""
+        f = open ('/tracker/user_configuration/userconfiguration.json', "r")
+        user_configuration = json.loads(f.read())
+        return user_configuration
+
+    def create_order(coin, side, type, usdt=None, quantity=None, user=os.getenv('SYS_ADMIN'), test=True, user_configuration=load_user_configuration()):
+        # # only for testing
+        # if coin == None:
+        #     coin = 'BTCUSDT',
+        #     side = 'BUY', #BUY, SELL
+        #     usdt = 10
+        #     type = 'MARKET'
+        if coin[-4:] == 'USDT':
+            coin = coin.replace('USDT', 'USDC')
+
+        api_key_path = user_configuration[user]['api_key_path']
+        private_key_path = user_configuration[user]['private_key_path']
+
+        params = {'symbol': coin,
+                  'side': side,
+                  'type': type}
+        if test:
+            api_path = "/api/v3/order/test"
+            params['computeCommissionRates'] = 'true'
+        else:
+            api_path = "/api/v3/order"
         
+        # Use "quoteOrderQty" for executing BUY orders with USDT
+        if quantity == None:
+            params['quoteOrderQty'] = str(usdt)
+        # Use "quantity" for executing SELL orders with number of crypto units (i.e. quantity)
+        else:
+            params['quantity'] = str(quantity)
+        
+
+        method = 'POST'
+        response, status_code = TradingController.makeRequest(api_path=api_path, params=params, method=method, api_key_path=api_key_path, private_key_path=private_key_path)
+
+        if status_code == 200:
+            info_buy = {}
+            # clientOrderId = response['clientOrderId']
+            # transactTime = datetime.fromisoformat(response['transactTime']/1000)
+            # origQty = response['origQty']
+            # executedQty = response['executedQty']
+            # origQuoteOrderQty = response['origQuoteOrderQty']
+
+        print(response)
+        print(status_code)
+        return response, status_code
+    
+    def get_balance_account(client=DatabaseConnection(), logger=LoggingController.start_logging(), user_configuration=load_user_configuration(), only_admin=True, user_x=None):
+        '''
+        if you want to get the balance account of sysadmin: only_admin=True
+        if you want to get the balance account of a user: only_admin=False & user_x=<username>
+        if you want to get the balance account of all users: only_admin=False & user_x=None
+        '''
+
+        balance_account = {}
+
+        for user in user_configuration:
+            sys_admin = os.getenv('SYS_ADMIN')
+            if only_admin and user != sys_admin:
+                continue
+            elif not only_admin and user_x != None and user_x not in user_configuration:
+                return ValueError("The user is not present in user_configuration")
+            elif not only_admin and user_x != None and user != user_x:
+                continue
+
+            TRADING_LIVE = user_configuration[user]['trading_live']
+            api_key_path = user_configuration[user]['api_key_path']
+            private_key_path = user_configuration[user]['private_key_path']
+
+            response, status_code = TradingController.get_asset_composition(api_key_path, private_key_path)
+            balance_account[user] = response
+        
+        return balance_account
+    
+    def get_usdc_available(client=DatabaseConnection(), logger=LoggingController.start_logging(), user_configuration=load_user_configuration(), only_admin=True, user_x=None):
+        balance_account = TradingController.get_balance_account(client=client, logger=logger, user_configuration=user_configuration, only_admin=only_admin, user_x=user_x)
+        print(balance_account)
+        if user_x != None:
+            if 'USDC' in balance_account[user_x]:
+                return balance_account[user_x]['USDC']
+            else:
+                return 0
+        else:
+            ValueError('Provide Username')
+    
+
     #@timer_func
-    def get_balance_account(client, logger, user_configuration):
+    def save_balance_account(client=DatabaseConnection(), logger=LoggingController.start_logging(), user_configuration=load_user_configuration()):
         # t1 = time()
         SYS_ADMIN = os.getenv('SYS_ADMIN')
 
@@ -838,59 +931,169 @@ class TradingController:
             else:
                 logger.info('ERROR: WAS NOT ABLE TO RETRIEVE INFO FROM /v3/account Binance API')
                 logger.info(response)            
-        
-
-
-
-
-    def create_order(api_key_path, private_key_path, coin=None, side=None, usdt=None, quantity=None):
-        # only for testing
-        if coin == None:
-            coin = 'BTCUSDT',
-            side = 'BUY',
-            quantity = 1
-
-
-        api_path = "/api/v3/order"
-        params = {'symbol': 'BTCUSDT',
-                  'side': 'BUY',
-                  'type': 'MARKET'}
-        
-        # Use "quoteOrderQty" for executing BUY orders with USDT
-        if quantity == None:
-            params['quoteOrderQty'] = str(usdt)
-        # Use "quantity" for executing SELL orders with number of crypto units (i.e. quantity)
-        else:
-            params['quantity'] = str(quantity)
-        
-
-        method = 'POST'
-        data, status_code = TradingController.makeRequest(api_path=api_path, params=params, method=method, api_key_path=api_key_path, private_key_path=private_key_path)
-        return data, status_code
-    
-    def test_order(api_key_path, private_key_path, coin=None, side=None, quantity=None):
-
-        api_path = "/api/v3/order/test"
-        params = {'symbol': 'BTCUSDT',
-                  'side': 'BUY',
-                  'type': 'MARKET',
-                  'quoteOrderQty': str(1)}
-
-        method = 'POST'
-        data, status_code = TradingController.makeRequest(api_path=api_path, params=params, method=method, api_key_path=api_key_path, private_key_path=private_key_path)
-        return data, status_code
     
 
-
-
-        
-
-
-                
-
-                            
-
+    def binance_order_book_request(coin, limit=5000, logger=LoggingController.start_logging()):
+        url = f"https://api.binance.com/api/v3/depth?symbol={coin}&limit={limit}"
+        try:
+            response = requests.get(url=url)
+        except:
+            logger.info("Code Exception on requests.get api.binance.com/api/v3/depth")
+            return None, None
+        headers = response.headers
+        status_code = response.status_code
+        if status_code == 418:
+            logger.info(headers)
+            retry_after = int(headers["retry-after"])
+            logger.info(f"ip banned, waiting {retry_after}")
+            sleep(retry_after*2)
+        return response.text, status_code
                     
+    def get_statistics(resp):
+        '''
+        This function makes a first pre-processing of the orderbook data, the output is then analyzed for buy-events
+        '''
+        json_resp = json.loads(resp)
+        total_ask_volume = 0
+        total_bid_volume = 0
+
+        # lowest_bid_price = json_resp['bids'][-1][0]
+        # highest_ask_price = json_resp['asks'][-1][0]
+        best_bid_price = float(json_resp["bids"][0][0])
+        best_ask_price = float(json_resp["asks"][0][0])
+
+        max_n_orders = max(len(json_resp["bids"]),len(json_resp["asks"]))
+
+        for ask_order in json_resp["asks"]:
+            total_ask_volume += float(ask_order[0]) * float(ask_order[1])
+        for bid_order in json_resp["bids"]:
+            total_bid_volume += float(bid_order[0]) * float(bid_order[1])
+
+        delta = 0.01
+        cumulative_ask_volume = 0
+        cumulative_bid_volume = 0
+        summary_ask_orders = []
+        summary_bid_orders = []
+
+        next_delta_threshold = 0 + delta
+        for ask_order in json_resp["asks"]:
+            price_order = float(ask_order[0])
+            quantity_order = float(ask_order[1])
+            cumulative_ask_volume += price_order * quantity_order
+            cumulative_ask_volume_ratio = round_(
+                (cumulative_ask_volume / total_ask_volume), 2
+            )
+            if cumulative_ask_volume_ratio >= next_delta_threshold:
+                summary_ask_orders.append(
+                    (
+                        round_((price_order - best_ask_price) / best_ask_price, 3),
+                        cumulative_ask_volume_ratio,
+                    )
+                )
+                next_delta_threshold = cumulative_ask_volume_ratio + delta
+
+        next_delta_threshold = 0 + delta
+        for bid_order in json_resp["bids"]:
+            price_order = float(bid_order[0])
+            quantity_order = float(bid_order[1])
+            cumulative_bid_volume += price_order * quantity_order
+            cumulative_bid_volume_ratio = round_(
+                (cumulative_bid_volume / total_bid_volume), 2
+            )
+            if cumulative_bid_volume_ratio >= next_delta_threshold:
+                summary_bid_orders.append(
+                    (
+                        round_((price_order - best_bid_price) / best_bid_price, 3),
+                        cumulative_bid_volume_ratio,
+                    )
+                )
+                next_delta_threshold = cumulative_bid_volume_ratio + delta
+                # print(f'{next_delta_threshold}: {bid_order}')
+
+        return (
+            best_bid_price,
+            best_ask_price,
+            int(total_bid_volume),
+            int(total_ask_volume),
+            summary_bid_orders,
+            summary_ask_orders,
+            max_n_orders
+        )
+    
+    def count_decimals(num):
+        """
+        Determines the number of decimal places in a given number.
+
+        Args:
+            num: The number to check.
+
+        Returns:
+            The number of decimal places, or 0 if the number is an integer.
+        """
+        try:
+            str_num = str(num)
+            decimal_index = str_num.index('.')
+            return len(str_num) - decimal_index
+        except ValueError:
+            # If no decimal point is found, it's an integer
+            return 1
+    
+    def compute_quantity_buy(usdc, coin, current_ask_price):
+        with open('minimal_notional.json', 'r') as f:
+            infocoin = json.load(f)
+        if usdc < int(infocoin[coin]['MIN_NOTIONAL']):
+            return None
+        n_decimals_smallest_unit = count_decimals(float(infocoin[coin]['LOT_SIZE']))
+        # quantity = round_(usdc / current_ask_price, n_decimals_smallest_unit)
+        quantity = math.floor(usdc / current_ask_price / 10**(-3)) * 10**(-3)
+        x = quantity * current_ask_price
+        print(f'Expected usd spent: {x}')
+    
+    def adjust_quantity_sell(quantity, coin):
+        with open('minimal_notional.json', 'r') as f:
+            infocoin = json.load(f)
+        n_decimals_smallest_unit = count_decimals(float(infocoin[coin]['LOT_SIZE']))
+        quantity = round_(quantity, n_decimals_smallest_unit)
+        return quantity
+                                
+    def get_minimal_notional_value(logger):
+        url = "https://fapi.binance.com/fapi/v1/exchangeInfo"
+        response = requests.request(method='GET', url=url)
+        # print(response)
+        status_code = response.status_code
+        response = json.loads(response.text)
+
+        # print(status_code)
+        # print(response.keys())
+        if status_code == 200:
+            try:
+                minimal_notional_value = {}
+                for obj in response['symbols']:
+                    coin = obj['symbol']
+                    if 'USDT' in coin:
+                        #coin = coin[:-1]
+                        info = {'MIN_NOTIONAL': None, 'LOT_SIZE': None}
+                        for obj_i in obj['filters']:
+                            if 'filterType' in obj_i and obj_i['filterType'] == 'MIN_NOTIONAL':#, 'LOT_SIZE']:
+                                info['MIN_NOTIONAL'] =  obj_i['notional']
+                            if 'filterType' in obj_i and obj_i['filterType'] == 'LOT_SIZE':#, 'LOT_SIZE']:
+                                info['LOT_SIZE'] = obj_i['stepSize']
+                        minimal_notional_value[coin] = info
+                            
+                n_coin_minimal_notional_value = len(list(minimal_notional_value.keys()))
+                logger.info(f'There are {n_coin_minimal_notional_value} coins in minimal notional value')
+                min_coins_minimum_coins = 100
+                if n_coin_minimal_notional_value > min_coins_minimum_coins:
+                    with open(f'/tracker/json/minimal_notional.json', 'w') as f: # 'w' opens the file for writing.
+                        json.dump(minimal_notional_value, f, indent=4)
+                else:
+                    logger.info(f'WARNING: Number of records in minimal_notional.json is less than {min_coins_minimum_coins}')
+            except Exception as e:
+                logger.info(f'WARNING: Request for Minimum Notional Value Failed. Error {e}')
+        else:
+            logger.info(f'WARNING: Request for Minimum Notional Value Failed. STATUS CODE {url}: {status_code}')
+
+                        
 
 
 

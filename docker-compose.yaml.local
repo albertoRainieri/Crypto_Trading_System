@@ -4,7 +4,7 @@ services:
 
   backend:
     privileged: true
-    container_name: backend-crypto
+    container_name: backend
     logging:
       driver: "json-file"
       options:
@@ -40,12 +40,13 @@ services:
       - MAX_CONNECTION_LOST=$MAX_CONNECTION_LOST
       - CHECK_PERIOD_MINUTES=$CHECK_PERIOD_MINUTES
       - SLEEP_LAST_LIST=$SLEEP_LAST_LIST
+      - TYPE_USDT=$TYPE_USDT
 
     networks:
       - crypto-net
 
   tracker:
-    container_name: tracker-crypto
+    container_name: tracker
     logging:
       driver: "json-file"
       options:
@@ -83,41 +84,13 @@ services:
       - SYS_ADMIN=$SYS_ADMIN
       - ANALYSIS=$ANALYSIS
       - COIN_EXCLUSIVE_ORDERBOOK_WINDOW_MINUTES=$COIN_EXCLUSIVE_ORDERBOOK_WINDOW_MINUTES
+      - TYPE_USDT=$TYPE_USDT
     networks:
       - crypto-net
 
-  trading:
-    container_name: trading-crypto
-    logging:
-      driver: "json-file"
-      options:
-          max-size: "10m"
-    build: 
-      context: ./trading
-      args:
-        - UID=${UID}
-        - GID=${GID}
-    restart: always
-    volumes:
-      - ./trading/:/trading
-      - ./backend/constants:/trading/constants:ro
-      - ./backend/database:/trading/database:ro
-      - ./backend/app/Helpers:/trading/app/Helpers
-      - ./tracker/json:/trading/json:ro
-
-    environment:
-      - BACKEND_URL= $BACKEND_URL
-      - MONGO_USERNAME=$MONGO_USERNAME
-      - MONGO_PASSWORD=$MONGO_PASSWORD
-      - MONGO_DB_URL=$MONGO_DB_URL
-      - MONGO_PORT=$MONGO_PORT
-      - TZ=$TIME_ZONE
-    networks:
-      - crypto-net
-  
   mongo-analysis:
 
-    container_name: mongo-crypto-analysis
+    container_name: mongo-analysis
     logging:
       driver: "json-file"
       options:
@@ -150,7 +123,7 @@ services:
       - crypto-net
 
   mongo:
-    container_name: mongo-crypto
+    container_name: mongo
     logging:
       driver: "json-file"
       options:
@@ -183,13 +156,13 @@ services:
       - crypto-net
 
   mongo-express:
+    container_name: mongo-express
     image: mongo-express
     user: 1000:1000
     logging:
       driver: "json-file"
       options:
           max-size: "5m"
-    container_name: mongo-express-crypto
     restart: always
     # ports:
     #   - "8081:8081"
@@ -209,6 +182,7 @@ services:
         - crypto-net
 
   nginx:
+    container_name: nginx
     build:
       context: ./nginx
       args:

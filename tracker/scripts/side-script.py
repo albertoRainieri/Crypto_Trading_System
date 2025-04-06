@@ -11,6 +11,7 @@ from app.Controller.TradingController import TradingController
 from constants.constants import *
 from datetime import datetime
 import json
+import asyncio
 
 
 def main(client, logger, db_logger, user_configuration):
@@ -29,8 +30,8 @@ def main(client, logger, db_logger, user_configuration):
             sleep(0.2)
 
         if minute == 59 and second == 18 and hour == 23:
-            BinanceController.main_sort_pairs_list(client=client, logger=logger, db_logger=db_logger)
-            logger.info("list of instruments updated from 'BinanceController.main_sort_pairs_list'")
+            asyncio.run(BinanceController.get_exchange_info(logger=logger))
+            logger.info("list of instruments updated from 'BinanceController.get_exchange_info'")
 
         if minute == 59 and second == 30 and hour == 23:
             Benchmark.computeVolumeAverage(client=client)
@@ -50,6 +51,7 @@ def main(client, logger, db_logger, user_configuration):
     
 
 if __name__ == '__main__':
+    
     client = DatabaseConnection()
     db_logger = client.get_db(DATABASE_API_ERROR)
 
@@ -68,5 +70,6 @@ if __name__ == '__main__':
         else:
             logger.info(f'TRADING_LIVE is NOT enabled for {user}')
 
-
+    asyncio.run(BinanceController.get_exchange_info(logger=None))
+    
     main(client=client, logger=logger, db_logger=db_logger, user_configuration=user_configuration)
