@@ -157,7 +157,7 @@ def on_open(ws):
     # logger.info(msg)
 
     coin_list = select_coins(
-        LIST, db_benchmark, position_threshold, type_USDT=TYPE_USDT
+        LIST, db_benchmark, position_threshold, type_USDT=os.getenv("TYPE_USDT")
     )
     parameters = []
     for coin in coin_list:
