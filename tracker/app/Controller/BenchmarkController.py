@@ -78,7 +78,7 @@ class Benchmark:
             avg_volumes = []
 
             if coin not in coin_list_subset:
-                msg = f"{coin} is no longer in the most_traded_coins. This happens if the coin is in db_market, but binance removes it from the listed coins"
+                msg = f"{coin} is no longer in {type_usdt}. This happens if the coin is in db_market, but binance removes it from the listed coins"
                 db_logger[DATABASE_BENCHMARK_INFO].insert_one(
                     {"_id": datetime.now().isoformat(), "msg": msg}
                 )
@@ -203,11 +203,19 @@ class Benchmark:
                 year = split_date[0]
                 month = split_date[1]
                 day = split_date[2]
-                # this is the starting time from which looking for new observation.
-                # minute=1 because I discard the midnight observation which still stands in case the coin has moved out of top300
-                st_datetime = datetime(
-                    year=int(year), month=int(month), day=int(day), minute=1
-                ) + timedelta(days=1)
+
+                # if day is today, then we need to start from the first minute of the day
+                # this is added because of an erraneous manual operation in production #09/04/2025
+                if day == datetime.now().day:
+                    # this is the starting time from which looking for new observation.
+                    # minute=1 because I discard the midnight observation which still stands in case the coin has moved out of top300
+                    st_datetime = datetime(
+                        year=int(year), month=int(month), day=int(day), minute=1
+                    )
+                else:
+                    st_datetime = datetime(
+                        year=int(year), month=int(month), day=int(day), minute=1
+                    ) + timedelta(days=1)
                 et_datetime = (now_datetime - timedelta(days=1)).replace(
                     hour=23, minute=59, second=59
                 )
