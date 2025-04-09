@@ -175,11 +175,35 @@ class AnalysisController:
                 else:
                     dict_[coin][field] = cursor_benchmark[0][field]
 
-        print(dict_)
+            for key, value in dict_[coin].items():
+                if isinstance(value, dict):
+                    # Handle nested dictionaries
+                    dict_[coin][key] = {
+                        k: AnalysisController.safe_float(v) for k, v in value.items()
+                    }
+                else:
+                    dict_[coin][key] = AnalysisController.safe_float(value)
 
         client.close()
+        dict_ = AnalysisController.sanitize_dict(dict_)
         json_string = jsonable_encoder(dict_)
         return JSONResponse(content=json_string)
+
+    def sanitize_dict(d):
+        """Recursively sanitize all float values in nested dictionaries"""
+        if isinstance(d, dict):
+            return {k: AnalysisController.sanitize_dict(v) for k, v in d.items()}
+        elif isinstance(d, list):
+            return [AnalysisController.sanitize_dict(item) for item in d]
+        else:
+            return AnalysisController.safe_float(d)
+
+    def safe_float(value):
+        """Helper function to handle non-JSON-compliant float values"""
+        if isinstance(value, float):
+            if np.isnan(value) or np.isinf(value):
+                return 0.0  # or None, depending on your needs
+        return value
 
     def try_different_timeframe(
         start_timestamp,
