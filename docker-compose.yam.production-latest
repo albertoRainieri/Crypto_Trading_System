@@ -3,8 +3,7 @@ version: "3.5"
 services:
 
   backend:
-    privileged: true
-    container_name: backend
+    container_name: backend-crypto
     logging:
       driver: "json-file"
       options:
@@ -15,14 +14,9 @@ services:
         - UID=${UID}
         - GID=${GID}
     restart: always
-    # ports:
-    #   - "5000:5000"
     volumes:
       - ./backend/:/backend
       - ./tracker/json:/backend/json:ro
-      - ./analysis/json_tracker:/analysis/json_tracker
-      - ./analysis/json_market:/analysis/json_market
-      - ./analysis/benchmark_json:/analysis/benchmark_json
     env_file:
       - .env
     environment:
@@ -34,19 +28,19 @@ services:
       - TZ=$TIME_ZONE
       - PRODUCTION=$PRODUCTION
       - ANALYSIS=$ANALYSIS
-      - SLEEP_ANALYSIS=$SLEEP_ANALYSIS
       - COINS_TRADED=$COINS_TRADED
       - SETS_WSS_BACKEND=$SETS_WSS_BACKEND
       - MAX_CONNECTION_LOST=$MAX_CONNECTION_LOST
       - CHECK_PERIOD_MINUTES=$CHECK_PERIOD_MINUTES
       - SLEEP_LAST_LIST=$SLEEP_LAST_LIST
       - TYPE_USDT=$TYPE_USDT
-
+      - LIMIT_ORDERBOOK_SCRIPTS=$LIMIT_ORDERBOOK_SCRIPTS
+      - LIMIT_ORDERBOOK_SCRIPTS_SECONDARY=$LIMIT_ORDERBOOK_SCRIPTS_SECONDARY
     networks:
       - crypto-net
 
   tracker:
-    container_name: tracker
+    container_name: tracker-crypto
     logging:
       driver: "json-file"
       options:
@@ -58,8 +52,6 @@ services:
         - GID=${GID}
     
     restart: always
-    # ports:
-    #   - "5001:5001"
     volumes:
       - ./tracker/:/tracker
       - ./backend/constants:/tracker/constants:ro
@@ -73,7 +65,6 @@ services:
       - MONGO_USERNAME=$MONGO_USERNAME
       - MONGO_PASSWORD=$MONGO_PASSWORD
       - MONGO_DB_URL=$MONGO_DB_URL
-      - MONGO_DB_ANALYSIS_URL=$MONGO_DB_ANALYSIS_URL
       - MONGO_PORT=$MONGO_PORT
       - SETS_WSS_BACKEND=$SETS_WSS_BACKEND
       - TZ=$TIME_ZONE
@@ -85,47 +76,11 @@ services:
       - ANALYSIS=$ANALYSIS
       - COIN_EXCLUSIVE_ORDERBOOK_WINDOW_MINUTES=$COIN_EXCLUSIVE_ORDERBOOK_WINDOW_MINUTES
       - TYPE_USDT=$TYPE_USDT
-      - LIMIT_ORDERBOOK_SCRIPTS=$LIMIT_ORDERBOOK_SCRIPTS
-      - LIMIT_ORDERBOOK_SCRIPTS_SECONDARY=$LIMIT_ORDERBOOK_SCRIPTS_SECONDARY
-    networks:
-      - crypto-net
-
-  mongo-analysis:
-
-    container_name: mongo-analysis
-    logging:
-      driver: "json-file"
-      options:
-          max-size: "5m"
-    build: 
-      context: ./mongodb
-      args:
-        - UID=${UID}
-        - GID=${GID}
-    environment:
-      - PUID=$PUID
-      - PGID=$PGID
-      - MONGO_INITDB_ROOT_USERNAME=$MONGO_INITDB_ROOT_USERNAME
-      - MONGO_INITDB_ROOT_PASSWORD=$MONGO_INITDB_ROOT_PASSWORD
-      - MONGO_USERNAME=$MONGO_USERNAME
-      - MONGO_PASSWORD=$MONGO_PASSWORD
-      - MONGO_DB_URL=$MONGO_DB_URL
-      - MONGO_DB_NAME=$MONGO_DB_NAME
-      - MONGO_PORT=$MONGO_PORT
-      - MONGO_VERSION=$MONGO_VERSION
-      - TZ=$TIME_ZONE
-      
-    restart: always
-    # ports:
-    #   - "27017:27017"
-    
-    volumes:
-      - ./mongodb_analysis/db:/data/db
     networks:
       - crypto-net
 
   mongo:
-    container_name: mongo
+    container_name: mongo-crypto
     logging:
       driver: "json-file"
       options:
@@ -147,29 +102,22 @@ services:
       - MONGO_PORT=$MONGO_PORT
       - MONGO_VERSION=$MONGO_VERSION
       - TZ=$TIME_ZONE
-      
     restart: always
-    # ports:
-    #   - "27017:27017"
-    
     volumes:
       - ./mongodb/db:/data/db
     networks:
       - crypto-net
 
   mongo-express:
-    container_name: mongo-express
     image: mongo-express
     user: 1000:1000
     logging:
       driver: "json-file"
       options:
           max-size: "5m"
+    container_name: mongo-express-crypto
     restart: always
-    # ports:
-    #   - "8081:8081"
     environment:
-      #ME_CONFIG_MONGODB_SERVER: mongo-analysis
       ME_CONFIG_MONGODB_SERVER: mongo
       ME_CONFIG_MONGODB_PORT: 27017
       ME_CONFIG_MONGODB_AUTH_USERNAME: $MONGO_INITDB_ROOT_USERNAME
@@ -177,14 +125,12 @@ services:
       ME_CONFIG_BASICAUTH_USERNAME: $MONGO_EXPRESS_USERNAME # to enable auth in mongo-express gui
       ME_CONFIG_BASICAUTH_PASSWORD: $MONGO_EXPRESS_PASSWORD
       ME_CONFIG_SITE_BASEURL: "/mongo"
-      #ME_CONFIG_MONGODB_URL: mongodb://root:password@mongo:27017/
     depends_on:
       - mongo
     networks:
         - crypto-net
 
   nginx:
-    container_name: nginx
     build:
       context: ./nginx
       args:
@@ -193,7 +139,7 @@ services:
     restart: always
     ports:
       - "80:80"
-      #- "443:443"
+      - "443:443"
     volumes:
       - ./nginx/logs/:/var/log/nginx
       - ./nginx/conf/default:/etc/nginx/sites-available/default

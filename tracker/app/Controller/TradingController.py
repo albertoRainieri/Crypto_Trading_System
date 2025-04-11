@@ -1,5 +1,6 @@
-import os,sys
-sys.path.insert(0,'../../..')
+import os, sys
+
+sys.path.insert(0, "../../..")
 from app.Controller.LoggingController import LoggingController
 import json
 from tracker.constants.constants import *
@@ -18,19 +19,18 @@ import re
 from time import sleep
 
 
-
 class TradingController:
-    
+
     def __init__(self) -> None:
         pass
 
     def returnRiskConfiguration(riskconfiguration, volatility_coin):
-        '''
+        """
         This function is used to return the riskconfiguration either if the riskconfiguration is groped by volatility or not
-        '''
+        """
         # CHECK IF the first random key of riskconfiguration is:
-        #1) '1' or '2', ... --> VOLATILITY_GROUPED = TRUE
-        #2) 'buy_vol_60m:0.85/vol_60m:15/timeframe:360' --> VOLATILITY_GROUPED = FALSE
+        # 1) '1' or '2', ... --> VOLATILITY_GROUPED = TRUE
+        # 2) 'buy_vol_60m:0.85/vol_60m:15/timeframe:360' --> VOLATILITY_GROUPED = FALSE
         # print(riskconfiguration)
         # print(volatility_coin)
         if list(riskconfiguration.keys())[0].isdigit():
@@ -40,10 +40,10 @@ class TradingController:
                 return None
         else:
             return riskconfiguration
-    
+
     # ASYNC ENABLED call. Enable only if cpu support is high. 4CPUs are probably minimum
-    #async def check_event_triggering(coin, obs, volatility_coin, logger, db_trading, db_logger, trading_coins_list, risk_configuration, last_coin, first_coin):
-    
+    # async def check_event_triggering(coin, obs, volatility_coin, logger, db_trading, db_logger, trading_coins_list, risk_configuration, last_coin, first_coin):
+
     # ASYNC DISABLED. THIS IS PREFERRED CHOICE even if CPU Support is high
     # def check_event_triggering_deprecated(coin, obs, volatility_coin, logger, db_logger, risk_configuration):
 
@@ -79,14 +79,13 @@ class TradingController:
     #         # }
     #     # }
 
-
     #     # if coin == last_coin or coin == first_coin:
     #     #     now = datetime.now()
     #     #     now_isoformat = now.isoformat()
     #     #     logger.info(f'TradingController: {coin}')
 
     #     risk_configuration = TradingController.returnRiskConfiguration(risk_configuration, volatility_coin)
-        
+
     #     if risk_configuration != None:
     #         for event_key in risk_configuration:
 
@@ -99,7 +98,7 @@ class TradingController:
 
     #             if obs[vol_field] == None or obs[buy_vol_field] == None:
     #                 continue
-                
+
     #             # if vol is higher than threshold, go ahead
     #             if obs[vol_field] >= float(vol_value):
     #                 # if field is below 0.5, discard events whose buy_vol is strictly greater than threshold
@@ -110,25 +109,24 @@ class TradingController:
     #                 else:
     #                     if obs[buy_vol_field] < float(buy_vol_value):
     #                         continue
-                    
 
     #                 id = datetime.now().isoformat()
     #                 # Start Order Book Polling
     #                 subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, lvl, '0'])
-                    
+
     #                 f = open ('/tracker/user_configuration/userconfiguration.json', "r")
     #                 user_configuration = json.loads(f.read())
-                    
+
     #                 SYS_ADMIN = os.getenv('SYS_ADMIN')
     #                 client = DatabaseConnection()
     #                 complete_process_overview = {}
-                    
+
     #                 for user in user_configuration:
     #                     TRADING_LIVE = user_configuration[user]['trading_live']
 
     #                     if user != SYS_ADMIN and TRADING_LIVE == False:
     #                         continue
-                        
+
     #                     db_name = DATABASE_TRADING + '_' + user
     #                     db_trading = client.get_db(db_name)
     #                     trading_coins_list = list(db_trading[COLLECTION_TRADING_LIVE].find())
@@ -136,25 +134,24 @@ class TradingController:
     #                         for coin_on_trade in trading_coins_list:
     #                             if coin_on_trade['coin'] == coin and coin_on_trade['event'] == event_key:
     #                                 COIN_ON_TRADING = True
-                        
+
     #                     if not COIN_ON_TRADING:
     #                         last_record = db_trading[COLLECTION_TRADING_BALANCE_ACCOUNT].find_one({}, sort=[("_id", DESCENDING)])
     #                         if last_record != None:
     #                             investment_amount = last_record['investment_amount']
     #                         else:
     #                             investment_amount = user_configuration[user]['initialized_investment_amount']
-                            
-                            
+
     #                         quantity = round_(investment_amount / obs['price'],8)
 
     #                         if TRADING_LIVE:
     #                             api_key_path = user_configuration[user]['api_key_path']
     #                             private_key_path = user_configuration[user]['private_key_path']
-    #                             response, status_code = TradingController.create_order(api_key_path=api_key_path, private_key_path=private_key_path, 
+    #                             response, status_code = TradingController.create_order(api_key_path=api_key_path, private_key_path=private_key_path,
     #                                                                                     coin=coin, side="BUY", usdt=investment_amount)
     #                             if status_code == 200:
     #                                 response = response.json()
-                                    
+
     #                                 # let's get the real quantity and price executed, thus the investment_amount
     #                                 quantity = float(response["executedQty"])
     #                                 purchase_price = float(response["price"])
@@ -170,7 +167,7 @@ class TradingController:
     #                                 if user != SYS_ADMIN:
     #                                     logger.info(msg)
     #                                     continue
-                                    
+
     #                         else:
     #                             trading_live = False
     #                             msg = f"{coin} - Event Triggered: {vol_field}:{vol_value} - {buy_vol_field}:{buy_vol_value} Live Trading: {TRADING_LIVE}. user: {user}"
@@ -178,8 +175,6 @@ class TradingController:
     #                         ################################################################
     #                         logger.info(msg)
 
-                            
-                            
     #                         # get risk management configuration
     #                         risk_management_configuration = json.dumps(risk_configuration[event_key])
 
@@ -193,41 +188,91 @@ class TradingController:
     #                         else:
     #                             pid = complete_process_overview[process_key]
     #                             logger.info('Process wss-trading.py already started')
-                            
+
     #                         # send query to db_trading. for logging
 
-    #                         id_volume_standings_db = datetime.now().strftime("%Y-%m-%d") 
+    #                         id_volume_standings_db = datetime.now().strftime("%Y-%m-%d")
     #                         db_volume_standings = client.get_db(DATABASE_VOLUME_STANDINGS)
     #                         volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find_one({"_id": id_volume_standings_db})
     #                         ranking = volume_standings['standings'][coin]['rank']
 
-
     #                         doc_db = {'_id': id, 'coin': coin, 'ranking': ranking, 'profit': 0, 'purchase_price': purchase_price, 'current_price': purchase_price,
     #                                 'quantity': quantity,'on_trade': True, 'trading_live': trading_live, 'event': event_key, 'investment_amount': investment_amount,
     #                                     'exit_timestamp': datetime.fromtimestamp(0).isoformat(), 'risk_configuration': risk_configuration[event_key], 'pid': pid}
-                            
+
     #                         db_trading[COLLECTION_TRADING_LIVE].insert_one(doc_db)
     #                         db_trading[COLLECTION_TRADING_HISTORY].insert_one(doc_db)
     #                         db_logger[DATABASE_TRADING_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
 
-    #                 client.close()    
+    #                 client.close()
     # # ASYNC DISABLED. THIS IS PREFERRED CHOICE even if CPU Support is high
 
-    def buy_event_analysis(coin, obs, strategy_configuration, logger, volume_standings):
+    def extract_timeframe(input_string):
+        """
+        Extracts the timeframe value (e.g., 1440) from the given input string.
 
-        '''
+        Args:
+        input_string: The input string containing the timeframe.
+
+        Returns:
+        The extracted timeframe value as a string, or None if no match is found.
+        """
+        match = re.search(r"timeframe:(\d+)", input_string)
+        if match:
+            return match.group(1)
+        else:
+            return None
+
+    def get_current_number_of_orderbook_scripts(db, event_keys):
+        live_order_book_scripts_number = 0
+        numbers_filled = []
+        current_weight = 0
+        for collection in event_keys:
+            if collection != COLLECTION_ORDERBOOK_METADATA:
+
+                minutes_timeframe = int(TradingController.extract_timeframe(collection))
+                yesterday = datetime.now() - timedelta(minutes=minutes_timeframe)
+                query = {"_id": {"$gt": yesterday.isoformat()}}
+                docs = list(
+                    db[collection].find(query, {"_id": 1, "number": 1, "weight": 1})
+                )
+                for doc in docs:
+                    numbers_filled.append(doc["number"])
+                    if "weight" in doc:
+                        current_weight += doc["weight"]
+                    else:
+                        current_weight += 250
+                # logger.info(docs)
+                # len_docs = len(docs)
+                # logger.info(f'{len_docs} - {collection}')
+                live_order_book_scripts_number += len(docs)
+
+        return numbers_filled, live_order_book_scripts_number, current_weight
+
+    def buy_event_analysis(coin, obs, strategy_configuration, logger, volume_standings):
+        """
         This functions triggers a market order if the condition of the risk strategies are met.
         The risk strategies are defined by "risk_configuration"
-        '''
-        
-        event_keys = strategy_configuration['event_keys']
+        """
+
+        # event_keys = strategy_configuration['event_keys']
+        event_keys = list(
+            strategy_configuration["event_keys"]["primary"].keys()
+        ) + list(strategy_configuration["event_keys"]["secondary"].keys())
         FIRST_EVENT_KEY = True
-        RESTART = '0'
-        
+        LOAD_ORDER_BOOK = False
+        RESTART = "0"
+        limit_orderbook_scripts = int(os.getenv("LIMIT_ORDERBOOK_SCRIPTS"))
+        limit_orderbook_scripts_secondary = int(
+            os.getenv("LIMIT_ORDERBOOK_SCRIPTS_SECONDARY")
+        )
+
         for event_key in event_keys:
 
             # check if coin is already on trade for this specific event, if True, pass
-            vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
+            vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = (
+                getsubstring_fromkey(event_key)
+            )
             if coin in volume_standings["standings"]:
                 ranking = int(volume_standings["standings"][coin]["rank"])
             else:
@@ -238,76 +283,166 @@ class TradingController:
 
             if obs[vol_field] == None or obs[buy_vol_field] == None:
                 continue
-            
+
             # if vol is higher than threshold, go ahead
             if obs[vol_field] >= vol_value:
                 # determine if the buy_vol is below/above threshold. the operator changes if the threshold is below/above 0.5
-                if buy_vol_value < 0.5 and obs[buy_vol_field] <= buy_vol_value or buy_vol_value > 0.5 and obs[buy_vol_field] >= buy_vol_value:
+                if (
+                    buy_vol_value == 0
+                    or buy_vol_value < 0.5
+                    and obs[buy_vol_field] <= buy_vol_value
+                    or buy_vol_value > 0.5
+                    and obs[buy_vol_field] >= buy_vol_value
+                ):
 
-                    _id = obs['_id']
-                    
-                    # the var FIRST_EVENT_KEY helps avoiding duplicates if there are multiple event_keys trigger in the same second. 
+                    if FIRST_EVENT_KEY or LOAD_ORDER_BOOK:
+                        client = DatabaseConnection()
+                        db = client.get_db(DATABASE_ORDER_BOOK)
+                        (
+                            numbers_filled,
+                            live_order_book_scripts_number,
+                            current_weight,
+                        ) = TradingController.get_current_number_of_orderbook_scripts(
+                            db, event_keys
+                        )
+                        LOAD_ORDER_BOOK = False
+
+                    if buy_vol_value == 0:
+                        # if the number of secondary orderbook scripts is greater than the limit, then pass
+                        if (
+                            live_order_book_scripts_number
+                            >= limit_orderbook_scripts_secondary
+                        ):
+                            continue
+
+                    # # if the number of primary & secondary orderbook scripts is greater than the limit, then pass
+                    # logger.info(
+                    #     f"live_order_book_scripts_number: {live_order_book_scripts_number}"
+                    # )
+                    # logger.info(f"limit_orderbook_scripts: {limit_orderbook_scripts}")
+                    if live_order_book_scripts_number >= limit_orderbook_scripts:
+                        continue
+
+                    _id = obs["_id"]
+
+                    # the var FIRST_EVENT_KEY helps avoiding duplicates if there are multiple event_keys trigger in the same second.
                     # In any case, I keep track of the record in the collection db['Metadata']
                     if FIRST_EVENT_KEY:
                         # this variable sets the minute range, within which the coin can not be traded again
-                        coin_exclusive_window_minutes = int(os.getenv('COIN_EXCLUSIVE_ORDERBOOK_WINDOW_MINUTES'))
-                        client = DatabaseConnection()
-                        
-                        coin_window_ts = (datetime.now() - timedelta(minutes=coin_exclusive_window_minutes)).isoformat()
+                        coin_exclusive_window_minutes = int(
+                            os.getenv("COIN_EXCLUSIVE_ORDERBOOK_WINDOW_MINUTES")
+                        )
+
+                        coin_window_ts = (
+                            datetime.now()
+                            - timedelta(minutes=coin_exclusive_window_minutes)
+                        ).isoformat()
                         # initalize metadata orderbook db collection
-                        
-                        db = client.get_db(DATABASE_ORDER_BOOK)
+
                         db_collection = db[COLLECTION_ORDERBOOK_METADATA]
 
                         # determine if there were scripts for "$coin" in the last 3hours
-                        docs = list(db_collection.find({"_id": {"$gt": coin_window_ts}, "coin": coin},{'event_key':1, 'reference_id':1, 'all_event_keys': 1}))
-                
+                        docs = list(
+                            db_collection.find(
+                                {"_id": {"$gt": coin_window_ts}, "coin": coin},
+                                {
+                                    "event_key": 1,
+                                    "reference_id": 1,
+                                    "all_event_keys": 1,
+                                },
+                            )
+                        )
+
                         # this is the case where the orderbook script was never executed for $coin in the last 30minutes
                         if len(docs) == 0:
-                            #logger.info(f'execute event - {coin}')
-                            strategy_parameters = json.dumps(strategy_configuration['parameters'])
+                            # logger.info(f'execute event - {coin}')
+                            strategy_parameters = json.dumps(
+                                strategy_configuration["parameters"]
+                            )
                             all_event_keys = [event_key]
-                            db_collection.insert({'_id': _id, 'coin': coin, 'event_key': event_key, 'all_event_keys': all_event_keys})
+                            db_collection.insert(
+                                {
+                                    "_id": _id,
+                                    "coin": coin,
+                                    "event_key": event_key,
+                                    "all_event_keys": all_event_keys,
+                                }
+                            )
                             # Start Order Book SCRIPT
-                            subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, _id, str(ranking), RESTART, strategy_parameters])
+                            subprocess.Popen(
+                                [
+                                    "python3",
+                                    "/tracker/trading/start-order-book.py",
+                                    coin,
+                                    event_key,
+                                    _id,
+                                    str(ranking),
+                                    RESTART,
+                                    strategy_parameters,
+                                ]
+                            )
                             FIRST_EVENT_KEY = False
+                            LOAD_ORDER_BOOK = True
+                            sleep(2)
+
                         # here the script order book is already started, so just keep track of the record in metadata
                         else:
-                            #logger.info(f'duplicate event - {coin}')
+                            # logger.info(f'duplicate event - {coin}')
                             for doc in docs:
-                                # if event_key is different than it is just a duplicate of the coin, 
+                                # if event_key is different than it is just a duplicate of the coin,
                                 # and reference_id is important to see if that id is the one associated with the real data saved in order book
                                 all_event_keys = [event_key]
 
-                                if event_key != doc['event_key'] and "reference_id" not in doc:
-                                    reference_id = doc['_id']
-                                    db_collection.insert({'_id': _id, 'coin': coin, 'event_key': event_key, 'all_event_keys': all_event_keys, "reference_id": reference_id})
-                                    #logger.info(f'Duplicate Event Order Book in the last {coin_exclusive_window_minutes} minutes: {coin} - {_id} - {event_key} - Reference ID: {reference_id}')
+                                if (
+                                    event_key != doc["event_key"]
+                                    and "reference_id" not in doc
+                                ):
+                                    reference_id = doc["_id"]
+                                    db_collection.insert(
+                                        {
+                                            "_id": _id,
+                                            "coin": coin,
+                                            "event_key": event_key,
+                                            "all_event_keys": all_event_keys,
+                                            "reference_id": reference_id,
+                                        }
+                                    )
+                                    # logger.info(f'Duplicate Event Order Book in the last {coin_exclusive_window_minutes} minutes: {coin} - {_id} - {event_key} - Reference ID: {reference_id}')
                                     FIRST_EVENT_KEY = False
                                     break
 
-                                elif event_key == doc['event_key'] and "reference_id" not in doc:
-                                    reference_id = doc['_id']
-                                    db_collection.insert({'_id': _id, 'coin': coin, 'event_key': event_key, 'all_event_keys': all_event_keys, "reference_id": reference_id})
-                                    #logger.info(f'SAME COIN - SAME EVENT KEY {coin_exclusive_window_minutes} minutes: {coin} - {_id} - {event_key} - Reference ID: {reference_id}')
+                                elif (
+                                    event_key == doc["event_key"]
+                                    and "reference_id" not in doc
+                                ):
+                                    reference_id = doc["_id"]
+                                    db_collection.insert(
+                                        {
+                                            "_id": _id,
+                                            "coin": coin,
+                                            "event_key": event_key,
+                                            "all_event_keys": all_event_keys,
+                                            "reference_id": reference_id,
+                                        }
+                                    )
+                                    # logger.info(f'SAME COIN - SAME EVENT KEY {coin_exclusive_window_minutes} minutes: {coin} - {_id} - {event_key} - Reference ID: {reference_id}')
                                     FIRST_EVENT_KEY = False
                                     break
                     else:
-                        #logger.info(f'Duplicate Event Order Book in this minute: {coin} - {_id} - {event_key}.')
+                        # logger.info(f'Duplicate Event Order Book in this minute: {coin} - {_id} - {event_key}.')
                         filter_query = {"_id": _id}
                         all_event_keys.append(event_key)
-                        update_doc = {"$set": {'all_event_keys': all_event_keys}}
+                        update_doc = {"$set": {"all_event_keys": all_event_keys}}
                         result = db_collection.update_one(filter_query, update_doc)
                         if result.modified_count != 1:
                             now = datetime.now().isoformat()
-                            logger.info(f"{now}: Order Book Metadata Update failed for {event_key} with id {_id}.")
+                            logger.info(
+                                f"{now}: Order Book Metadata Update failed for {event_key} with id {_id}."
+                            )
 
             if not FIRST_EVENT_KEY:
                 client.close()
-                    
 
-
-                    
     def extract_timeframe(input_string):
         """
         Extracts the timeframe value (e.g., 1440) from the given input string.
@@ -323,55 +458,77 @@ class TradingController:
             return match.group(1)
         else:
             return None
-    
-    def restart_order_book_polling(logger):
-        f = open ('/tracker/riskmanagement/riskmanagement.json', "r")
-        risk_configuration = json.loads(f.read())
-        event_keys = list(risk_configuration['event_keys'])
-        RESTART = '1'
 
-        logger.info('TradingController.restart_order_book_polling is started')
+    def restart_order_book_polling(logger):
+        f = open("/tracker/riskmanagement/riskmanagement.json", "r")
+        risk_configuration = json.loads(f.read())
+        event_keys = list(risk_configuration["event_keys"]["primary"].keys()) + list(
+            risk_configuration["event_keys"]["secondary"].keys()
+        )
+
+        RESTART = "1"
+
+        logger.info("TradingController.restart_order_book_polling is started")
         client = DatabaseConnection()
 
         for event_key in event_keys:
             if event_key != COLLECTION_ORDERBOOK_METADATA:
                 minutes_timeframe = int(TradingController.extract_timeframe(event_key))
-                
+
                 db = client.get_db(DATABASE_ORDER_BOOK)
                 db_collection = db[event_key]
                 now = datetime.now()
                 yesterday = now - timedelta(minutes=minutes_timeframe)
-                docs = list(db_collection.find({"_id": {"$gt": yesterday.isoformat()}}, {"_id": 1, "coin":1, "ranking":1}))
+                docs = list(
+                    db_collection.find(
+                        {"_id": {"$gt": yesterday.isoformat()}},
+                        {"_id": 1, "coin": 1, "ranking": 1},
+                    )
+                )
                 for doc in docs:
-                    id = doc['_id']
+                    id = doc["_id"]
                     # if event trigger time window is still open
-                    #if datetime.now() <  datetime.fromisoformat(id) + timedelta(minutes=minutes_timeframe):
-                    coin = doc['coin']
-                    ranking = doc['ranking']
-                    logger.info(f'Resuming Order Book for coin {coin}, event_key {event_key} and id {id}')
-                    strategy_parameters = 'None'
-                    subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, str(ranking),  RESTART, strategy_parameters])
+                    # if datetime.now() <  datetime.fromisoformat(id) + timedelta(minutes=minutes_timeframe):
+                    coin = doc["coin"]
+                    ranking = doc["ranking"]
+                    logger.info(
+                        f"Resuming Order Book for coin {coin}, event_key {event_key} and id {id}"
+                    )
+                    strategy_parameters = "None"
+                    subprocess.Popen(
+                        [
+                            "python3",
+                            "/tracker/trading/start-order-book.py",
+                            coin,
+                            event_key,
+                            id,
+                            str(ranking),
+                            RESTART,
+                            strategy_parameters,
+                        ]
+                    )
         client.close()
 
-
     def clean_db_trading(logger, db_logger, user_configuration):
-        '''
+        """
         This function is invoked during start of tracker container.
         This can clean db_trading orders that have not been closed and close orderd in Binance Platoform
         or it can resume the orders that have not been close updating some info in db_trading
         This function iterates this task for each user making attention of not starting a same process (wss-trading.py) more than once
-        '''
+        """
         complete_process_overview = {}
         client = DatabaseConnection()
 
         for user in user_configuration:
-            db_name = DATABASE_TRADING + '_' + user
+            db_name = DATABASE_TRADING + "_" + user
             db_trading = client.get_db(db_name)
 
-            CLEAN_DB_TRADING = user_configuration[user]['clean_db_trading']
-            api_key_path = user_configuration[user]['api_key_path']
-            private_key_path = user_configuration[user]['private_key_path']
-            logger.info(f'Tracker Started in Mode Clean DB Trading: {CLEAN_DB_TRADING} for {user}')
+            CLEAN_DB_TRADING = user_configuration[user]["clean_db_trading"]
+            api_key_path = user_configuration[user]["api_key_path"]
+            private_key_path = user_configuration[user]["private_key_path"]
+            logger.info(
+                f"Tracker Started in Mode Clean DB Trading: {CLEAN_DB_TRADING} for {user}"
+            )
             query = {"on_trade": True}
             coins_live = list(db_trading[COLLECTION_TRADING_LIVE].find(query))
             coins_history = list(db_trading[COLLECTION_TRADING_HISTORY].find(query))
@@ -382,125 +539,179 @@ class TradingController:
                 updated_docs_history = 0
 
                 if len(coins_live) == 0:
-                    logger.info('There are no live coins to clean in db_trading')
+                    logger.info("There are no live coins to clean in db_trading")
                 if len(coins_history) == 0:
-                    logger.info('There are no history coins to clean in db_trading')
+                    logger.info("There are no history coins to clean in db_trading")
 
                 # CLEAN DB_TRADING WITH "on_trade" == True
                 for doc in coins_live:
 
                     # Query to find the document you want to delete (in this example, we delete by "_id")
-                    query = {"_id": doc['_id']}
-                    trading_live = doc['trading_live']
-                    coin = doc['coin']
-                    id = doc['_id']
-                    
+                    query = {"_id": doc["_id"]}
+                    trading_live = doc["trading_live"]
+                    coin = doc["coin"]
+                    id = doc["_id"]
+
                     # IF TRADING LIVE, THEN SEND SELL ORDER TO BINANCE and update the db
                     now = datetime.now()
-                    update = {'$set': {'on_trade': False,
-                            'exit_timestamp': now.isoformat(),
-                            }
-                        } 
+                    update = {
+                        "$set": {
+                            "on_trade": False,
+                            "exit_timestamp": now.isoformat(),
+                        }
+                    }
                     if trading_live:
-                        
-                          
-                        quantity = doc['quantity'] 
-                        response, status_code = TradingController.create_order(api_key_path=api_key_path, private_key_path=private_key_path,
-                                                                               coin=coin, side="SELL", quantity=quantity)
+
+                        quantity = doc["quantity"]
+                        response, status_code = TradingController.create_order(
+                            api_key_path=api_key_path,
+                            private_key_path=private_key_path,
+                            coin=coin,
+                            side="SELL",
+                            quantity=quantity,
+                        )
                         # if REQUEST is succesful, then update db
                         if status_code == 200:
                             # get info
-                            event_key = doc['event']
+                            event_key = doc["event"]
 
                             response = response.json()
                             quantity_executed = float(response["executedQty"])
                             sell_price = float(response["price"])
 
                             # update database trading_history, and delete record for trading_live
-                            update['$set']['current_price'] = sell_price
-                            update['$set']['quantity_sell'] = quantity_executed
-                            result_history = db_trading[COLLECTION_TRADING_HISTORY].update_one(query, update)
-                            result_live = db_trading[COLLECTION_TRADING_LIVE].delete_one({'_id': id})
-
+                            update["$set"]["current_price"] = sell_price
+                            update["$set"]["quantity_sell"] = quantity_executed
+                            result_history = db_trading[
+                                COLLECTION_TRADING_HISTORY
+                            ].update_one(query, update)
+                            result_live = db_trading[
+                                COLLECTION_TRADING_LIVE
+                            ].delete_one({"_id": id})
 
                             # notify/update dbs
-                            msg = f'SELL Order Succeded for {coin}:{id}. origQty: {quantity}, execQty: {quantity_executed} for user {user} during DB Cleaning'
+                            msg = f"SELL Order Succeded for {coin}:{id}. origQty: {quantity}, execQty: {quantity_executed} for user {user} during DB Cleaning"
                             logger.info(msg)
-                            db_logger[DATABASE_TRADING_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+                            db_logger[DATABASE_TRADING_INFO].insert_one(
+                                {"_id": datetime.now().isoformat(), "msg": msg}
+                            )
 
                             # kill the process
 
                         # if REQUEST is not succesfull, then notify to db_logger and do not kill the process
                         else:
-                            msg_text = f'SELL Order FAILED for {coin}:{id}; user: {user}'
-                            msg = {'msg': msg_text, 'error': response.text}
+                            msg_text = (
+                                f"SELL Order FAILED for {coin}:{id}; user: {user}"
+                            )
+                            msg = {"msg": msg_text, "error": response.text}
                             logger.info(msg)
-                            db_logger[DATABASE_TRADING_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
-                            db_logger[DATABASE_TRADING_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+                            db_logger[DATABASE_TRADING_INFO].insert_one(
+                                {"_id": datetime.now().isoformat(), "msg": msg}
+                            )
+                            db_logger[DATABASE_TRADING_ERROR].insert_one(
+                                {"_id": datetime.now().isoformat(), "msg": msg}
+                            )
 
                     # if trading_live is false, just update the db
                     else:
-                        result_live = db_trading[COLLECTION_TRADING_LIVE].delete_one(query)
-                        result_history = db_trading[COLLECTION_TRADING_HISTORY].update_one(query, update)
-
+                        result_live = db_trading[COLLECTION_TRADING_LIVE].delete_one(
+                            query
+                        )
+                        result_history = db_trading[
+                            COLLECTION_TRADING_HISTORY
+                        ].update_one(query, update)
 
                     if result_history.modified_count == 1:
-                        msg = f'{coin}:{id} has been succesfully updated in DB History. Trading_live {trading_live}. User: {user}'
+                        msg = f"{coin}:{id} has been succesfully updated in DB History. Trading_live {trading_live}. User: {user}"
                         logger.info(msg)
                         updated_docs_history += 1
                     else:
-                        msg = f'ERROR: {coin}:{id} has NOT been updated in DB History. Trading_live {trading_live}. User: {user}'
+                        msg = f"ERROR: {coin}:{id} has NOT been updated in DB History. Trading_live {trading_live}. User: {user}"
                         logger.info(msg)
-                        db_logger[DATABASE_TRADING_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+                        db_logger[DATABASE_TRADING_ERROR].insert_one(
+                            {"_id": datetime.now().isoformat(), "msg": msg}
+                        )
 
                     if result_live.deleted_count == 1:
-                        msg = f'{coin}:{id} has been succesfully deleted in DB Live. Trading_live {trading_live}. User: {user}'
+                        msg = f"{coin}:{id} has been succesfully deleted in DB Live. Trading_live {trading_live}. User: {user}"
                         logger.info(msg)
                         deleted_docs_live += 1
                     else:
-                        msg = f'ERROR: {coin}:{id} has NOT been deleted in DB Live. Trading_live {trading_live}. User: {user}'
+                        msg = f"ERROR: {coin}:{id} has NOT been deleted in DB Live. Trading_live {trading_live}. User: {user}"
                         logger.info(msg)
-                        db_logger[DATABASE_TRADING_ERROR].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
+                        db_logger[DATABASE_TRADING_ERROR].insert_one(
+                            {"_id": datetime.now().isoformat(), "msg": msg}
+                        )
 
-                    
-                logger.info(f"Total Deleted Documents in DB Live: {deleted_docs_live} in DB_Trading for User {user}")
-                logger.info(f"Total Updated Documents in DB History: {updated_docs_history} in DB_Trading for User {user}")
-                    # TODO: DELETE ORDER IN BINANCE PLATFORM: we need an ORDER_ID to be stored IN DB_TRADING_LIVE
+                logger.info(
+                    f"Total Deleted Documents in DB Live: {deleted_docs_live} in DB_Trading for User {user}"
+                )
+                logger.info(
+                    f"Total Updated Documents in DB History: {updated_docs_history} in DB_Trading for User {user}"
+                )
+                # TODO: DELETE ORDER IN BINANCE PLATFORM: we need an ORDER_ID to be stored IN DB_TRADING_LIVE
 
             else:
                 for doc in coins_live:
-                    coin = doc['coin']
-                    purchase_price = doc['purchase_price']
-                    event_key = doc['event']
-                    vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
+                    coin = doc["coin"]
+                    purchase_price = doc["purchase_price"]
+                    event_key = doc["event"]
+                    (
+                        vol_field,
+                        vol_value,
+                        buy_vol_field,
+                        buy_vol_value,
+                        timeframe,
+                        lvl,
+                    ) = getsubstring_fromkey(event_key)
 
-                    risk_management_configuration = json.dumps(doc['risk_configuration'])
-                    id = doc['_id']
-                    logger.info(f'WSS Connection has resumed for {coin}: {id}. User: {user}')
-                    
+                    risk_management_configuration = json.dumps(
+                        doc["risk_configuration"]
+                    )
+                    id = doc["_id"]
+                    logger.info(
+                        f"WSS Connection has resumed for {coin}: {id}. User: {user}"
+                    )
+
                     # avoid to start the same process more than once
                     process_key = event_key + coin
                     if process_key not in complete_process_overview:
-                        process = subprocess.Popen(["python3", "/tracker/trading/wss-trading.py", coin, id, str(purchase_price), str(timeframe), risk_management_configuration])
+                        process = subprocess.Popen(
+                            [
+                                "python3",
+                                "/tracker/trading/wss-trading.py",
+                                coin,
+                                id,
+                                str(purchase_price),
+                                str(timeframe),
+                                risk_management_configuration,
+                            ]
+                        )
                         complete_process_overview[process_key] = process.pid
                         pid = process.pid
                     else:
                         pid = complete_process_overview[process_key]
-                        logger.info(f'Process already started by another user')
-
+                        logger.info(f"Process already started by another user")
 
                     query = {"_id": id}
 
                     # add this to update the current trades with old configuration
                     if "trading_live" not in doc:
-                        update_data = {"$set": {"pid": pid, "trading_live": False,
-                                                "exit_timestamp": datetime.fromtimestamp(0).isoformat(),
-                                                "quantity": doc['investment_amount'] / doc['purchase_price']
-                                                }}
+                        update_data = {
+                            "$set": {
+                                "pid": pid,
+                                "trading_live": False,
+                                "exit_timestamp": datetime.fromtimestamp(0).isoformat(),
+                                "quantity": doc["investment_amount"]
+                                / doc["purchase_price"],
+                            }
+                        }
                     else:
                         update_data = {"$set": {"pid": pid}}
 
-                    db_trading[COLLECTION_TRADING_HISTORY].update_one(query, update_data)
+                    db_trading[COLLECTION_TRADING_HISTORY].update_one(
+                        query, update_data
+                    )
                     db_trading[COLLECTION_TRADING_LIVE].update_one(query, update_data)
 
             del db_trading
@@ -508,18 +719,17 @@ class TradingController:
 
     @timer_func
     def checkPerformance_test(db_trading, logger):
-        '''
+        """
         This function has been used to test the performances of trading simulations. It is replace by "checkPerformance" function
-        '''
+        """
         events_history = list(db_trading[COLLECTION_TRADING_HISTORY].find())
-
 
         now = datetime.now()
         one_week_ago = now - timedelta(days=7)
         one_month_ago = now - timedelta(days=30)
-        three_months_ago  = now - timedelta(days=90)
-        six_months_ago  = now - timedelta(days=180)
-        #one_year_ago = now - timedelta(days=365)
+        three_months_ago = now - timedelta(days=90)
+        six_months_ago = now - timedelta(days=180)
+        # one_year_ago = now - timedelta(days=365)
 
         total_performance = 0
         total_performance_list = []
@@ -529,14 +739,14 @@ class TradingController:
         performance_six_month = []
         total_events = len(events_history)
 
-        #first_datetime_investment = datetime.fromisoformat(events_history[0]['_id'])
+        # first_datetime_investment = datetime.fromisoformat(events_history[0]['_id'])
 
         if len(events_history) > 0:
 
             for event in events_history:
-                profit = event['profit']
-                investment_amount = float(event['investment_amount'])
-                datetime_investment = datetime.fromisoformat(event['_id'])
+                profit = event["profit"]
+                investment_amount = float(event["investment_amount"])
+                datetime_investment = datetime.fromisoformat(event["_id"])
                 total_performance += investment_amount * profit
                 total_performance_list.append(profit)
 
@@ -557,42 +767,53 @@ class TradingController:
 
                 elif datetime_investment > six_months_ago:
                     performance_six_month.append(profit)
-            
-            profit_one_week = round_(np.mean(performance_one_week),4)
-            profit_one_month = round_(np.mean(performance_one_month),4) 
-            profit_three_months = round_(np.mean(performance_three_month),4) 
-            profit_six_months = round_(np.mean(performance_six_month),4)
-            total_profit = round_(np.mean(total_performance_list),4)
-            total_performance = round_(total_performance,2)
 
-            db_doc = {'total_gain': total_performance, 'total_profit': total_profit,
-                      'one_week_profit': profit_one_week, 'one_month_profit': profit_one_month, 'three_months_profit': profit_three_months, 'six_months_profit': profit_six_months, 'total_events': total_events}
-            
-            db_performance = list(db_trading[COLLECTION_TRADING_PERFORMANCE_TESTING].find())
+            profit_one_week = round_(np.mean(performance_one_week), 4)
+            profit_one_month = round_(np.mean(performance_one_month), 4)
+            profit_three_months = round_(np.mean(performance_three_month), 4)
+            profit_six_months = round_(np.mean(performance_six_month), 4)
+            total_profit = round_(np.mean(total_performance_list), 4)
+            total_performance = round_(total_performance, 2)
+
+            db_doc = {
+                "total_gain": total_performance,
+                "total_profit": total_profit,
+                "one_week_profit": profit_one_week,
+                "one_month_profit": profit_one_month,
+                "three_months_profit": profit_three_months,
+                "six_months_profit": profit_six_months,
+                "total_events": total_events,
+            }
+
+            db_performance = list(
+                db_trading[COLLECTION_TRADING_PERFORMANCE_TESTING].find()
+            )
 
             if len(db_performance) == 0:
                 db_trading[COLLECTION_TRADING_PERFORMANCE_TESTING].insert(db_doc)
             else:
-                id = db_performance[0]['_id']
+                id = db_performance[0]["_id"]
                 query = {"_id": id}
-                update = {"$set":db_doc}
-                db_trading[COLLECTION_TRADING_PERFORMANCE_TESTING].update_one(query, update)
+                update = {"$set": db_doc}
+                db_trading[COLLECTION_TRADING_PERFORMANCE_TESTING].update_one(
+                    query, update
+                )
 
     @timer_func
     def checkPerformance(client, logger, user_configuration):
-        '''
+        """
         this function check the performance of the trading bot if mode TRADING_LIVE is enabled
-        '''
-        SYS_ADMIN = os.getenv('SYS_ADMIN')
+        """
+        SYS_ADMIN = os.getenv("SYS_ADMIN")
 
         for user in user_configuration:
-            TRADING_LIVE = user_configuration[user]['trading_live']
+            TRADING_LIVE = user_configuration[user]["trading_live"]
 
             # in case regular user is not on trading_live, then skip
             if TRADING_LIVE == False and user != SYS_ADMIN:
                 continue
-        
-            db_name = DATABASE_TRADING + '_' + user
+
+            db_name = DATABASE_TRADING + "_" + user
             db_trading = client.get_db(db_name)
 
             id = datetime.now().isoformat()
@@ -600,15 +821,27 @@ class TradingController:
             # IF TRADING LIVE fetch only those trades that have been live, and select the DB COLLECTION_PERFORMANCE FOR LIVE_TRADING
             if TRADING_LIVE:
                 COLLECTION_PERFORMANCE = COLLECTION_TRADING_PERFORMANCE
-                last_record = db_trading[COLLECTION_PERFORMANCE].find_one({}, sort=[("_id", DESCENDING)])
-                coins_history = list(db_trading[COLLECTION_TRADING_HISTORY].find({'on_trade': False, 'trading_live': True}).sort("exit_timestamp", DESCENDING))
+                last_record = db_trading[COLLECTION_PERFORMANCE].find_one(
+                    {}, sort=[("_id", DESCENDING)]
+                )
+                coins_history = list(
+                    db_trading[COLLECTION_TRADING_HISTORY]
+                    .find({"on_trade": False, "trading_live": True})
+                    .sort("exit_timestamp", DESCENDING)
+                )
             # TRADING_LIVE mode is not enabled, then consider all the trades (live and not) and save the performance to the DB COLLECTION_PERFORMANCE for NOT LIVE_TRADING
             else:
                 COLLECTION_PERFORMANCE = COLLECTION_TRADING_PERFORMANCE_TESTING
-                last_record = db_trading[COLLECTION_PERFORMANCE].find_one({}, sort=[("_id", DESCENDING)])
-                coins_history = list(db_trading[COLLECTION_TRADING_HISTORY].find({'on_trade': False}).sort("exit_timestamp", DESCENDING))
+                last_record = db_trading[COLLECTION_PERFORMANCE].find_one(
+                    {}, sort=[("_id", DESCENDING)]
+                )
+                coins_history = list(
+                    db_trading[COLLECTION_TRADING_HISTORY]
+                    .find({"on_trade": False})
+                    .sort("exit_timestamp", DESCENDING)
+                )
 
-            n_coins_history =len(coins_history)
+            n_coins_history = len(coins_history)
 
             if last_record == None:
                 total_events_recorded = 0
@@ -618,146 +851,182 @@ class TradingController:
                 weighted_performance_percentage = 0
                 new_clean_profit = 0
             else:
-                total_events_recorded = last_record['total_events_recorded']
-                absolute_profit = last_record['absolute_profit']
-                total_investment = last_record['total_investment']
-                clean_profit = last_record['clean_profit']
-                weighted_performance_percentage = last_record['weighted_performance_percentage']
-                new_clean_profit = last_record['clean_profit']
+                total_events_recorded = last_record["total_events_recorded"]
+                absolute_profit = last_record["absolute_profit"]
+                total_investment = last_record["total_investment"]
+                clean_profit = last_record["clean_profit"]
+                weighted_performance_percentage = last_record[
+                    "weighted_performance_percentage"
+                ]
+                new_clean_profit = last_record["clean_profit"]
 
-            
             if n_coins_history != total_events_recorded:
-                    new_events_to_register = n_coins_history - total_events_recorded
-                    logger.info(f'There are {new_events_to_register} events to register in {COLLECTION_TRADING_BALANCE_ACCOUNT} collection')
-                    for event_to_add in coins_history[:new_events_to_register]:
-                        logger.info(f'{event_to_add["coin"]}:{event_to_add["_id"]} has been added')
-                        absolute_profit += event_to_add['investment_amount'] * event_to_add['profit']
-                        total_investment += event_to_add['investment_amount']
-                        weighted_performance_percentage = absolute_profit / total_investment
-                        if total_events_recorded != 0:
-                            new_clean_profit = ((clean_profit * total_events_recorded) + event_to_add['profit']) / (total_events_recorded + 1)
-                        else:
-                            clean_profit = event_to_add["profit"]
-                            new_clean_profit = event_to_add['profit']
-                        total_events_recorded += 1
+                new_events_to_register = n_coins_history - total_events_recorded
+                logger.info(
+                    f"There are {new_events_to_register} events to register in {COLLECTION_TRADING_BALANCE_ACCOUNT} collection"
+                )
+                for event_to_add in coins_history[:new_events_to_register]:
+                    logger.info(
+                        f'{event_to_add["coin"]}:{event_to_add["_id"]} has been added'
+                    )
+                    absolute_profit += (
+                        event_to_add["investment_amount"] * event_to_add["profit"]
+                    )
+                    total_investment += event_to_add["investment_amount"]
+                    weighted_performance_percentage = absolute_profit / total_investment
+                    if total_events_recorded != 0:
+                        new_clean_profit = (
+                            (clean_profit * total_events_recorded)
+                            + event_to_add["profit"]
+                        ) / (total_events_recorded + 1)
+                    else:
+                        clean_profit = event_to_add["profit"]
+                        new_clean_profit = event_to_add["profit"]
+                    total_events_recorded += 1
             else:
-                logger.info(f'No events to register the {COLLECTION_PERFORMANCE} performance')
-            
+                logger.info(
+                    f"No events to register the {COLLECTION_PERFORMANCE} performance"
+                )
 
-            doc_db = {'_id': id, 'absolute_profit': round_(absolute_profit,2), 'weighted_performance_percentage': round_(weighted_performance_percentage,4),
-                    'clean_profit': round_(new_clean_profit,4), 'total_investment': total_investment, 'total_events_recorded': total_events_recorded,}
-            
+            doc_db = {
+                "_id": id,
+                "absolute_profit": round_(absolute_profit, 2),
+                "weighted_performance_percentage": round_(
+                    weighted_performance_percentage, 4
+                ),
+                "clean_profit": round_(new_clean_profit, 4),
+                "total_investment": total_investment,
+                "total_events_recorded": total_events_recorded,
+            }
+
             db_trading[COLLECTION_PERFORMANCE].insert(doc_db)
             del db_trading
-    
+
     def makeRequest(api_path, method, params, api_key_path, private_key_path):
 
         f = open(api_key_path, "r")
-        #API_KEY = f.read()
+        # API_KEY = f.read()
 
-        byte_string=Path(api_key_path).read_text()
+        byte_string = Path(api_key_path).read_text()
         # Decoding the bytes object to a regular string
-        #API_KEY = byte_string.decode('utf-8')
+        # API_KEY = byte_string.decode('utf-8')
 
         # Removing leading/trailing whitespace and newline characters
         API_KEY = byte_string.strip()
 
         timestamp = int(time() * 1000)
-        params['timestamp'] = timestamp
+        params["timestamp"] = timestamp
 
-        with open(private_key_path, 'rb') as f:
-            private_key = load_pem_private_key(data=f.read(),
-                                            password=None)
-            
-        payload = '&'.join([f'{param}={value}' for param, value in params.items()])
-        signature = base64.b64encode(private_key.sign(payload.encode('ASCII')))
-        params['signature'] = signature
+        with open(private_key_path, "rb") as f:
+            private_key = load_pem_private_key(data=f.read(), password=None)
 
-        if method == 'GET':
-            response = requests.request(method=method ,url="https://api.binance.com" + api_path,
-                params = params,
-                headers = {
-                    "X-MBX-APIKEY" : API_KEY,
-                }
+        payload = "&".join([f"{param}={value}" for param, value in params.items()])
+        signature = base64.b64encode(private_key.sign(payload.encode("ASCII")))
+        params["signature"] = signature
+
+        if method == "GET":
+            response = requests.request(
+                method=method,
+                url="https://api.binance.com" + api_path,
+                params=params,
+                headers={
+                    "X-MBX-APIKEY": API_KEY,
+                },
             )
         else:
             print(params)
-            response = requests.request(method=method ,url="https://api.binance.com" + api_path,
-                data = params,
-                headers = {
-                    "X-MBX-APIKEY" : API_KEY,
-                }
+            response = requests.request(
+                method=method,
+                url="https://api.binance.com" + api_path,
+                data=params,
+                headers={
+                    "X-MBX-APIKEY": API_KEY,
+                },
             )
 
         status_code = response.status_code
         response = json.loads(response.text)
         return response, status_code
 
-
-
     def get_asset_composition(api_key_path, private_key_path):
 
         # make request for fetching asset composition
         api_path = "/api/v3/account"
         params = {}
-        method = 'GET'
-        data, status_code = TradingController.makeRequest(api_path=api_path, params=params, method=method,
-                                                           api_key_path=api_key_path, private_key_path=private_key_path)
+        method = "GET"
+        data, status_code = TradingController.makeRequest(
+            api_path=api_path,
+            params=params,
+            method=method,
+            api_key_path=api_key_path,
+            private_key_path=private_key_path,
+        )
 
         if status_code == 200:
             # fetch asset whose balance is different from zero
 
-            data = data['balances']
-            #print(data)
+            data = data["balances"]
+            # print(data)
             current_wallet = {}
             for asset in data:
                 if float(asset["free"]) != 0:
-                    current_wallet[asset['asset']] = float(asset['free'])
-
+                    current_wallet[asset["asset"]] = float(asset["free"])
 
             return current_wallet, status_code
         else:
-            msg = f'Status Code: {status_code}: get_asset_composition did not work as expected'
+            msg = f"Status Code: {status_code}: get_asset_composition did not work as expected"
             return msg, status_code
-    
+
     def load_user_configuration():
         """Loads a JSON file in a single line (excluding import)."""
-        f = open ('/tracker/user_configuration/userconfiguration.json', "r")
+        f = open("/tracker/user_configuration/userconfiguration.json", "r")
         user_configuration = json.loads(f.read())
         return user_configuration
 
-    def create_order(coin, side, type, usdt=None, quantity=None, user=os.getenv('SYS_ADMIN'), test=True, user_configuration=load_user_configuration()):
+    def create_order(
+        coin,
+        side,
+        type,
+        usdt=None,
+        quantity=None,
+        user=os.getenv("SYS_ADMIN"),
+        test=True,
+        user_configuration=load_user_configuration(),
+    ):
         # # only for testing
         # if coin == None:
         #     coin = 'BTCUSDT',
         #     side = 'BUY', #BUY, SELL
         #     usdt = 10
         #     type = 'MARKET'
-        if coin[-4:] == 'USDT':
-            coin = coin.replace('USDT', 'USDC')
+        if coin[-4:] == "USDT":
+            coin = coin.replace("USDT", "USDC")
 
-        api_key_path = user_configuration[user]['api_key_path']
-        private_key_path = user_configuration[user]['private_key_path']
+        api_key_path = user_configuration[user]["api_key_path"]
+        private_key_path = user_configuration[user]["private_key_path"]
 
-        params = {'symbol': coin,
-                  'side': side,
-                  'type': type}
+        params = {"symbol": coin, "side": side, "type": type}
         if test:
             api_path = "/api/v3/order/test"
-            params['computeCommissionRates'] = 'true'
+            params["computeCommissionRates"] = "true"
         else:
             api_path = "/api/v3/order"
-        
+
         # Use "quoteOrderQty" for executing BUY orders with USDT
         if quantity == None:
-            params['quoteOrderQty'] = str(usdt)
+            params["quoteOrderQty"] = str(usdt)
         # Use "quantity" for executing SELL orders with number of crypto units (i.e. quantity)
         else:
-            params['quantity'] = str(quantity)
-        
+            params["quantity"] = str(quantity)
 
-        method = 'POST'
-        response, status_code = TradingController.makeRequest(api_path=api_path, params=params, method=method, api_key_path=api_key_path, private_key_path=private_key_path)
+        method = "POST"
+        response, status_code = TradingController.makeRequest(
+            api_path=api_path,
+            params=params,
+            method=method,
+            api_key_path=api_key_path,
+            private_key_path=private_key_path,
+        )
 
         if status_code == 200:
             info_buy = {}
@@ -770,18 +1039,24 @@ class TradingController:
         print(response)
         print(status_code)
         return response, status_code
-    
-    def get_balance_account(client=DatabaseConnection(), logger=LoggingController.start_logging(), user_configuration=load_user_configuration(), only_admin=True, user_x=None):
-        '''
+
+    def get_balance_account(
+        client=DatabaseConnection(),
+        logger=LoggingController.start_logging(),
+        user_configuration=load_user_configuration(),
+        only_admin=True,
+        user_x=None,
+    ):
+        """
         if you want to get the balance account of sysadmin: only_admin=True
         if you want to get the balance account of a user: only_admin=False & user_x=<username>
         if you want to get the balance account of all users: only_admin=False & user_x=None
-        '''
+        """
 
         balance_account = {}
 
         for user in user_configuration:
-            sys_admin = os.getenv('SYS_ADMIN')
+            sys_admin = os.getenv("SYS_ADMIN")
             if only_admin and user != sys_admin:
                 continue
             elif not only_admin and user_x != None and user_x not in user_configuration:
@@ -789,50 +1064,71 @@ class TradingController:
             elif not only_admin and user_x != None and user != user_x:
                 continue
 
-            TRADING_LIVE = user_configuration[user]['trading_live']
-            api_key_path = user_configuration[user]['api_key_path']
-            private_key_path = user_configuration[user]['private_key_path']
+            TRADING_LIVE = user_configuration[user]["trading_live"]
+            api_key_path = user_configuration[user]["api_key_path"]
+            private_key_path = user_configuration[user]["private_key_path"]
 
-            response, status_code = TradingController.get_asset_composition(api_key_path, private_key_path)
+            response, status_code = TradingController.get_asset_composition(
+                api_key_path, private_key_path
+            )
             balance_account[user] = response
-        
+
         return balance_account
-    
-    def get_usdc_available(client=DatabaseConnection(), logger=LoggingController.start_logging(), user_configuration=load_user_configuration(), only_admin=True, user_x=None):
-        balance_account = TradingController.get_balance_account(client=client, logger=logger, user_configuration=user_configuration, only_admin=only_admin, user_x=user_x)
+
+    def get_usdc_available(
+        client=DatabaseConnection(),
+        logger=LoggingController.start_logging(),
+        user_configuration=load_user_configuration(),
+        only_admin=True,
+        user_x=None,
+    ):
+        balance_account = TradingController.get_balance_account(
+            client=client,
+            logger=logger,
+            user_configuration=user_configuration,
+            only_admin=only_admin,
+            user_x=user_x,
+        )
         print(balance_account)
         if user_x != None:
-            if 'USDC' in balance_account[user_x]:
-                return balance_account[user_x]['USDC']
+            if "USDC" in balance_account[user_x]:
+                return balance_account[user_x]["USDC"]
             else:
                 return 0
         else:
-            ValueError('Provide Username')
-    
+            ValueError("Provide Username")
 
-    #@timer_func
-    def save_balance_account(client=DatabaseConnection(), logger=LoggingController.start_logging(), user_configuration=load_user_configuration()):
+    # @timer_func
+    def save_balance_account(
+        client=DatabaseConnection(),
+        logger=LoggingController.start_logging(),
+        user_configuration=load_user_configuration(),
+    ):
         # t1 = time()
-        SYS_ADMIN = os.getenv('SYS_ADMIN')
+        SYS_ADMIN = os.getenv("SYS_ADMIN")
 
         for user in user_configuration:
-            TRADING_LIVE = user_configuration[user]['trading_live']
-            db_name = DATABASE_TRADING + '_' + user
+            TRADING_LIVE = user_configuration[user]["trading_live"]
+            db_name = DATABASE_TRADING + "_" + user
             db_trading = client.get_db(db_name)
 
             if user != SYS_ADMIN and TRADING_LIVE == False:
                 continue
 
-            api_key_path = user_configuration[user]['api_key_path']
-            private_key_path = user_configuration[user]['private_key_path']
+            api_key_path = user_configuration[user]["api_key_path"]
+            private_key_path = user_configuration[user]["private_key_path"]
 
             now = datetime.now()
             now_isoformat = now.isoformat()
             current_day_of_the_week = now.weekday()
 
-            response, status_code = TradingController.get_asset_composition(api_key_path, private_key_path)
+            response, status_code = TradingController.get_asset_composition(
+                api_key_path, private_key_path
+            )
             balance_account = 0
-            last_record = db_trading[COLLECTION_TRADING_BALANCE_ACCOUNT].find_one({}, sort=[("_id", DESCENDING)])
+            last_record = db_trading[COLLECTION_TRADING_BALANCE_ACCOUNT].find_one(
+                {}, sort=[("_id", DESCENDING)]
+            )
 
             # the "CREATE_NEW" flag is used to create a new record every week.
             # this record has the goal to re-compute the "investment_amount" based on the past balance account (i.e. last_balance_account)
@@ -842,17 +1138,22 @@ class TradingController:
             # in case the BALANCE_ACCOUNT_COLLECTION is empy, initialize variables
             if last_record == None:
                 CREATE_NEW = True
-                last_investment_amount = user_configuration[user]['initialized_investment_amount']
-                average_balance_account = user_configuration[user]['initialized_balance_account']
+                last_investment_amount = user_configuration[user][
+                    "initialized_investment_amount"
+                ]
+                average_balance_account = user_configuration[user][
+                    "initialized_balance_account"
+                ]
             else:
-                last_investment_amount = last_record['investment_amount']
-                average_balance_account = last_record['average_balance']
-                query = {'_id': last_record['_id']}
+                last_investment_amount = last_record["investment_amount"]
+                average_balance_account = last_record["average_balance"]
+                query = {"_id": last_record["_id"]}
 
                 # if It is a new week (it is Monday)
-                if current_day_of_the_week == 0 and now - datetime.fromisoformat(last_record['_id']) > timedelta(days=6):
+                if current_day_of_the_week == 0 and now - datetime.fromisoformat(
+                    last_record["_id"]
+                ) > timedelta(days=6):
                     CREATE_NEW = True
-
 
             if status_code == 200:
                 if "USDT" in response:
@@ -862,7 +1163,9 @@ class TradingController:
                     balance_account_usdt = 0
                     balance_account = 0
 
-                coins_live = list(db_trading[COLLECTION_TRADING_LIVE].find({'on_trade': True}))
+                coins_live = list(
+                    db_trading[COLLECTION_TRADING_LIVE].find({"on_trade": True})
+                )
 
                 # get balance account, absolute profit and total investment of only official events
                 for coin_live in coins_live:
@@ -872,68 +1175,95 @@ class TradingController:
                     # if TRADING_LIVE env var is ON, and coin was not started as live, then skip
                     if TRADING_LIVE and not coin_live["trading_live"]:
                         continue
-                    
+
                     # get balance account
-                    #balance_account += (coin_live["purchase_price"] * coin_live["quantity"]) * coin_live["profit"]
-                    balance_account += coin_live["current_price"] * coin_live["quantity"]
-                    
+                    # balance_account += (coin_live["purchase_price"] * coin_live["quantity"]) * coin_live["profit"]
+                    balance_account += (
+                        coin_live["current_price"] * coin_live["quantity"]
+                    )
+
                 update_data = {"$set": {}}
 
-                
                 # Update the average balance account considering the minutes passed from the beginning of the week
                 # balance_account refers to the most updated balanace account
                 # average_balance refers to average of balance account in the last week (i.e. from Monday)
                 if not CREATE_NEW:
-                    minutes_passed = ((current_day_of_the_week * 24 + now.hour) * 60 + now.minute)
+                    minutes_passed = (
+                        current_day_of_the_week * 24 + now.hour
+                    ) * 60 + now.minute
 
                     last_balance = last_record["average_balance"]
                     # logger.info(f'last_record_balance_account: {last_balance}')
                     # logger.info(f'minutes passed {minutes_passed}')
                     # logger.info(f' balance_account now: {balance_account}')
 
-                    average_balance = ((last_record["average_balance"] * (minutes_passed - 1)) + balance_account) / minutes_passed
-                    update_data["$set"]['average_balance'] = average_balance
-                    update_data["$set"]['balance_account'] = round_(balance_account,2)
-                    update_data["$set"]['balance_usdt'] = balance_account_usdt
-                    update_data["$set"]['last_update'] = now_isoformat
+                    average_balance = (
+                        (last_record["average_balance"] * (minutes_passed - 1))
+                        + balance_account
+                    ) / minutes_passed
+                    update_data["$set"]["average_balance"] = average_balance
+                    update_data["$set"]["balance_account"] = round_(balance_account, 2)
+                    update_data["$set"]["balance_usdt"] = balance_account_usdt
+                    update_data["$set"]["last_update"] = now_isoformat
 
-                    db_trading[COLLECTION_TRADING_BALANCE_ACCOUNT].update_one(query, update_data)
+                    db_trading[COLLECTION_TRADING_BALANCE_ACCOUNT].update_one(
+                        query, update_data
+                    )
                 else:
-                    # every week a new record is inserted in this collection. 
+                    # every week a new record is inserted in this collection.
                     # The investment_amount is computed, considering an expected loss of "MAXIMUM_LOSS" which is (e.g. 2) times the investment amount.
                     # it also takes account of the scenario where a lot of events are triggered "MAX_EVENTS_SYNCED".
                     # this considerations should take the risk of sudden losses and of the reduced balance account
                     # for this reason, the investment amount is never reduced, in order to keep the investment as more consistent as possible.
-                    start_of_week = (now - timedelta(days=current_day_of_the_week)).replace(hour=0, minute=0, second=0, microsecond=0)
-                    #weekly id
+                    start_of_week = (
+                        now - timedelta(days=current_day_of_the_week)
+                    ).replace(hour=0, minute=0, second=0, microsecond=0)
+                    # weekly id
                     id = start_of_week.isoformat()
                     # maximum synced events (e.g. 15)
-                    maximum_events_sync = int(os.getenv('MAX_EVENTS_SYNCED'))
+                    maximum_events_sync = int(os.getenv("MAX_EVENTS_SYNCED"))
                     # maximum loss in terms of multiple of investment_amount (e.g. 2)
-                    maximum_loss = float(os.getenv('MAXIMUM_LOSS'))
+                    maximum_loss = float(os.getenv("MAXIMUM_LOSS"))
                     # potential_investment_amount (this is generally a float number), but I want a multiple of 5 to make the investments more consistent
                     # the value of the investment_amount depends on the performance of the average_balance_account of the last week.
-                    potential_investment_amount = (average_balance_account / (maximum_events_sync + maximum_loss))
+                    potential_investment_amount = average_balance_account / (
+                        maximum_events_sync + maximum_loss
+                    )
                     # maximum between the average balance account of the last week and the last_investment_amount
                     if TRADING_LIVE:
-                        investment_amount = max(int(potential_investment_amount - int(potential_investment_amount % 5)), last_investment_amount)
+                        investment_amount = max(
+                            int(
+                                potential_investment_amount
+                                - int(potential_investment_amount % 5)
+                            ),
+                            last_investment_amount,
+                        )
                     else:
                         investment_amount = 100
                     # finally I initialize the balance account and average balance account with the "new" balance_account
-                    doc_db = {'_id': id, 'balance_account': round_(balance_account,2), 'balance_usdt': balance_account_usdt, 'average_balance': balance_account, 'investment_amount': investment_amount, 'last_update': now_isoformat}
+                    doc_db = {
+                        "_id": id,
+                        "balance_account": round_(balance_account, 2),
+                        "balance_usdt": balance_account_usdt,
+                        "average_balance": balance_account,
+                        "investment_amount": investment_amount,
+                        "last_update": now_isoformat,
+                    }
                     db_trading[COLLECTION_TRADING_BALANCE_ACCOUNT].insert(doc_db)
-                
 
                 # t2 = time()
                 # time_spent = round_(t2 - t1,2)
                 # logger.info(f'Time spent for getting balance account info {time_spent}')
-            
-            else:
-                logger.info('ERROR: WAS NOT ABLE TO RETRIEVE INFO FROM /v3/account Binance API')
-                logger.info(response)            
-    
 
-    def binance_order_book_request(coin, limit=5000, logger=LoggingController.start_logging()):
+            else:
+                logger.info(
+                    "ERROR: WAS NOT ABLE TO RETRIEVE INFO FROM /v3/account Binance API"
+                )
+                logger.info(response)
+
+    def binance_order_book_request(
+        coin, limit=5000, logger=LoggingController.start_logging()
+    ):
         url = f"https://api.binance.com/api/v3/depth?symbol={coin}&limit={limit}"
         try:
             response = requests.get(url=url)
@@ -946,13 +1276,13 @@ class TradingController:
             logger.info(headers)
             retry_after = int(headers["retry-after"])
             logger.info(f"ip banned, waiting {retry_after}")
-            sleep(retry_after*2)
+            sleep(retry_after * 2)
         return response.text, status_code
-                    
+
     def get_statistics(resp):
-        '''
+        """
         This function makes a first pre-processing of the orderbook data, the output is then analyzed for buy-events
-        '''
+        """
         json_resp = json.loads(resp)
         total_ask_volume = 0
         total_bid_volume = 0
@@ -962,7 +1292,7 @@ class TradingController:
         best_bid_price = float(json_resp["bids"][0][0])
         best_ask_price = float(json_resp["asks"][0][0])
 
-        max_n_orders = max(len(json_resp["bids"]),len(json_resp["asks"]))
+        max_n_orders = max(len(json_resp["bids"]), len(json_resp["asks"]))
 
         for ask_order in json_resp["asks"]:
             total_ask_volume += float(ask_order[0]) * float(ask_order[1])
@@ -1017,9 +1347,9 @@ class TradingController:
             int(total_ask_volume),
             summary_bid_orders,
             summary_ask_orders,
-            max_n_orders
+            max_n_orders,
         )
-    
+
     def count_decimals(num):
         """
         Determines the number of decimal places in a given number.
@@ -1032,33 +1362,33 @@ class TradingController:
         """
         try:
             str_num = str(num)
-            decimal_index = str_num.index('.')
+            decimal_index = str_num.index(".")
             return len(str_num) - decimal_index
         except ValueError:
             # If no decimal point is found, it's an integer
             return 1
-    
+
     def compute_quantity_buy(usdc, coin, current_ask_price):
-        with open('minimal_notional.json', 'r') as f:
+        with open("minimal_notional.json", "r") as f:
             infocoin = json.load(f)
-        if usdc < int(infocoin[coin]['MIN_NOTIONAL']):
+        if usdc < int(infocoin[coin]["MIN_NOTIONAL"]):
             return None
-        n_decimals_smallest_unit = count_decimals(float(infocoin[coin]['LOT_SIZE']))
+        n_decimals_smallest_unit = count_decimals(float(infocoin[coin]["LOT_SIZE"]))
         # quantity = round_(usdc / current_ask_price, n_decimals_smallest_unit)
-        quantity = math.floor(usdc / current_ask_price / 10**(-3)) * 10**(-3)
+        quantity = math.floor(usdc / current_ask_price / 10 ** (-3)) * 10 ** (-3)
         x = quantity * current_ask_price
-        print(f'Expected usd spent: {x}')
-    
+        print(f"Expected usd spent: {x}")
+
     def adjust_quantity_sell(quantity, coin):
-        with open('minimal_notional.json', 'r') as f:
+        with open("minimal_notional.json", "r") as f:
             infocoin = json.load(f)
-        n_decimals_smallest_unit = count_decimals(float(infocoin[coin]['LOT_SIZE']))
+        n_decimals_smallest_unit = count_decimals(float(infocoin[coin]["LOT_SIZE"]))
         quantity = round_(quantity, n_decimals_smallest_unit)
         return quantity
-                                
+
     def get_minimal_notional_value(logger):
         url = "https://fapi.binance.com/fapi/v1/exchangeInfo"
-        response = requests.request(method='GET', url=url)
+        response = requests.request(method="GET", url=url)
         # print(response)
         status_code = response.status_code
         response = json.loads(response.text)
@@ -1068,39 +1398,43 @@ class TradingController:
         if status_code == 200:
             try:
                 minimal_notional_value = {}
-                for obj in response['symbols']:
-                    coin = obj['symbol']
-                    if 'USDT' in coin:
-                        #coin = coin[:-1]
-                        info = {'MIN_NOTIONAL': None, 'LOT_SIZE': None}
-                        for obj_i in obj['filters']:
-                            if 'filterType' in obj_i and obj_i['filterType'] == 'MIN_NOTIONAL':#, 'LOT_SIZE']:
-                                info['MIN_NOTIONAL'] =  obj_i['notional']
-                            if 'filterType' in obj_i and obj_i['filterType'] == 'LOT_SIZE':#, 'LOT_SIZE']:
-                                info['LOT_SIZE'] = obj_i['stepSize']
+                for obj in response["symbols"]:
+                    coin = obj["symbol"]
+                    if "USDT" in coin:
+                        # coin = coin[:-1]
+                        info = {"MIN_NOTIONAL": None, "LOT_SIZE": None}
+                        for obj_i in obj["filters"]:
+                            if (
+                                "filterType" in obj_i
+                                and obj_i["filterType"] == "MIN_NOTIONAL"
+                            ):  # , 'LOT_SIZE']:
+                                info["MIN_NOTIONAL"] = obj_i["notional"]
+                            if (
+                                "filterType" in obj_i
+                                and obj_i["filterType"] == "LOT_SIZE"
+                            ):  # , 'LOT_SIZE']:
+                                info["LOT_SIZE"] = obj_i["stepSize"]
                         minimal_notional_value[coin] = info
-                            
+
                 n_coin_minimal_notional_value = len(list(minimal_notional_value.keys()))
-                logger.info(f'There are {n_coin_minimal_notional_value} coins in minimal notional value')
+                logger.info(
+                    f"There are {n_coin_minimal_notional_value} coins in minimal notional value"
+                )
                 min_coins_minimum_coins = 100
                 if n_coin_minimal_notional_value > min_coins_minimum_coins:
-                    with open(f'/tracker/json/minimal_notional.json', 'w') as f: # 'w' opens the file for writing.
+                    with open(
+                        f"/tracker/json/minimal_notional.json", "w"
+                    ) as f:  # 'w' opens the file for writing.
                         json.dump(minimal_notional_value, f, indent=4)
                 else:
-                    logger.info(f'WARNING: Number of records in minimal_notional.json is less than {min_coins_minimum_coins}')
+                    logger.info(
+                        f"WARNING: Number of records in minimal_notional.json is less than {min_coins_minimum_coins}"
+                    )
             except Exception as e:
-                logger.info(f'WARNING: Request for Minimum Notional Value Failed. Error {e}')
+                logger.info(
+                    f"WARNING: Request for Minimum Notional Value Failed. Error {e}"
+                )
         else:
-            logger.info(f'WARNING: Request for Minimum Notional Value Failed. STATUS CODE {url}: {status_code}')
-
-                        
-
-
-
-
-                
-
-
-
-
-
+            logger.info(
+                f"WARNING: Request for Minimum Notional Value Failed. STATUS CODE {url}: {status_code}"
+            )
