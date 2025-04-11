@@ -76,7 +76,7 @@ services:
       - TYPE_USDT=$TYPE_USDT
       - LIMIT_ORDERBOOK_SCRIPTS=$LIMIT_ORDERBOOK_SCRIPTS
       - LIMIT_ORDERBOOK_SCRIPTS_SECONDARY=$LIMIT_ORDERBOOK_SCRIPTS_SECONDARY
-  networks:
+    networks:
       - crypto-net
 
   mongo:
