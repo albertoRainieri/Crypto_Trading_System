@@ -553,6 +553,9 @@ if __name__ == "__main__":
     id = sys.argv[3]
     ranking = sys.argv[4]
     RESTART = bool(int(sys.argv[5]))
+    event_keys_json = json.loads(sys.argv[7])
+    event_keys = event_keys_json['event_keys']
+
     if not RESTART:
         strategy_parameters = json.loads(sys.argv[6])
 
@@ -576,8 +579,6 @@ if __name__ == "__main__":
     STOP_SCRIPT = False
 
     # count the current number of live order book scripts. LIMIT 20
-    event_keys = db.list_collection_names()
-
     # check in the current event_key if there are current jobs
     for doc in event_key_docs:
         # If True, the system has restarted and we are trying to resume the order book polling
@@ -651,7 +652,6 @@ if __name__ == "__main__":
                                             summary_jump_price_level, ask_order_distribution_list, BUY)
 
 
-            event_keys = db.list_collection_names()
             numbers_filled, live_order_book_scripts_number, current_weight = ( get_current_number_of_orderbook_scripts(db, event_keys) )
             times_in_live_order_book_scripts_number = live_order_book_scripts_number // LIMIT
             sleep_seconds, correct_minute = get_sleep_seconds(  live_order_book_scripts_number, number_script, second_binance_request, LIMIT)

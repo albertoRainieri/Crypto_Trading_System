@@ -359,6 +359,7 @@ class TradingController:
                             strategy_parameters = json.dumps(
                                 strategy_configuration["parameters"]
                             )
+                            event_keys_json = json.dumps({'event_keys': event_keys})
                             all_event_keys = [event_key]
                             db_collection.insert(
                                 {
@@ -379,6 +380,7 @@ class TradingController:
                                     str(ranking),
                                     RESTART,
                                     strategy_parameters,
+                                    event_keys_json
                                 ]
                             )
                             FIRST_EVENT_KEY = False
@@ -465,6 +467,7 @@ class TradingController:
         event_keys = list(risk_configuration["event_keys"]["primary"].keys()) + list(
             risk_configuration["event_keys"]["secondary"].keys()
         )
+        event_keys_json = json.dumps({'event_keys': event_keys})
 
         RESTART = "1"
 
@@ -505,6 +508,7 @@ class TradingController:
                             str(ranking),
                             RESTART,
                             strategy_parameters,
+                            event_keys_json
                         ]
                     )
         client.close()
