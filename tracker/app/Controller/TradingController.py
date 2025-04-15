@@ -263,9 +263,7 @@ class TradingController:
         LOAD_ORDER_BOOK = False
         RESTART = "0"
         limit_orderbook_scripts = int(os.getenv("LIMIT_ORDERBOOK_SCRIPTS"))
-        limit_orderbook_scripts_secondary = int(
-            os.getenv("LIMIT_ORDERBOOK_SCRIPTS_SECONDARY")
-        )
+        limit_orderbook_scripts_secondary = int( os.getenv("LIMIT_ORDERBOOK_SCRIPTS_SECONDARY") )
 
         for event_key in event_keys:
 
