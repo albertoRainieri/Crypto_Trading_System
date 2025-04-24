@@ -41,172 +41,6 @@ class TradingController:
         else:
             return riskconfiguration
 
-    # ASYNC ENABLED call. Enable only if cpu support is high. 4CPUs are probably minimum
-    # async def check_event_triggering(coin, obs, volatility_coin, logger, db_trading, db_logger, trading_coins_list, risk_configuration, last_coin, first_coin):
-
-    # ASYNC DISABLED. THIS IS PREFERRED CHOICE even if CPU Support is high
-    # def check_event_triggering_deprecated(coin, obs, volatility_coin, logger, db_logger, risk_configuration):
-
-    #     '''
-    #     This functions triggers a market order if the condition of the risk strategies are met.
-    #     The risk strategies are defined by "risk_configuration"
-    #     this function is deprecated
-    #     '''
-    #     # STRUCTURE TRADING CONFIGURATION
-    #     # VOLATILITY_GROUPED = TRUE
-    #     # {
-    #     #     '<volatility_1>' : {
-    #     #         '<key_1>': {
-    #     #             'riskmanagement_conf': {
-    #     #                 'golden_zone': '<GOLDEN_ZONE>',
-    #     #                 'step_golden': '<STEP>'
-    #     #                 'step_nogolden': '<STEP_NOGOLDEN>'
-    #     #                 'extra_timeframe': '<EXTRA_TIMEFRAME>'
-    #     #             }
-    #     #         }
-    #     #     }
-    #     # }
-
-    #     # VOLATILITY_GROUPED = FALSE
-    #     # {
-    #         # '<key_1>': {
-    #         #     'riskmanagement_conf': {
-    #         #         'golden_zone': '<GOLDEN_ZONE>',
-    #         #         'step_golden': '<STEP>'
-    #         #         'step_nogolden': '<STEP_NOGOLDEN>'
-    #         #         'extra_timeframe': '<EXTRA_TIMEFRAME>'
-    #         #     }
-    #         # }
-    #     # }
-
-    #     # if coin == last_coin or coin == first_coin:
-    #     #     now = datetime.now()
-    #     #     now_isoformat = now.isoformat()
-    #     #     logger.info(f'TradingController: {coin}')
-
-    #     risk_configuration = TradingController.returnRiskConfiguration(risk_configuration, volatility_coin)
-
-    #     if risk_configuration != None:
-    #         for event_key in risk_configuration:
-
-    #             # check if coin is already on trade for this specific event, if True, pass
-    #             COIN_ON_TRADING = False
-
-    #             vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = getsubstring_fromkey(event_key)
-    #             if lvl == None:
-    #                 lvl = 'None'
-
-    #             if obs[vol_field] == None or obs[buy_vol_field] == None:
-    #                 continue
-
-    #             # if vol is higher than threshold, go ahead
-    #             if obs[vol_field] >= float(vol_value):
-    #                 # if field is below 0.5, discard events whose buy_vol is strictly greater than threshold
-    #                 if float(buy_vol_field) < 0.5:
-    #                     if obs[buy_vol_field] > float(buy_vol_value):
-    #                         continue
-    #                 # if field is above 0.5, discard events whose buy_vol is strictly lesser than threshold
-    #                 else:
-    #                     if obs[buy_vol_field] < float(buy_vol_value):
-    #                         continue
-
-    #                 id = datetime.now().isoformat()
-    #                 # Start Order Book Polling
-    #                 subprocess.Popen(["python3", "/tracker/trading/start-order-book.py", coin, event_key, id, lvl, '0'])
-
-    #                 f = open ('/tracker/user_configuration/userconfiguration.json', "r")
-    #                 user_configuration = json.loads(f.read())
-
-    #                 SYS_ADMIN = os.getenv('SYS_ADMIN')
-    #                 client = DatabaseConnection()
-    #                 complete_process_overview = {}
-
-    #                 for user in user_configuration:
-    #                     TRADING_LIVE = user_configuration[user]['trading_live']
-
-    #                     if user != SYS_ADMIN and TRADING_LIVE == False:
-    #                         continue
-
-    #                     db_name = DATABASE_TRADING + '_' + user
-    #                     db_trading = client.get_db(db_name)
-    #                     trading_coins_list = list(db_trading[COLLECTION_TRADING_LIVE].find())
-    #                     if len(trading_coins_list) != 0:
-    #                         for coin_on_trade in trading_coins_list:
-    #                             if coin_on_trade['coin'] == coin and coin_on_trade['event'] == event_key:
-    #                                 COIN_ON_TRADING = True
-
-    #                     if not COIN_ON_TRADING:
-    #                         last_record = db_trading[COLLECTION_TRADING_BALANCE_ACCOUNT].find_one({}, sort=[("_id", DESCENDING)])
-    #                         if last_record != None:
-    #                             investment_amount = last_record['investment_amount']
-    #                         else:
-    #                             investment_amount = user_configuration[user]['initialized_investment_amount']
-
-    #                         quantity = round_(investment_amount / obs['price'],8)
-
-    #                         if TRADING_LIVE:
-    #                             api_key_path = user_configuration[user]['api_key_path']
-    #                             private_key_path = user_configuration[user]['private_key_path']
-    #                             response, status_code = TradingController.create_order(api_key_path=api_key_path, private_key_path=private_key_path,
-    #                                                                                     coin=coin, side="BUY", usdt=investment_amount)
-    #                             if status_code == 200:
-    #                                 response = response.json()
-
-    #                                 # let's get the real quantity and price executed, thus the investment_amount
-    #                                 quantity = float(response["executedQty"])
-    #                                 purchase_price = float(response["price"])
-    #                                 investment_amount = quantity * purchase_price
-    #                                 trading_live = True
-    #                                 msg = f"{coin} - Event Triggered: {vol_field}:{vol_value} - {buy_vol_field}:{buy_vol_value} Live Trading: {TRADING_LIVE}. user: {user}"
-    #                             else:
-    #                                 msg_text = f'Status code: {status_code} BUY Order Failed for {coin}. key event: {event_key}. user: {user}'
-    #                                 msg = {'msg': msg_text, 'error': response.text}
-    #                                 trading_live = False
-    #                                 purchase_price = obs['price']
-
-    #                                 if user != SYS_ADMIN:
-    #                                     logger.info(msg)
-    #                                     continue
-
-    #                         else:
-    #                             trading_live = False
-    #                             msg = f"{coin} - Event Triggered: {vol_field}:{vol_value} - {buy_vol_field}:{buy_vol_value} Live Trading: {TRADING_LIVE}. user: {user}"
-    #                             purchase_price = obs['price']
-    #                         ################################################################
-    #                         logger.info(msg)
-
-    #                         # get risk management configuration
-    #                         risk_management_configuration = json.dumps(risk_configuration[event_key])
-
-    #                         process_key = event_key + coin
-
-    #                         if process_key not in complete_process_overview:
-    #                             # Start Subprocess for "coin". This will launch a wss connection for getting bid price coin in real time
-    #                             process = subprocess.Popen(["python3", "/tracker/trading/wss-trading.py", coin, id, str(purchase_price), str(timeframe), risk_management_configuration])
-    #                             complete_process_overview[process_key] = process.pid
-    #                             pid = process.pid
-    #                         else:
-    #                             pid = complete_process_overview[process_key]
-    #                             logger.info('Process wss-trading.py already started')
-
-    #                         # send query to db_trading. for logging
-
-    #                         id_volume_standings_db = datetime.now().strftime("%Y-%m-%d")
-    #                         db_volume_standings = client.get_db(DATABASE_VOLUME_STANDINGS)
-    #                         volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find_one({"_id": id_volume_standings_db})
-    #                         ranking = volume_standings['standings'][coin]['rank']
-
-    #                         doc_db = {'_id': id, 'coin': coin, 'ranking': ranking, 'profit': 0, 'purchase_price': purchase_price, 'current_price': purchase_price,
-    #                                 'quantity': quantity,'on_trade': True, 'trading_live': trading_live, 'event': event_key, 'investment_amount': investment_amount,
-    #                                     'exit_timestamp': datetime.fromtimestamp(0).isoformat(), 'risk_configuration': risk_configuration[event_key], 'pid': pid}
-
-    #                         db_trading[COLLECTION_TRADING_LIVE].insert_one(doc_db)
-    #                         db_trading[COLLECTION_TRADING_HISTORY].insert_one(doc_db)
-    #                         db_logger[DATABASE_TRADING_INFO].insert_one({'_id': datetime.now().isoformat(), 'msg': msg})
-
-    #                 client.close()
-    # # ASYNC DISABLED. THIS IS PREFERRED CHOICE even if CPU Support is high
-
     def extract_timeframe(input_string):
         """
         Extracts the timeframe value (e.g., 1440) from the given input string.
@@ -256,25 +90,19 @@ class TradingController:
         """
 
         # event_keys = strategy_configuration['event_keys']
-        event_keys = list(
-            strategy_configuration["event_keys"]["primary"].keys()
-        ) + list(strategy_configuration["event_keys"]["secondary"].keys())
+        event_keys = list(strategy_configuration["event_keys"].keys())
         FIRST_EVENT_KEY = True
-        LOAD_ORDER_BOOK = False
         RESTART = "0"
-        limit_orderbook_scripts = int(os.getenv("LIMIT_ORDERBOOK_SCRIPTS"))
-        limit_orderbook_scripts_secondary = int( os.getenv("LIMIT_ORDERBOOK_SCRIPTS_SECONDARY") )
+
+        if coin in volume_standings["standings"]:
+            ranking = int(volume_standings["standings"][coin]["rank"])
+        else:
+            return
 
         for event_key in event_keys:
 
             # check if coin is already on trade for this specific event, if True, pass
-            vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = (
-                getsubstring_fromkey(event_key)
-            )
-            if coin in volume_standings["standings"]:
-                ranking = int(volume_standings["standings"][coin]["rank"])
-            else:
-                break
+            vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = (  getsubstring_fromkey(event_key) )
 
             if ranking > int(lvl):
                 continue
@@ -285,163 +113,29 @@ class TradingController:
             # if vol is higher than threshold, go ahead
             if obs[vol_field] >= vol_value:
                 # determine if the buy_vol is below/above threshold. the operator changes if the threshold is below/above 0.5
-                if (
-                    buy_vol_value == 0
-                    or buy_vol_value < 0.5
-                    and obs[buy_vol_field] <= buy_vol_value
-                    or buy_vol_value > 0.5
-                    and obs[buy_vol_field] >= buy_vol_value
-                ):
-
-                    if FIRST_EVENT_KEY or LOAD_ORDER_BOOK:
-                        client = DatabaseConnection()
-                        db = client.get_db(DATABASE_ORDER_BOOK)
-                        (
-                            numbers_filled,
-                            live_order_book_scripts_number,
-                            current_weight,
-                        ) = TradingController.get_current_number_of_orderbook_scripts(
-                            db, event_keys
-                        )
-                        LOAD_ORDER_BOOK = False
-
-                    if buy_vol_value == 0:
-                        # if the number of secondary orderbook scripts is greater than the limit, then pass
-                        if (
-                            live_order_book_scripts_number
-                            >= limit_orderbook_scripts_secondary
-                        ):
-                            continue
-
-                    # # if the number of primary & secondary orderbook scripts is greater than the limit, then pass
-                    # logger.info(
-                    #     f"live_order_book_scripts_number: {live_order_book_scripts_number}"
-                    # )
-                    # logger.info(f"limit_orderbook_scripts: {limit_orderbook_scripts}")
-                    if live_order_book_scripts_number >= limit_orderbook_scripts:
-                        continue
+                if ( buy_vol_value == 0 ) or ( buy_vol_value < 0.5 and obs[buy_vol_field] <= buy_vol_value ) \
+                    or (buy_vol_value > 0.5 and obs[buy_vol_field] >= buy_vol_value):
 
                     _id = obs["_id"]
+                    # this variable sets the minute range, within which the coin can not be traded again
+                    coin_exclusive_window_minutes = int( os.getenv("COIN_EXCLUSIVE_ORDERBOOK_WINDOW_MINUTES") )
 
-                    # the var FIRST_EVENT_KEY helps avoiding duplicates if there are multiple event_keys trigger in the same second.
-                    # In any case, I keep track of the record in the collection db['Metadata']
-                    if FIRST_EVENT_KEY:
-                        # this variable sets the minute range, within which the coin can not be traded again
-                        coin_exclusive_window_minutes = int(
-                            os.getenv("COIN_EXCLUSIVE_ORDERBOOK_WINDOW_MINUTES")
-                        )
+                    coin_window_ts = (  datetime.now() - timedelta(minutes=coin_exclusive_window_minutes) ).isoformat()
+                    # initalize metadata orderbook db collection
+                    client = DatabaseConnection()
+                    db = client.get_db(DATABASE_ORDER_BOOK)
+                    db_collection = db[COLLECTION_ORDERBOOK_METADATA]
 
-                        coin_window_ts = (
-                            datetime.now()
-                            - timedelta(minutes=coin_exclusive_window_minutes)
-                        ).isoformat()
-                        # initalize metadata orderbook db collection
+                    # determine if there were scripts for "$coin" in the last 3hours
+                    docs = list( db_collection.find({"_id": {"$gt": coin_window_ts}, "coin": coin}))
 
-                        db_collection = db[COLLECTION_ORDERBOOK_METADATA]
+                    # this is the case where the orderbook script was never executed for $coin in the last day
+                    if len(docs) == 0:
+                        end_observation = (datetime.now() + timedelta(minutes=int(timeframe))).isoformat()
+                        db_collection.insert( {"_id": _id,"coin": coin,"event_key": event_key, "status": "pending", "buy_price": 0, "sell_price": 0,
+                                                 "end_observation": end_observation, "riskmanagement_configuration": None, "ranking": ranking} )
+                        return
 
-                        # determine if there were scripts for "$coin" in the last 3hours
-                        docs = list(
-                            db_collection.find(
-                                {"_id": {"$gt": coin_window_ts}, "coin": coin},
-                                {
-                                    "event_key": 1,
-                                    "reference_id": 1,
-                                    "all_event_keys": 1,
-                                },
-                            )
-                        )
-
-                        # this is the case where the orderbook script was never executed for $coin in the last 30minutes
-                        if len(docs) == 0:
-                            # logger.info(f'execute event - {coin}')
-                            strategy_parameters = json.dumps(
-                                strategy_configuration["parameters"]
-                            )
-                            event_keys_json = json.dumps({'event_keys': event_keys})
-                            all_event_keys = [event_key]
-                            db_collection.insert(
-                                {
-                                    "_id": _id,
-                                    "coin": coin,
-                                    "event_key": event_key,
-                                    "all_event_keys": all_event_keys,
-                                }
-                            )
-                            # Start Order Book SCRIPT
-                            subprocess.Popen(
-                                [
-                                    "python3",
-                                    "/tracker/trading/start-order-book.py",
-                                    coin,
-                                    event_key,
-                                    _id,
-                                    str(ranking),
-                                    RESTART,
-                                    strategy_parameters,
-                                    event_keys_json
-                                ]
-                            )
-                            FIRST_EVENT_KEY = False
-                            LOAD_ORDER_BOOK = True
-                            sleep(2)
-
-                        # here the script order book is already started, so just keep track of the record in metadata
-                        else:
-                            # logger.info(f'duplicate event - {coin}')
-                            for doc in docs:
-                                # if event_key is different than it is just a duplicate of the coin,
-                                # and reference_id is important to see if that id is the one associated with the real data saved in order book
-                                all_event_keys = [event_key]
-
-                                if (
-                                    event_key != doc["event_key"]
-                                    and "reference_id" not in doc
-                                ):
-                                    reference_id = doc["_id"]
-                                    db_collection.insert(
-                                        {
-                                            "_id": _id,
-                                            "coin": coin,
-                                            "event_key": event_key,
-                                            "all_event_keys": all_event_keys,
-                                            "reference_id": reference_id,
-                                        }
-                                    )
-                                    # logger.info(f'Duplicate Event Order Book in the last {coin_exclusive_window_minutes} minutes: {coin} - {_id} - {event_key} - Reference ID: {reference_id}')
-                                    FIRST_EVENT_KEY = False
-                                    break
-
-                                elif (
-                                    event_key == doc["event_key"]
-                                    and "reference_id" not in doc
-                                ):
-                                    reference_id = doc["_id"]
-                                    db_collection.insert(
-                                        {
-                                            "_id": _id,
-                                            "coin": coin,
-                                            "event_key": event_key,
-                                            "all_event_keys": all_event_keys,
-                                            "reference_id": reference_id,
-                                        }
-                                    )
-                                    # logger.info(f'SAME COIN - SAME EVENT KEY {coin_exclusive_window_minutes} minutes: {coin} - {_id} - {event_key} - Reference ID: {reference_id}')
-                                    FIRST_EVENT_KEY = False
-                                    break
-                    else:
-                        # logger.info(f'Duplicate Event Order Book in this minute: {coin} - {_id} - {event_key}.')
-                        filter_query = {"_id": _id}
-                        all_event_keys.append(event_key)
-                        update_doc = {"$set": {"all_event_keys": all_event_keys}}
-                        result = db_collection.update_one(filter_query, update_doc)
-                        if result.modified_count != 1:
-                            now = datetime.now().isoformat()
-                            logger.info(
-                                f"{now}: Order Book Metadata Update failed for {event_key} with id {_id}."
-                            )
-
-            if not FIRST_EVENT_KEY:
-                client.close()
 
     def extract_timeframe(input_string):
         """
@@ -462,9 +156,7 @@ class TradingController:
     def restart_order_book_polling(logger):
         f = open("/tracker/riskmanagement/riskmanagement.json", "r")
         risk_configuration = json.loads(f.read())
-        event_keys = list(risk_configuration["event_keys"]["primary"].keys()) + list(
-            risk_configuration["event_keys"]["secondary"].keys()
-        )
+        event_keys = list(risk_configuration["event_keys"].keys())
         event_keys_json = json.dumps({'event_keys': event_keys})
 
         RESTART = "1"
@@ -499,7 +191,7 @@ class TradingController:
                     subprocess.Popen(
                         [
                             "python3",
-                            "/tracker/trading/start-order-book.py",
+                            "/tracker/trading/wss-start-order-book.py",
                             coin,
                             event_key,
                             id,
