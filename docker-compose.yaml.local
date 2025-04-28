@@ -14,6 +14,11 @@ services:
       args:
         - UID=${UID}
         - GID=${GID}
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
     restart: always
     # ports:
     #   - "5000:5000"
@@ -56,7 +61,11 @@ services:
       args:
         - UID=${UID}
         - GID=${GID}
-    
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
     restart: always
     # ports:
     #   - "5001:5001"
@@ -85,8 +94,11 @@ services:
       - ANALYSIS=$ANALYSIS
       - COIN_EXCLUSIVE_ORDERBOOK_WINDOW_MINUTES=$COIN_EXCLUSIVE_ORDERBOOK_WINDOW_MINUTES
       - TYPE_USDT=$TYPE_USDT
-      - LIMIT_ORDERBOOK_SCRIPTS=$LIMIT_ORDERBOOK_SCRIPTS
-      - LIMIT_ORDERBOOK_SCRIPTS_SECONDARY=$LIMIT_ORDERBOOK_SCRIPTS_SECONDARY
+      - ORDER_DISTRIBUTION_1LEVEL_THRESHOLD=$ORDER_DISTRIBUTION_1LEVEL_THRESHOLD
+      - ORDER_DISTRIBUTION_2LEVEL_THRESHOLD=$ORDER_DISTRIBUTION_2LEVEL_THRESHOLD
+      - DB_UPDATE_MIN_WAITING_TIME=$DB_UPDATE_MIN_WAITING_TIME
+      - DB_UPDATE_MAX_WAITING_TIME=$DB_UPDATE_MAX_WAITING_TIME
+      - MAX_WAITING_TIME_AFTER_BUY=$MAX_WAITING_TIME_AFTER_BUY
     networks:
       - crypto-net
 
@@ -130,6 +142,11 @@ services:
       driver: "json-file"
       options:
           max-size: "5m"
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
     build: 
       context: ./mongodb
       args:
@@ -165,6 +182,11 @@ services:
       driver: "json-file"
       options:
           max-size: "5m"
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
     restart: always
     # ports:
     #   - "8081:8081"
@@ -190,6 +212,11 @@ services:
       args:
         - UID=${UID}
         - GID=${GID}
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
     restart: always
     ports:
       - "80:80"

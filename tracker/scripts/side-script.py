@@ -64,8 +64,8 @@ if __name__ == "__main__":
     user_configuration = json.loads(f.read())
 
     sleep(2)
-    TradingController.clean_db_trading(logger, db_logger, user_configuration)
-    TradingController.restart_order_book_polling(logger)
+    # TradingController.clean_db_trading(logger, db_logger, user_configuration)
+    # TradingController.restart_order_book_polling(logger)
 
     for user in user_configuration:
         if user_configuration[user]["trading_live"]:

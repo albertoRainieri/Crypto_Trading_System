@@ -100,6 +100,7 @@ class TradingController:
             return
 
         for event_key in event_keys:
+            #logger.info(f'event_key: {event_key}')
 
             # check if coin is already on trade for this specific event, if True, pass
             vol_field, vol_value, buy_vol_field, buy_vol_value, timeframe, lvl = (  getsubstring_fromkey(event_key) )
@@ -115,6 +116,7 @@ class TradingController:
                 # determine if the buy_vol is below/above threshold. the operator changes if the threshold is below/above 0.5
                 if ( buy_vol_value == 0 ) or ( buy_vol_value < 0.5 and obs[buy_vol_field] <= buy_vol_value ) \
                     or (buy_vol_value > 0.5 and obs[buy_vol_field] >= buy_vol_value):
+                    #logger.info(f"Buy event analysis for {coin} with event_key {event_key} and id {obs['_id']}")
 
                     _id = obs["_id"]
                     # this variable sets the minute range, within which the coin can not be traded again
@@ -131,6 +133,7 @@ class TradingController:
 
                     # this is the case where the orderbook script was never executed for $coin in the last day
                     if len(docs) == 0:
+                        #logger.info(f"Inserting new orderbook script for {coin} with event_key {event_key} and id {obs['_id']}")
                         end_observation = (datetime.now() + timedelta(minutes=int(timeframe))).isoformat()
                         db_collection.insert( {"_id": _id,"coin": coin,"event_key": event_key, "status": "pending", "buy_price": 0, "sell_price": 0,
                                                  "end_observation": end_observation, "riskmanagement_configuration": None, "ranking": ranking} )

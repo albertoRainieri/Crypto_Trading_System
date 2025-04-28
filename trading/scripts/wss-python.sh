@@ -1,1 +1,0 @@
-python3 /trading/scripts/main.py

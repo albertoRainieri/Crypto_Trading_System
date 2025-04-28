@@ -17,10 +17,12 @@ from numpy import arange, linspace
 from constants.constants import *
 import re
 from time import sleep
-
+import asyncio
 
 class PooledBinanceOrderBook:
     def __init__(self, coins: List[str]):
+        # Logger
+        self.logger = LoggingController.start_logging()
         
         self.coins = [coin.upper() for coin in coins]
         self.coins_lower = [coin.lower() for coin in coins]
@@ -52,8 +54,10 @@ class PooledBinanceOrderBook:
         self.bid_price_levels_dt = {}
         self.ask_price_levels_dt = {}
         self.coin_orderbook_initialized = {}
+        self.last_minute_snapshots = []
         
         # Parameters
+        # TODO: remove hardcoded values
         self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD = float(os.getenv('ORDER_DISTRIBUTION_1LEVEL_THRESHOLD')) 
         self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD = float(os.getenv('ORDER_DISTRIBUTION_2LEVEL_THRESHOLD'))
         self.DB_UPDATE_MIN_WAITING_TIME = int(os.getenv('DB_UPDATE_MIN_WAITING_TIME'))
@@ -65,30 +69,48 @@ class PooledBinanceOrderBook:
         self.last_pong_time = None
         self.connection_restart_lock = threading.Lock()
         self.connection_restart_running = False
-        last_snapshot_time = datetime.now() + timedelta(seconds=3)
-        
-        # Initialize per-coin data structures
-        for coin in self.coins:
-            last_snapshot_time = last_snapshot_time + timedelta(seconds=3)
-            self.initialize_coin_status(coin=coin, last_snapshot_time=last_snapshot_time)
+
         
         # Database connection
         self.client = DatabaseConnection()
         self.db_orderbook = self.client.get_db(DATABASE_ORDER_BOOK)
-        self.metadata_orderbook_collection = self.db_orderbook[COLLECTION_ORDERBOOK_METADATA]
         self.db_trading = self.client.get_db(DATABASE_TRADING)
+        self.db_tracker = self.client.get_db(DATABASE_TRACKER)
+
+        self.orderbook_collection = {}
+        self.tracker_collection = {}
+        self.metadata_orderbook_collection = self.db_orderbook[COLLECTION_ORDERBOOK_METADATA]
         self.trading_collection = self.db_trading["albertorainieri"]
-        
-        # Logger
-        self.logger = LoggingController.start_logging()
         
         # Combined stream URL
         self.parameters = [f"{coin.lower()}@depth" for coin in self.coins]
         self.ws_url = f"wss://stream.binance.com:9443/stream?streams="
+        self._async_thread = threading.Thread(target=self._setup_async_loop, daemon=True)
+        self._async_thread.start()
         
         # Register signal handlers
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
+
+    def initialization_process(self):
+        last_snapshot_time = datetime.now() + timedelta(seconds=3)
+        for coin in self.coins:
+            last_snapshot_time = last_snapshot_time + timedelta(seconds=3)
+            self.initialize_coin_status(coin=coin, last_snapshot_time=last_snapshot_time)
+
+    
+    def _setup_async_loop(self):
+        """Create a dedicated event loop in a background thread"""
+        import threading
+        import asyncio
+        
+        def run_event_loop():
+            self._loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self._loop)
+            self._loop.run_forever()
+        
+        self._loop_thread = threading.Thread(target=run_event_loop, daemon=True)
+        self._loop_thread.start()
 
     def initialize_coin_status(self, coin, last_snapshot_time=datetime.now(), start_script=True):
 
@@ -98,54 +120,56 @@ class PooledBinanceOrderBook:
                 'asks': {},
                 'lastUpdateId': None
             }
-        self.BUY[coin] = False
+            self.buffered_events[coin] = []
+            self.last_db_update_time[coin] = datetime.now()
+            self.current_price[coin] = 0
+            self.coin_orderbook_initialized[coin] = {'status': False, 'next_snapshot_time': last_snapshot_time}
+
+        else:
+            self.coin_orderbook_initialized[coin] = {'status': True, 'next_snapshot_time': last_snapshot_time}
+
         self.under_observation[coin] = {'status': False}
-        self.coin_orderbook_initialized[coin] = {'status': False, 'next_snapshot_time': last_snapshot_time}
-        self.buffered_events[coin] = []
-        self.BUY[coin] = {False}
+        self.BUY[coin] = False
         self.summary_jump_price_level[coin] = {}
         self.ask_order_distribution_list[coin] = []
         self.bid_order_distribution_list[coin] = []
         self.max_price[coin] = 0
         self.initial_price[coin] = 0
         self.buy_price[coin] = 0
-        self.last_db_update_time[coin] = datetime.now()
         self.last_ask_order_distribution_1level[coin] = 0
         self.last_bid_order_distribution_1level[coin] = 0
         self.ask_1firstlevel_orderlevel_detected[coin] = False
         self.bid_1firstlevel_orderlevel_detected[coin] = False
-        self.current_price[coin] = 0
         self.bid_price_levels_dt[coin] = []
         self.ask_price_levels_dt[coin] = []
 
     def get_riskmanagement_configuration(self):
         with open('/tracker/riskmanagement/riskmanagement.json', 'r') as f:
             riskmanagement_configuration = json.load(f)
-        return riskmanagement_configuration
+        return riskmanagement_configuration['parameters']
 
 
     def get_ongoing_analysis_coins(self):
         client = DatabaseConnection()
         db = client.get_db(DATABASE_ORDER_BOOK)
-        yesterday = datetime.now() - timedelta(days=1)
+        db_collection = db[COLLECTION_ORDERBOOK_METADATA]
+        timeframe_36hours = datetime.now() - timedelta(hours=36)
         coins_ongoing_analysis = []
         coins_ongoing_buy = []
-        for event_key in self.event_keys:
-            db_collection = db[event_key]
-            docs = list(
-                db_collection.find(
-                    {"_id": {"$gt": yesterday.isoformat()}},
-                    {"_id": 1, "coin": 1, "buy": 1},
-                )
+        docs = list(
+            db_collection.find(
+                {"_id": {"$gt": timeframe_36hours.isoformat()}, "status": "running"},
+                {"_id": 1, "coin": 1, "buy_price": 1},
             )
-            for doc in docs:
-                if doc["buy"] == True:
-                    coins_ongoing_buy.append(doc["coin"])
-                coins_ongoing_analysis.append(doc["coin"])
+        )
+        for doc in docs:
+            if doc["buy_price"] != 0:
+                coins_ongoing_buy.append(doc["coin"])
+            coins_ongoing_analysis.append(doc["coin"])
         client.close()
         return coins_ongoing_analysis, coins_ongoing_buy
 
-    def initialize_order_book(self):
+    def initialize_order_book(self, LOG=True):
         """
         Initialize the order book for all coins.
         
@@ -162,14 +186,15 @@ class PooledBinanceOrderBook:
         f = open("/tracker/riskmanagement/riskmanagement.json", "r")
         self.risk_configuration = json.loads(f.read())
         self.event_keys = list(self.risk_configuration["event_keys"].keys())
-        self.logger.info(f'event_keys: {self.event_keys}')
+        #self.logger.info(f'event_keys: {self.event_keys}')
         coins_ongoing_analysis, coins_ongoing_buy = self.get_ongoing_analysis_coins()
-        self.logger.info(f'coins_ongoing_analysis: {coins_ongoing_analysis}')
-        self.logger.info(f'coins_ongoing_buy: {coins_ongoing_buy}')
         # Reorder coins list to prioritize coins under buy event and then coins under ongoing analysis
         self.coins = sorted(self.coins, key=lambda x: x not in coins_ongoing_buy)
         self.coins = sorted(self.coins, key=lambda x: x not in coins_ongoing_analysis)
-        self.logger.info(f'Reordered coins list. First 10 coins: {self.coins[:10]}')
+        if LOG:
+            self.logger.info(f'coins_ongoing_analysis: {coins_ongoing_analysis}')
+            self.logger.info(f'coins_ongoing_buy: {coins_ongoing_buy}')
+            self.logger.info(f'Reordered coins list. First 10 coins: {self.coins[:10]}')
 
         last_snapshot_time = datetime.now()
         for coin in self.coins:
@@ -200,10 +225,13 @@ class PooledBinanceOrderBook:
             coin_with_depth = stream.split('@')[0]
             coin = coin_with_depth.upper()
 
-            if self.under_observation[coin]['status'] and datetime.now() > self.under_observation[coin]['end_observation']:
+            if self.under_observation[coin]['status'] and datetime.now() > datetime.fromisoformat(self.under_observation[coin]['end_observation']):
                 if self.BUY[coin]:
-                    self.update_trading_event(coin)
-                self.initialize_coin_status(coin=coin, start_script=False)
+                    self.update_trading_and_metadata_event(coin)
+                else:
+                    self.logger.info(f'Observation ended for coin: {coin}. Initializing coin status.')
+                    self.update_metadata_event(coin)
+                self.initialize_coin_status(coin=coin, start_script=False, last_snapshot_time=self.coin_orderbook_initialized[coin]['next_snapshot_time'])
 
             if self.coin_orderbook_initialized[coin]['status'] == False and datetime.now() > self.coin_orderbook_initialized[coin]['next_snapshot_time']:
                 self.get_snapshot(coin)
@@ -242,9 +270,6 @@ class PooledBinanceOrderBook:
         if self.running and not self.should_exit:
             self.logger.info(f"Attempting to reconnect...")
             try:
-                # No retry limit - continue trying forever
-                self.retry_connection += 1
-                
                 # Reset connection-related state
                 with self.connection_lock:
                     # Clear WebSocket references
@@ -256,18 +281,9 @@ class PooledBinanceOrderBook:
                     # Instead, we'll get new snapshots for each coin when we reconnect
                     self.running = False
                 
-                # Exponential backoff with jitter, but cap at 5 minutes
-                backoff_time = min(300, 5 * (2 ** min(8, self.retry_connection - 1)))
-                jitter = backoff_time * 0.2 * (2 * random.random() - 1)  # ±20% jitter
-                sleep_time = max(1, backoff_time + jitter)
-                
-                self.logger.info(f"Waiting {sleep_time:.2f}s before reconnecting (attempt {self.retry_connection})")
-                sleep(sleep_time)
-                
-                # Reset retry counter after long delay to avoid endless exponential growth
-                if self.retry_connection > 10:
-                    self.logger.info("Resetting retry counter after multiple attempts")
-                    self.retry_connection = 0
+                # Fixed 10 second delay for reconnection
+                self.logger.info("Waiting 10 seconds before reconnecting")
+                sleep(10)
                 
                 # Start new connection
                 self.logger.info(f"Starting new WebSocket connection...")
@@ -281,8 +297,8 @@ class PooledBinanceOrderBook:
 
     def on_open(self, ws):
         """Handle WebSocket connection open"""
-        self.initialize_order_book()
-        self.logger.info(f'parameters: {self.parameters}')
+        self.initialize_order_book(LOG=False)
+        #self.logger.info(f'parameters: {self.parameters}')
         subscribe_message = {"method": "SUBSCRIBE", "params": self.parameters, "id": 1}
         ws.send(json.dumps(subscribe_message))
 
@@ -331,14 +347,15 @@ class PooledBinanceOrderBook:
         # self.logger.info(f"Getting snapshot from {self.snapshot_url}")
         #self.logger.info(f'restart: {self.RESTART}')
         
-        #self.wait_for_snapshot()
         try:
             if self.order_books[coin]['lastUpdateId'] is not None:
+                self.wait_for_snapshot(coin)
                 self.logger.info(f'Getting snapshot for coin: {coin}')
             snapshot_url = f"https://api.binance.com/api/v3/depth?symbol={coin}&limit=5000"
+            self.last_minute_snapshots.append(datetime.now())
             response = requests.get(snapshot_url)
         except Exception as e:
-            self.logger.error(f"coin: {self.coin}; SNAPSHOT ERROR: {e}")
+            self.logger.error(f"coin: {coin}; SNAPSHOT ERROR: {e}")
             return
 
         #self.logger.info(f"Snapshot response: {response.status_code}")
@@ -506,7 +523,7 @@ class PooledBinanceOrderBook:
                 self.under_observation[coin]['riskmanagement_configuration']['price_change_jump']
             )
 
-            self.logger.info(f'coin: {coin}; ask_order_distribution: {ask_order_distribution}; bid_order_distribution: {bid_order_distribution}')
+            #self.logger.info(f'coin: {coin}; ask_order_distribution: {ask_order_distribution}; bid_order_distribution: {bid_order_distribution}')
             
             # Update order distribution tracking
             self.last_ask_order_distribution_1level[coin] = ask_order_distribution[str(self.under_observation[coin]['riskmanagement_configuration']['price_change_jump'])]
@@ -579,6 +596,7 @@ class PooledBinanceOrderBook:
 
     def update_order_book_record(self, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, coin):
         """Update the order book record in the database for a specific coin"""
+
         try:
             now = datetime.now().replace(microsecond=0).isoformat()
             new_data = [
@@ -593,7 +611,6 @@ class PooledBinanceOrderBook:
             update_doc = {
                 "$set": {
                     f"data.{now}": new_data,
-                    "weight": 250,
                     "max_price": self.max_price[coin],
                     "initial_price": self.initial_price[coin],
                     "summary_jump_price_level": self.summary_jump_price_level.get(coin, {}),
@@ -603,9 +620,9 @@ class PooledBinanceOrderBook:
                 }
             }
             
-            result = self.db_collection.update_one(filter_query, update_doc)
+            result = self.orderbook_collection[coin].update_one(filter_query, update_doc)
             if result.modified_count != 1:
-                self.logger.error(f"Order Book update failed for {self.event_key} with id {self.id} for coin {coin}")
+                self.logger.error(f"Order Book update failed for coin event_key {self.under_observation[coin]['event_key']} for coin {coin}")
         except Exception as e:
             self.logger.error(f"Error updating order book record for {coin}: {e}")
 
@@ -691,41 +708,27 @@ class PooledBinanceOrderBook:
         
         return price_levels, order_distribution, self.round_(previous_cumulative_level,3)
 
-    def wait_for_snapshot(self):
+    def wait_for_snapshot(self, coin):
         """Wait for the snapshot to be ready, in order to avoid rate limit ban"""
         try:
-            _, live_order_book_scripts_number, _, last_snapshots = PooledBinanceOrderBook.get_current_number_of_orderbook_scripts(self.db, self.event_keys, self.RESTART)
-            
-            if live_order_book_scripts_number >= 20:
-                not_ready_to_go = True
-                while not_ready_to_go and not self.should_exit:
-                    if not self.RESTART and len(last_snapshots) > 20:
-                        remaining_wait = 60 - (datetime.now() - last_snapshots[-1]['dt']).total_seconds()
-                        if remaining_wait > 0:
-                            sleep(remaining_wait)
-                        _, _, _, last_snapshots = PooledBinanceOrderBook.get_current_number_of_orderbook_scripts(self.db, self.event_keys, self.RESTART)
-                        if len(last_snapshots) < 20:
-                            not_ready_to_go = False
-                    elif self.RESTART:
-                        for obj in last_snapshots:
-                            if obj['id'] == self.id:
-                                position = last_snapshots.index(obj)
-                                sleep(3*position)
-                                not_ready_to_go = False
-                    else:
-                        sleep_seconds = (self.number_script % 20) * 3
-                        current_second = datetime.now().second
-                        if current_second > sleep_seconds:
-                            sleep(60 - (current_second - sleep_seconds))
-                        else:
-                            sleep(sleep_seconds - current_second)
-                        not_ready_to_go = False
+            not_ready_to_go = True
+
+            while not_ready_to_go and not self.should_exit:
+                
+                self.last_minute_snapshots = [x for x in self.last_minute_snapshots if (datetime.now() - x).total_seconds() <= 60]
+                self.last_minute_snapshots.sort(reverse=True)
+
+                if len(self.last_minute_snapshots) > 20:
+                    remaining_wait = 60 - (datetime.now() - self.last_minute_snapshots[-1]).total_seconds()
+                    self.logger.info(f'Waiting for snapshot for {coin} for {remaining_wait} seconds')
+                    if remaining_wait > 0:
+                        sleep(remaining_wait)
+                else:
+                    not_ready_to_go = False
 
             # Update last restart time even if there's an error
-            self.db_collection.update_one(
-                {"_id": self.id},
-                {"$set": {"last_restart": datetime.now().isoformat()}}
-            )
+            #self.logger.info(f'under_observation: {self.under_observation}')
+
         except Exception as e:
             self.logger.error(f"Error in wait_for_snapshot: {e}")
             # Continue despite errors, with a small delay
@@ -740,7 +743,6 @@ class PooledBinanceOrderBook:
         
         try:
             # Wait for snapshot to avoid rate limit
-            #self.wait_for_snapshot()
             self.initialize_order_book()
             websocket.enableTrace(False)
             self.ws = websocket.WebSocketApp(
@@ -785,14 +787,28 @@ class PooledBinanceOrderBook:
                 except Exception as e:
                     self.logger.error(f"Error closing WebSocket: {e}")
 
-    def update_trading_event(self, coin):
+    def update_metadata_event(self, coin):
+        metadata_filter = {
+                "_id": self.under_observation[coin]['start_observation'],
+            }
+        update_doc = {
+                "$set": {
+                    "status": "completed"
+                }
+            }
+        result = self.metadata_orderbook_collection.update_one(metadata_filter, update_doc)
+        if result.modified_count != 1:
+            self.logger.error(f"Metadata Collection update failed for {coin}")
+
+    def update_trading_and_metadata_event(self, coin):
         """Update trading event with sell information for a specific coin"""
         try:
 
             sell_price = self.current_price[coin]
             sell_ts = datetime.now().isoformat()
             gain = (sell_price - self.buy_price[coin]) / self.buy_price[coin]
-            self.logger.info(f"SELL EVENT: {coin} at {sell_price}. GAIN: {gain}")
+            gain_print = PooledBinanceOrderBook.round_(gain*100, 3)
+            self.logger.info(f"SELL EVENT: {coin} at {sell_price}. GAIN: {gain_print}%")
             # Update metadata collection with sell price
             
             metadata_filter = {
@@ -836,16 +852,16 @@ class PooledBinanceOrderBook:
             is_jump_price_level = self.hit_jump_price_levels_range(coin)
             
             if (is_jump_price_level and 
-                current_price_drop >= self.strategy_parameters['price_drop_limit'] and 
-                max_change <= self.strategy_parameters['max_limit']):
+                current_price_drop >= self.under_observation[coin]['riskmanagement_configuration']['price_drop_limit'] and 
+                max_change <= self.under_observation[coin]['riskmanagement_configuration']['max_limit']):
                 
                 # Check ask order distribution
                 all_levels_valid = True
                 avg_distribution = self.calculate_average_distribution(self.ask_order_distribution_list[coin])
-                keys_ask_order_distribution = list(avg_distribution.keys())[:self.strategy_parameters['lvl_ask_order_distribution_list']]
+                keys_ask_order_distribution = list(avg_distribution.keys())[:self.under_observation[coin]['riskmanagement_configuration']['lvl_ask_order_distribution_list']]
                 
                 for lvl in keys_ask_order_distribution:
-                    if avg_distribution[lvl] >= self.strategy_parameters['max_ask_order_distribution_level']:
+                    if avg_distribution[lvl] >= self.under_observation[coin]['riskmanagement_configuration']['max_ask_order_distribution_level']:
                         all_levels_valid = False
                         break
 
@@ -853,9 +869,24 @@ class PooledBinanceOrderBook:
                     self.BUY[coin] = True
                     self.buy_price[coin] = self.current_price[coin]
                     self.logger.info(f"BUY EVENT: {coin} at {self.current_price[coin]}")
+                    self.logger.info(f"avg_distribution: {avg_distribution}")
+
+                    asyncio.run_coroutine_threadsafe(self.get_tracker_volume_coin(coin), self._loop)
+
                     self.save_trading_event(coin)
         except Exception as e:
             self.logger.error(f"Error checking buy trading conditions for {coin}: {e}")
+
+    async def get_tracker_volume_coin(self, coin):
+        self.tracker_collection[coin] = self.db_tracker[coin]
+        # Find the most recent document in the collection (sorted by _id in descending order)
+        last_tracker_doc = self.tracker_collection[coin].find_one(sort=[("_id", -1)])
+        self.logger.info(f"Market Volume {coin}: {last_tracker_doc}")
+        await asyncio.sleep(60 - datetime.now().second - (datetime.now().microsecond / 1000000) + 5)
+        # Try again after waiting
+        last_tracker_doc = self.tracker_collection[coin].find_one(sort=[("_id", -1)])
+        self.logger.info(f"Market Volume {coin}: {last_tracker_doc}")
+        
 
     def calculate_average_distribution(self, distributions):
         """Calculate average order distribution"""
@@ -920,7 +951,7 @@ class PooledBinanceOrderBook:
                 jump = abs((self.current_price[coin] - self.summary_jump_price_level[coin][x][0]) / self.current_price[coin])
                 historical_price_level_n_obs = self.summary_jump_price_level[coin][x][1]
                 
-                if jump <= self.strategy_parameters['distance_jump_to_current_price'] and historical_price_level_n_obs >= self.strategy_parameters['min_n_obs_jump_level']:
+                if jump <= self.under_observation[coin]['riskmanagement_configuration']['distance_jump_to_current_price'] and historical_price_level_n_obs >= self.under_observation[coin]['riskmanagement_configuration']['min_n_obs_jump_level']:
                     return True
             
             return False
@@ -945,75 +976,11 @@ class PooledBinanceOrderBook:
                 "max_price": self.max_price[coin],
                 "strategy": self.under_observation[coin]['riskmanagement_configuration']
             })
-            end_observation = max(self.under_observation[coin]['end_observation'], self.datetime_now + timedelta(minutes=self.MAX_WAITING_TIME_AFTER_BUY))
+            #TODO: REMOVE MINUTES, ADD HOURS
+            end_observation = max(datetime.fromisoformat(self.under_observation[coin]['end_observation']), datetime.now() + timedelta(hours=self.MAX_WAITING_TIME_AFTER_BUY)).isoformat()
             self.metadata_orderbook_collection.update_one({"_id": self.under_observation[coin]['start_observation']}, {"$set": {"buy_price": self.buy_price[coin], "end_observation": end_observation}})
         except Exception as e:
-            self.logger.error(f"Error saving trading event for {coin}: {e}")
-
-    # def monitor_and_restart(self):
-    #     """Monitor the main connection and restart if needed"""
-    #     while not self.should_exit:
-    #         sleep(60)  # Check every minute
-            
-    #         # Only restart if not running and we're not trying to exit
-    #         if not self.running and not self.should_exit:
-    #             self.logger.info("Connection monitor detected stopped connection, restarting...")
-    #             try:
-    #                 # Make sure client is closed before reconnecting
-    #                 if self.client:
-    #                     try:
-    #                         self.client.close()
-    #                     except:
-    #                         pass
-    #                 # Reestablish database connection
-    #                 self.client = DatabaseConnection()
-    #                 self.db = self.client.get_db(DATABASE_ORDER_BOOK)
-    #                 self.db_collection = self.db[event_key]
-                    
-    #                 # Start the connection
-    #                 self.start()
-    #             except Exception as e:
-    #                 self.logger.error(f"Error in monitor_and_restart: {e}")
-        
-    #     # Final cleanup when exiting
-    #     if self.client:
-    #         try:
-    #             self.client.close()
-    #         except:
-    #             pass
-
-    @staticmethod
-    def get_current_number_of_orderbook_scripts(db, event_keys, restart):
-        """Get the current number of order book scripts running"""
-        live_order_book_scripts_number = 0
-        numbers_filled = []
-        current_weight = 0
-        last_minute_snapshots = []
-        for collection in event_keys['event_keys']:
-            if collection != COLLECTION_ORDERBOOK_METADATA:
-                minutes_timeframe = int(PooledBinanceOrderBook.extract_timeframe(collection))
-                yesterday = datetime.now() - timedelta(minutes=minutes_timeframe)
-                query = {"_id": {"$gt": yesterday.isoformat()}}
-                docs = list(db[collection].find(query, {"_id": 1, "number": 1, "weight":1, "last_restart": 1}))
-
-                for doc in docs:
-                    numbers_filled.append(doc["number"])
-                    if "weight" in doc:
-                        current_weight += doc["weight"]
-                    else:
-                        current_weight += 250
-                    if "last_restart" in doc:
-                        last_minute_snapshots.append({'id': doc['_id'], 'dt': datetime.fromisoformat(doc["last_restart"])})
-                    else:
-                        last_minute_snapshots.append({'id': doc['_id'], 'dt': datetime.fromisoformat(doc["_id"])})
-                
-                live_order_book_scripts_number += len(docs)
-
-        if not restart:
-            last_minute_snapshots = [dt for dt in last_minute_snapshots if (datetime.now() - dt['dt']).total_seconds() <= 60]
-            last_minute_snapshots.sort(key=lambda x: x['dt'], reverse=True)
-
-        return numbers_filled, live_order_book_scripts_number, current_weight, last_minute_snapshots
+            self.logger.error(f"Error saving_trading_event for {coin}: {e}")
 
     @staticmethod
     def extract_timeframe(input_string):
@@ -1040,7 +1007,7 @@ class PooledBinanceOrderBook:
         coins_list_path = f"{dir_info}/coins_list.json"
         f = open(coins_list_path, "r")
         coins_list_info = json.loads(f.read())
-        coins = coins_list_info[type_USDT][:200]
+        coins = coins_list_info[type_USDT]
         #coins = coins[:20]
         return coins
 
@@ -1066,33 +1033,73 @@ class PooledBinanceOrderBook:
                     self.under_observation[doc["coin"]] = {'status': True, 'start_observation': doc["_id"], 'end_observation': doc["end_observation"], 'riskmanagement_configuration': doc["riskmanagement_configuration"], "ranking": doc["ranking"]}
                     self.buy_price[doc["coin"]] = doc["buy_price"]
                     self.BUY[doc["coin"]] = True
-                    self.logger.info(f"Coin {doc['coin']} is under observation. Buy Status: True")
-
+                    #self.logger.info(f"Coin {doc['coin']} is under observation. Buy Status: True")
+            self.logger.info(f'There are {len(metadata_docs)} coins under observation in BUY status')
             metadata_docs = list(self.metadata_orderbook_collection.find({ "_id": {"$gt": timeframe_24hours}, "status": status}, {"coin": 1, "event_key": 1, "end_observation": 1, "riskmanagement_configuration": 1, "ranking": 1} ))
             if len(metadata_docs) != 0:
                 for doc in metadata_docs:
+                    self.orderbook_collection[doc["coin"]] = self.db_orderbook[doc["event_key"]]
                     if not self.BUY[doc["coin"]]:
                         self.under_observation[doc["coin"]] = {'status': True, 'start_observation': doc["_id"], 'end_observation': doc["end_observation"], 'riskmanagement_configuration': doc["riskmanagement_configuration"], "ranking": doc["ranking"]}
-                        self.logger.info(f"Coin {doc['coin']} is under observation. Buy Status: False")
+                        #self.logger.info(f"Coin {doc['coin']} is under observation. Buy Status: False")
+            self.logger.info(f'There are {len(metadata_docs)} coins under observation.')
             return
         else:
             while True:
-                status = "pending"
-                timeframe_1day = (datetime.now() - timedelta(days=1)).isoformat()
-                metadata_docs = list(self.metadata_orderbook_collection.find({"_id": {"$gt": timeframe_1day}, "status": status}, {"coin": 1, "event_key": 1, "end_observation": 1,"ranking": 1}))
-                self.logger.info(f"metadata_docs: {metadata_docs}")
-                if len(metadata_docs) != 0:
-                    riskmanagement_configuration = self.get_riskmanagement_configuration()
-                    for doc in metadata_docs:
-                        self.logger.info(f"Coin {doc['coin']} is under observation. Buy Status: False")
-                        self.under_observation[doc["coin"]] = {'status': True, 'start_observation': doc["_id"], 'end_observation': doc["end_observation"], 'riskmanagement_configuration': riskmanagement_configuration, "ranking": doc["ranking"]}
-                        update_doc = { "$set": { "status": "running", "riskmanagement_configuration": riskmanagement_configuration } }
-                        self.metadata_orderbook_collection.update_one({"_id": doc["_id"]}, update_doc)
+                try:
+                    n_coins_under_observation = 0
+                    numbers_filled = []
+                    status = "pending"
+                    timeframe_1day = (datetime.now() - timedelta(days=1)).isoformat()
+                    update_doc = {}
+                    coins_under_observation = []
+                    metadata_docs = list(self.metadata_orderbook_collection.find({"_id": {"$gt": timeframe_1day}}, {"coin": 1, "event_key": 1, "end_observation": 1,"ranking": 1, "status": 1, "number": 1}))
+                    #self.logger.info(f"metadata_docs: {metadata_docs}")
+                    if len(metadata_docs) != 0:
+                        riskmanagement_configuration = self.get_riskmanagement_configuration()
+                        for doc in metadata_docs:
+                            if doc["status"] == "pending":
+                                #self.logger.info(f"Coin {doc['coin']} is under observation. Buy Status: False")
+                                self.under_observation[doc["coin"]] = {'status': True, 'start_observation': doc["_id"], 'end_observation': doc["end_observation"], 'riskmanagement_configuration': riskmanagement_configuration, "ranking": doc["ranking"], "event_key": doc["event_key"]}
+                                coins_under_observation.append(doc["coin"])
+                                
+                            elif doc["status"] == "running":
+                                n_coins_under_observation += 1
+                                numbers_filled.append(doc["number"])
 
-                next_run = 60 - datetime.now().second - datetime.now().microsecond / 1000000 + 5
-                self.logger.info(f"next_run: {next_run}")
-                sleep(next_run)
+                        for coin in coins_under_observation:
+                            for number in range(len(numbers_filled)+1):
+                                if number not in numbers_filled:
+                                    update_doc[coin] = { "$set": { "status": "running", "riskmanagement_configuration": riskmanagement_configuration, "number": number } }
+                                    numbers_filled.append(number)
+                                    break
+
+                            self.metadata_orderbook_collection.update_one({"_id": self.under_observation[coin]["start_observation"]}, update_doc[coin])
+                            event_key = self.under_observation[coin]["event_key"]
+                            ranking = self.under_observation[coin]["ranking"]
+                            self.orderbook_collection[coin] = self.db_orderbook[event_key]
+                            self.orderbook_collection[coin].insert_one({
+                                "_id": self.under_observation[coin]["start_observation"],
+                                "coin": coin,
+                                "ranking": ranking,
+                                "data": {},
+                                "initial_price": 0,
+                                "max_price": 0,
+                                "buy_price": '',
+                                "buy": False,
+                                "number": number,  # This will be updated later
+                                "strategy_parameters": riskmanagement_configuration,
+                                "summary_jump_price_level": {},
+                                "ask_order_distribution_list": []
+                            })
+                            self.logger.info(f"Coin {coin} - event_key: {event_key} - {number+1}/{len(numbers_filled)} - ranking: {ranking}")
                         
+                    next_run = 60 - datetime.now().second - datetime.now().microsecond / 1000000 + 5
+                    #self.logger.info(f"next_run: {next_run}")
+                    sleep(next_run)
+                except Exception as e:
+                    self.logger.error(f"Error in search_volatility_event_trigger: {e}")
+                            
 
     def restart_connection(self):
         with self.connection_restart_lock:
@@ -1111,7 +1118,7 @@ class PooledBinanceOrderBook:
             total_remaining_seconds = remaining_seconds + minutes_remaining * 60 + hours_remaining * 60 * 60
 
             # ONLY FOR TESTING
-            #total_remaining_seconds = 1 + remaining_seconds
+            # total_remaining_seconds = 240 + remaining_seconds
 
             # define timestamp for next wss restart
             wss_restart_timestamp = (now + timedelta(seconds=total_remaining_seconds)).isoformat()
@@ -1127,10 +1134,12 @@ class PooledBinanceOrderBook:
 if __name__ == "__main__":
     # Get command line arguments
     coins = PooledBinanceOrderBook.get_coins()
-    print(coins)
     pooled_order_book = PooledBinanceOrderBook(coins=coins)
+    pooled_order_book.initialization_process()
+    # pooled_order_book.logger.info(f'under_observation: {pooled_order_book.under_observation}')
     # in case of restart, check if there are already coins under observation
     pooled_order_book.search_volatility_event_trigger(start_script=True)
+    # pooled_order_book.logger.info(f'under_observation: {pooled_order_book.under_observation}')
     # set a restart connection thread to be executed every at midnight
     threading.Thread(target=pooled_order_book.restart_connection).start()
     # set a thread to be executed every 60 seconds to check if there are coins under observation

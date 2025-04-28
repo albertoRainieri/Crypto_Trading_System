@@ -14,6 +14,7 @@ from app.Controller.LoggingController import LoggingController
 from backend.app.Helpers.Helpers import round_, timer_func
 import numpy as np
 from binance import AsyncClient
+import asyncio
 
 
 import httpx
@@ -33,14 +34,51 @@ class BinanceController:
         database = DatabaseConnection()
         db = database.get_db(db_name)
         return db
+
+    async def binance_exchange_info():
+        client = await AsyncClient.create()
+
+        # fetch exchange info
+        try:
+            res = await client.get_exchange_info()
+            await client.close_connection()
+            return res
+        except:
+            sleep(5)
+            return False
     
-
-
-    # async def get_async(url):
-    #     #header = CryptoController.getHeader()
-    #     async with httpx.AsyncClient() as client:
-    #         return await client.get(url)
-
+    async def get_exchange_info(logger=None):
+        '''
+        This function call "ExchangeInfo" Binance API for all the available pairs
+        '''
+        if logger is None:
+            logger = LoggingController.start_logging()
+        exchange = False
+        dir_exchange = '/backend/json'
+        day = datetime.now().strftime("%m-%d")
+        path_exchange = f'{dir_exchange}/exchange-{day}.json'
+        if os.path.exists(path_exchange):
+            with open(path_exchange, 'r') as file:
+                exchange = json.load(file)
+                return exchange
+        else:
+            # fetch exchange 
+            
+            exchange = await BinanceController.binance_exchange_info()
+            
+            if not isinstance(exchange, dict):
+                logger.info('WARNING: GET EXCHANGE INFO WAS NOT SUCCESFULL')
+                exchange_files = [f for f in dir_exchange.glob("exchange*") if f.is_file()]
+                latest_path_exchange = max(exchange_files, key=lambda f: f.stat().st_mtime)
+                print(F'LAST PATH EXCHANGE: {latest_path_exchange}')
+                with open(f'{dir_exchange}/{latest_path_exchange}', 'r') as file:
+                    exchange = json.load(file)
+            else:
+                print('The request to the API "ExchangeInfo" was succesfull')
+                with open(path_exchange, 'w') as f: # 'w' opens the file for writing.
+                    json.dump(exchange, f, indent=4)
+            
+            return exchange
 
     #@timer_func
     def launch(coin_list, logger, limit, method):
