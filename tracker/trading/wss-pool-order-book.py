@@ -531,7 +531,7 @@ class PooledBinanceOrderBook:
             
             # Check BUY Trading Conditions or Update Order Book Record based on thresholds
             current_time = datetime.now()
-            if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD:
+            if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD or self.BUY[coin]:
                 # Update if enough time passed or if we detected low order distribution first time
                 if ((current_time - self.last_db_update_time[coin]).total_seconds() >= self.DB_UPDATE_MIN_WAITING_TIME or 
                     (self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD and 
@@ -551,7 +551,7 @@ class PooledBinanceOrderBook:
                         self.ask_1firstlevel_orderlevel_detected[coin] = True
                     self.last_db_update_time[coin] = current_time
             
-            elif self.last_bid_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD:
+            elif self.last_bid_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD or self.BUY[coin]:
                 if ((current_time - self.last_db_update_time[coin]).total_seconds() >= self.DB_UPDATE_MIN_WAITING_TIME or
                     (self.last_bid_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD and 
                      not self.bid_1firstlevel_orderlevel_detected[coin])):
@@ -607,7 +607,10 @@ class PooledBinanceOrderBook:
                 summary_ask_orders
             ]
 
-            filter_query = {"_id": self.under_observation[coin]['start_observation']}
+            # Get the current document ID from under_observation
+            current_doc_id = self.under_observation[coin]['current_doc_id']
+            
+            filter_query = {"_id": current_doc_id}
             update_doc = {
                 "$set": {
                     f"data.{now}": new_data,
@@ -620,9 +623,46 @@ class PooledBinanceOrderBook:
                 }
             }
             
-            result = self.orderbook_collection[coin].update_one(filter_query, update_doc)
-            if result.modified_count != 1:
-                self.logger.error(f"Order Book update failed for coin event_key {self.under_observation[coin]['event_key']} for coin {coin}")
+            try:
+                result = self.orderbook_collection[coin].update_one(filter_query, update_doc)
+                if result.modified_count != 1:
+                    self.logger.error(f"Order Book update failed for coin event_key {self.under_observation[coin]['event_key']} for coin {coin}")
+            except Exception as e:
+                if "16777216" in str(e):
+                    # Create a new document with part number
+                    if current_doc_id == self.under_observation[coin]['start_observation']:
+                        new_doc_id = f"{self.under_observation[coin]['start_observation']}_part1"
+                    else:
+                        # Extract current part number and increment
+                        current_part = int(current_doc_id.split('_part')[1])
+                        new_doc_id = f"{self.under_observation[coin]['start_observation']}_part{current_part + 1}"
+                    
+                    new_doc = {
+                        "_id": new_doc_id,
+                        "parent_id": self.under_observation[coin]['start_observation'],
+                        "coin": coin,
+                        "data": {now: new_data},
+                        "max_price": self.max_price[coin],
+                        "initial_price": self.initial_price[coin],
+                        "summary_jump_price_level": self.summary_jump_price_level.get(coin, {}),
+                        "ask_order_distribution_list": self.ask_order_distribution_list.get(coin, []),
+                        "buy": self.BUY[coin],
+                        "buy_price": self.buy_price[coin],
+                        "is_continuation": True
+                    }
+                    self.orderbook_collection[coin].insert_one(new_doc)
+                    
+                    # Update the current document ID in metadata
+                    self.metadata_orderbook_collection.update_one(
+                        {"_id": self.under_observation[coin]['start_observation']},
+                        {"$set": {"current_doc_id": new_doc_id}}
+                    )
+                    
+                    # Update local reference
+                    self.under_observation[coin]['current_doc_id'] = new_doc_id
+                    self.logger.info(f"Created new continuation document {new_doc_id} for coin {coin}")
+                else:
+                    raise e
         except Exception as e:
             self.logger.error(f"Error updating order book record for {coin}: {e}")
 
@@ -1027,21 +1067,33 @@ class PooledBinanceOrderBook:
             # Returns only coin and event_key fields
 
             metadata_docs = list(self.metadata_orderbook_collection.find({ "_id": {"$gt": timeframe_36hours}, "status": status,"buy_price": {"$ne": 0},"sell_price": 0},
-                                                                {"coin": 1, "event_key": 1, "end_observation": 1, "riskmanagement_configuration": 1, "buy_price": 1, "ranking": 1} ))
+                                                                {"coin": 1, "event_key": 1, "end_observation": 1, "riskmanagement_configuration": 1, "buy_price": 1, "ranking": 1, "current_doc_id": 1} ))
             if len(metadata_docs) != 0:
                 for doc in metadata_docs:
-                    self.under_observation[doc["coin"]] = {'status': True, 'start_observation': doc["_id"], 'end_observation': doc["end_observation"], 'riskmanagement_configuration': doc["riskmanagement_configuration"], "ranking": doc["ranking"]}
+                    self.under_observation[doc["coin"]] = {
+                        'status': True, 
+                        'start_observation': doc["_id"], 
+                        'end_observation': doc["end_observation"], 
+                        'riskmanagement_configuration': doc["riskmanagement_configuration"], 
+                        "ranking": doc["ranking"],
+                        'current_doc_id': doc.get('current_doc_id', doc["_id"])  # Use stored current_doc_id or default to start_observation
+                    }
                     self.buy_price[doc["coin"]] = doc["buy_price"]
                     self.BUY[doc["coin"]] = True
-                    #self.logger.info(f"Coin {doc['coin']} is under observation. Buy Status: True")
             self.logger.info(f'There are {len(metadata_docs)} coins under observation in BUY status')
-            metadata_docs = list(self.metadata_orderbook_collection.find({ "_id": {"$gt": timeframe_24hours}, "status": status}, {"coin": 1, "event_key": 1, "end_observation": 1, "riskmanagement_configuration": 1, "ranking": 1} ))
+            metadata_docs = list(self.metadata_orderbook_collection.find({ "_id": {"$gt": timeframe_24hours}, "status": status}, {"coin": 1, "event_key": 1, "end_observation": 1, "riskmanagement_configuration": 1, "ranking": 1, "current_doc_id": 1} ))
             if len(metadata_docs) != 0:
                 for doc in metadata_docs:
                     self.orderbook_collection[doc["coin"]] = self.db_orderbook[doc["event_key"]]
                     if not self.BUY[doc["coin"]]:
-                        self.under_observation[doc["coin"]] = {'status': True, 'start_observation': doc["_id"], 'end_observation': doc["end_observation"], 'riskmanagement_configuration': doc["riskmanagement_configuration"], "ranking": doc["ranking"]}
-                        #self.logger.info(f"Coin {doc['coin']} is under observation. Buy Status: False")
+                        self.under_observation[doc["coin"]] = {
+                            'status': True, 
+                            'start_observation': doc["_id"], 
+                            'end_observation': doc["end_observation"], 
+                            'riskmanagement_configuration': doc["riskmanagement_configuration"], 
+                            "ranking": doc["ranking"],
+                            'current_doc_id': doc.get('current_doc_id', doc["_id"])  # Use stored current_doc_id or default to start_observation
+                        }
             self.logger.info(f'There are {len(metadata_docs)} coins under observation.')
             return
         else:
@@ -1053,14 +1105,20 @@ class PooledBinanceOrderBook:
                     timeframe_1day = (datetime.now() - timedelta(days=1)).isoformat()
                     update_doc = {}
                     coins_under_observation = []
-                    metadata_docs = list(self.metadata_orderbook_collection.find({"_id": {"$gt": timeframe_1day}}, {"coin": 1, "event_key": 1, "end_observation": 1,"ranking": 1, "status": 1, "number": 1}))
-                    #self.logger.info(f"metadata_docs: {metadata_docs}")
+                    metadata_docs = list(self.metadata_orderbook_collection.find({"_id": {"$gt": timeframe_1day}}, {"coin": 1, "event_key": 1, "end_observation": 1,"ranking": 1, "status": 1, "number": 1, "current_doc_id": 1}))
                     if len(metadata_docs) != 0:
                         riskmanagement_configuration = self.get_riskmanagement_configuration()
                         for doc in metadata_docs:
                             if doc["status"] == "pending":
-                                #self.logger.info(f"Coin {doc['coin']} is under observation. Buy Status: False")
-                                self.under_observation[doc["coin"]] = {'status': True, 'start_observation': doc["_id"], 'end_observation': doc["end_observation"], 'riskmanagement_configuration': riskmanagement_configuration, "ranking": doc["ranking"], "event_key": doc["event_key"]}
+                                self.under_observation[doc["coin"]] = {
+                                    'status': True, 
+                                    'start_observation': doc["_id"], 
+                                    'end_observation': doc["end_observation"], 
+                                    'riskmanagement_configuration': riskmanagement_configuration, 
+                                    "ranking": doc["ranking"], 
+                                    "event_key": doc["event_key"],
+                                    'current_doc_id': doc.get('current_doc_id', doc["_id"])  # Use stored current_doc_id or default to start_observation
+                                }
                                 coins_under_observation.append(doc["coin"])
                                 
                             elif doc["status"] == "running":
@@ -1095,7 +1153,6 @@ class PooledBinanceOrderBook:
                             self.logger.info(f"Coin {coin} - event_key: {event_key} - {number+1}/{len(numbers_filled)} - ranking: {ranking}")
                         
                     next_run = 60 - datetime.now().second - datetime.now().microsecond / 1000000 + 5
-                    #self.logger.info(f"next_run: {next_run}")
                     sleep(next_run)
                 except Exception as e:
                     self.logger.error(f"Error in search_volatility_event_trigger: {e}")

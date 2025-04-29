@@ -859,11 +859,16 @@ class AnalysisController:
                 if coin not in response[event_key]:
                     response[event_key][coin] = {}
                 for _id in request[event_key][coin]:
+                    # Build list of possible IDs (original + parts 1-5)
+                    possible_ids = [_id] + [f"{_id}_part{i}" for i in range(1, 6)]
+                    
                     docs = list(
                         db_order_book[event_key].find(
-                            {"_id": _id}, {"_id": 0, "ranking": 1, "data": 1}
+                            {"_id": {"$in": possible_ids}},
+                            {"_id": 0, "ranking": 1, "data": 1}
                         )
                     )
+                    
                     response[event_key][coin][_id] = docs
 
         client.close()
