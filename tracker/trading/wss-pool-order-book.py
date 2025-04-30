@@ -63,6 +63,7 @@ class PooledBinanceOrderBook:
         self.DB_UPDATE_MIN_WAITING_TIME = int(os.getenv('DB_UPDATE_MIN_WAITING_TIME'))
         self.DB_UPDATE_MAX_WAITING_TIME = int(os.getenv('DB_UPDATE_MAX_WAITING_TIME'))
         self.MAX_WAITING_TIME_AFTER_BUY = int(os.getenv('MAX_WAITING_TIME_AFTER_BUY'))
+        self.DB_UPDATE_WAITING_TIME_HIGH_ORDER_DISTRIBUTION = int(os.getenv('DB_UPDATE_WAITING_TIME_HIGH_ORDER_DISTRIBUTION'))
         self.ping_interval = 30
         self.ping_timeout = 20  # Increased from 10 to 30 seconds
         self.connection_lock = threading.Lock()
@@ -451,6 +452,26 @@ class PooledBinanceOrderBook:
         
         return self.bid_order_distribution_list[coin]
 
+    def process_order_book_update(self, coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, current_time, type_update=None):
+        self.ask_order_distribution_list[coin] = self.update_ask_order_distribution_list(ask_order_distribution, coin)
+        if not self.BUY[coin]:
+            self.check_buy_trading_conditions(coin)
+        self.update_order_book_record(
+            total_bid_volume,
+            total_ask_volume,
+            summary_bid_orders,
+            summary_ask_orders,
+            coin
+        )
+        if type_update == 'ask':
+            if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD:
+                self.ask_1firstlevel_orderlevel_detected[coin] = True
+        elif type_update == 'bid':
+            if self.last_bid_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD:
+                self.bid_1firstlevel_orderlevel_detected[coin] = True
+
+        self.last_db_update_time[coin] = current_time
+
     def analyze_order_book(self, coin):
         """Analyze the order book and update trading state for a specific coin"""
         try:
@@ -531,43 +552,30 @@ class PooledBinanceOrderBook:
             
             # Check BUY Trading Conditions or Update Order Book Record based on thresholds
             current_time = datetime.now()
+            # in case of low ask order distribution, update the order book record every 30 seconds
             if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD or self.BUY[coin]:
                 # Update if enough time passed or if we detected low order distribution first time
                 if ((current_time - self.last_db_update_time[coin]).total_seconds() >= self.DB_UPDATE_MIN_WAITING_TIME or 
                     (self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD and 
                      not self.ask_1firstlevel_orderlevel_detected[coin])):
                     
-                    self.ask_order_distribution_list[coin] = self.update_ask_order_distribution_list(ask_order_distribution, coin)
-                    if not self.BUY[coin]:
-                        self.check_buy_trading_conditions(coin)
-                    self.update_order_book_record(
-                        total_bid_volume,
-                        total_ask_volume,
-                        summary_bid_orders,
-                        summary_ask_orders,
-                        coin
-                    )
-                    if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD:
-                        self.ask_1firstlevel_orderlevel_detected[coin] = True
-                    self.last_db_update_time[coin] = current_time
-            
+                    self.process_order_book_update(coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, current_time, 'ask')
+            # in case of low bid order distribution, update the order book record every 30 seconds
             elif self.last_bid_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD or self.BUY[coin]:
                 if ((current_time - self.last_db_update_time[coin]).total_seconds() >= self.DB_UPDATE_MIN_WAITING_TIME or
                     (self.last_bid_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD and 
                      not self.bid_1firstlevel_orderlevel_detected[coin])):
                     
-                    self.update_order_book_record(
-                        total_bid_volume,
-                        total_ask_volume,
-                        summary_bid_orders,
-                        summary_ask_orders,
-                        coin
-                    )
-                    if self.last_bid_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD:
-                        self.bid_1firstlevel_orderlevel_detected[coin] = True
-                    self.last_db_update_time[coin] = current_time
-            else:
-                self.last_db_update_time[coin] = current_time
+                    self.process_order_book_update(coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, bid_order_distribution, current_time, 'bid')
+            # in case of high ask order distribution, update the order book record every 300 seconds
+            elif self.last_ask_order_distribution_1level[coin] > self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD:
+                if ((current_time - self.last_db_update_time[coin]).total_seconds() >= self.DB_UPDATE_WAITING_TIME_HIGH_ORDER_DISTRIBUTION):
+                    self.process_order_book_update(coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, current_time)
+            # in case of high bid order distribution, update the order book record every 300 seconds
+            elif self.last_bid_order_distribution_1level[coin] > self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD:
+                if ((current_time - self.last_db_update_time[coin]).total_seconds() >= self.DB_UPDATE_WAITING_TIME_HIGH_ORDER_DISTRIBUTION):
+                    self.process_order_book_update(coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, bid_order_distribution, current_time)
+
             
             # Reset the low order level detected flag if the order distribution is greater than threshold
             if self.ask_1firstlevel_orderlevel_detected[coin] and self.last_ask_order_distribution_1level[coin] > self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD:
@@ -1117,7 +1125,7 @@ class PooledBinanceOrderBook:
                                     'riskmanagement_configuration': riskmanagement_configuration, 
                                     "ranking": doc["ranking"], 
                                     "event_key": doc["event_key"],
-                                    'current_doc_id': doc.get('current_doc_id', doc["_id"])  # Use stored current_doc_id or default to start_observation
+                                    'current_doc_id': doc["_id"]  # Use stored current_doc_id or default to start_observation
                                 }
                                 coins_under_observation.append(doc["coin"])
                                 
