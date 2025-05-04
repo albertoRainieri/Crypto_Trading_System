@@ -50,11 +50,14 @@ class PooledBinanceOrderBook:
         self.last_bid_order_distribution_1level = {}
         self.ask_1firstlevel_orderlevel_detected = {}
         self.bid_1firstlevel_orderlevel_detected = {}
+        self.ask_1firstlevel_orderlevel_detected_datetime = {}
+        self.bid_1firstlevel_orderlevel_detected_datetime = {}
         self.current_price = {}
         self.bid_price_levels_dt = {}
         self.ask_price_levels_dt = {}
         self.coin_orderbook_initialized = {}
         self.last_minute_snapshots = []
+        self.benchmark = {}
         
         # Parameters
         # TODO: remove hardcoded values
@@ -63,6 +66,7 @@ class PooledBinanceOrderBook:
         self.DB_UPDATE_MIN_WAITING_TIME = int(os.getenv('DB_UPDATE_MIN_WAITING_TIME'))
         self.DB_UPDATE_MAX_WAITING_TIME = int(os.getenv('DB_UPDATE_MAX_WAITING_TIME'))
         self.MAX_WAITING_TIME_AFTER_BUY = int(os.getenv('MAX_WAITING_TIME_AFTER_BUY'))
+        self.TIMEDELTA_MINUTES_FROM_FIRST_LEVEL_DETECTED = int(os.getenv('TIMEDELTA_MINUTES_FROM_FIRST_LEVEL_DETECTED'))
         self.DB_UPDATE_WAITING_TIME_HIGH_ORDER_DISTRIBUTION = int(os.getenv('DB_UPDATE_WAITING_TIME_HIGH_ORDER_DISTRIBUTION'))
         self.ping_interval = 30
         self.ping_timeout = 20  # Increased from 10 to 30 seconds
@@ -70,13 +74,13 @@ class PooledBinanceOrderBook:
         self.last_pong_time = None
         self.connection_restart_lock = threading.Lock()
         self.connection_restart_running = False
-
         
         # Database connection
         self.client = DatabaseConnection()
         self.db_orderbook = self.client.get_db(DATABASE_ORDER_BOOK)
         self.db_trading = self.client.get_db(DATABASE_TRADING)
         self.db_tracker = self.client.get_db(DATABASE_TRACKER)
+        self.db_benchmark = self.client.get_db(DATABASE_BENCHMARK)
 
         self.orderbook_collection = {}
         self.tracker_collection = {}
@@ -98,7 +102,7 @@ class PooledBinanceOrderBook:
         for coin in self.coins:
             last_snapshot_time = last_snapshot_time + timedelta(seconds=3)
             self.initialize_coin_status(coin=coin, last_snapshot_time=last_snapshot_time)
-
+        #self.logger.info(f'benchmark: {self.benchmark}')
     
     def _setup_async_loop(self):
         """Create a dedicated event loop in a background thread"""
@@ -125,6 +129,11 @@ class PooledBinanceOrderBook:
             self.last_db_update_time[coin] = datetime.now()
             self.current_price[coin] = 0
             self.coin_orderbook_initialized[coin] = {'status': False, 'next_snapshot_time': last_snapshot_time}
+            # Get just the volume_30_avg field from benchmark collection
+            benchmark_doc = self.db_benchmark[coin].find_one({}, {'volume_30_avg': 1})
+            self.benchmark[coin] = benchmark_doc.get('volume_30_avg') if benchmark_doc else None
+            self.ask_1firstlevel_orderlevel_detected_datetime[coin] = datetime(1970, 1, 1)
+            self.bid_1firstlevel_orderlevel_detected_datetime[coin] = datetime(1970, 1, 1)
 
         else:
             self.coin_orderbook_initialized[coin] = {'status': True, 'next_snapshot_time': last_snapshot_time}
@@ -378,6 +387,87 @@ class PooledBinanceOrderBook:
         else:
             self.logger.error(f"Error getting snapshot: {response.status_code}: {response.text}")
 
+    def get_last_minute_aggregate_trades(self, coin):
+        """
+        Fetches all the aggregate trades that occurred in the last minute for a specific coin on Binance
+        
+        Parameters:
+        coin (str): Trading pair coin (e.g., 'BTCUSDT')
+        
+        Returns:
+        list: List of aggregate trades data
+        """
+        # Binance API endpoint for aggregate trades
+        try:
+            url = "https://api.binance.com/api/v3/aggTrades"
+            
+            # Calculate timestamps (in milliseconds)
+            end_time = int(time.time() * 1000)  # Current time in milliseconds
+            start_time = end_time - (60 * 1000)  # One minute ago
+            
+            # Request parameters
+            params = {
+                'symbol': coin,
+                'startTime': start_time,
+                #'endTime': end_time,
+                'limit': 1000  # Maximum allowed
+            }
+            
+            try:
+                response = requests.get(url, params=params)
+                response.raise_for_status()  # Raise exception for HTTP errors
+                
+                trades = response.json()
+                return trades
+            except requests.exceptions.RequestException as e:
+                print(f"Error fetching data from Binance: {e}")
+                return []
+        except Exception as e:
+            self.logger.error(f"Error fetching aggregate trades: {e}")
+            return []
+
+    def calculate_last_minute_volume(self, coin):
+        """
+        Fetches trades from the last minute and calculates or estimates the total volume.
+        
+        Parameters:
+        coin (str): Trading pair coin (e.g., 'BTCUSDT')
+        
+        Returns:
+        tuple: (volume, is_estimated, time_span_seconds)
+            - volume: The calculated or estimated trading volume for a minute
+            - is_estimated: Boolean indicating if the volume was estimated
+            - time_span_seconds: Actual time span of the collected data in seconds
+        """
+        try:
+            trades = self.get_last_minute_aggregate_trades(coin)
+            
+            if not trades:
+                return 0, False, 0
+            
+            # Get timestamps of oldest and newest trades
+            oldest_time = trades[0]["T"]
+            newest_time = trades[-1]["T"]
+            
+            # Calculate time span in seconds
+            time_span_ms = newest_time - oldest_time
+            time_span_seconds = time_span_ms / 1000
+            
+            # Calculate relative actual volume from available trades wrt benchmark
+            actual_volume = sum(float(trade["p"]) * float(trade["q"]) for trade in trades) / self.benchmark[coin]
+            
+            # Only estimate if we have reached the maximum number of trades (1000)
+            # This indicates we might be missing trades due to API limitation
+            if len(trades) >= 999 and time_span_seconds < 60:
+                estimated_volume = (actual_volume / time_span_seconds) * 60 / self.benchmark[coin]
+                return estimated_volume, True, time_span_seconds
+            
+            # Otherwise, return the actual volume without estimation
+            return actual_volume, False, time_span_seconds
+        except Exception as e:
+            self.logger.error(f"Error calculating last minute volume: {e}")
+            return 0, False, 0
+
     def process_buffered_events(self, coin):
         """Process events that were received before the snapshot for a specific coin"""
         for event in self.buffered_events[coin]:
@@ -455,7 +545,7 @@ class PooledBinanceOrderBook:
     def process_order_book_update(self, coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, current_time, type_update=None):
         self.ask_order_distribution_list[coin] = self.update_ask_order_distribution_list(ask_order_distribution, coin)
         if not self.BUY[coin]:
-            self.check_buy_trading_conditions(coin)
+            self.check_buy_trading_conditions(coin, summary_ask_orders)
         self.update_order_book_record(
             total_bid_volume,
             total_ask_volume,
@@ -552,25 +642,28 @@ class PooledBinanceOrderBook:
             
             # Check BUY Trading Conditions or Update Order Book Record based on thresholds
             current_time = datetime.now()
-            # in case of low ask order distribution, update the order book record every 30 seconds
-            if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD or self.BUY[coin]:
+            # in case of low ask order distribution or the time past from the first level detected is less than 15 minutes, update the order book record every 30 seconds
+            if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD or current_time - self.ask_1firstlevel_orderlevel_detected_datetime[coin] < timedelta(minutes=self.TIMEDELTA_MINUTES_FROM_FIRST_LEVEL_DETECTED):
                 # Update if enough time passed or if we detected low order distribution first time
                 if ((current_time - self.last_db_update_time[coin]).total_seconds() >= self.DB_UPDATE_MIN_WAITING_TIME or 
-                    (self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD and 
-                     not self.ask_1firstlevel_orderlevel_detected[coin])):
-                    
+                    (self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD and not self.ask_1firstlevel_orderlevel_detected[coin])):
                     self.process_order_book_update(coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, current_time, 'ask')
-            # in case of low bid order distribution, update the order book record every 30 seconds
-            elif self.last_bid_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD or self.BUY[coin]:
+                if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD:
+                    self.ask_1firstlevel_orderlevel_detected_datetime[coin] = current_time
+
+            # in case of low bid order distribution or the time past from the first level detected is less than 15 minutes, update the order book record every 30 seconds
+            elif self.last_bid_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD or current_time - self.bid_1firstlevel_orderlevel_detected_datetime[coin] < timedelta(minutes=self.TIMEDELTA_MINUTES_FROM_FIRST_LEVEL_DETECTED):
                 if ((current_time - self.last_db_update_time[coin]).total_seconds() >= self.DB_UPDATE_MIN_WAITING_TIME or
-                    (self.last_bid_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD and 
-                     not self.bid_1firstlevel_orderlevel_detected[coin])):
-                    
+                    (self.last_bid_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD and  not self.bid_1firstlevel_orderlevel_detected[coin])):
                     self.process_order_book_update(coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, bid_order_distribution, current_time, 'bid')
+                if self.last_bid_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD:
+                    self.bid_1firstlevel_orderlevel_detected_datetime[coin] = current_time
+
             # in case of high ask order distribution, update the order book record every 300 seconds
             elif self.last_ask_order_distribution_1level[coin] > self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD:
                 if ((current_time - self.last_db_update_time[coin]).total_seconds() >= self.DB_UPDATE_WAITING_TIME_HIGH_ORDER_DISTRIBUTION):
                     self.process_order_book_update(coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, current_time)
+
             # in case of high bid order distribution, update the order book record every 300 seconds
             elif self.last_bid_order_distribution_1level[coin] > self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD:
                 if ((current_time - self.last_db_update_time[coin]).total_seconds() >= self.DB_UPDATE_WAITING_TIME_HIGH_ORDER_DISTRIBUTION):
@@ -889,7 +982,7 @@ class PooledBinanceOrderBook:
         except Exception as e:
             self.logger.error(f"Error updating trading event for {coin}: {e}")
 
-    def check_buy_trading_conditions(self, coin):
+    def check_buy_trading_conditions(self, coin, summary_ask_orders):
         """Check if trading conditions are met for a specific coin"""
         try:
             if self.current_price[coin] > self.max_price[coin]:  
@@ -918,22 +1011,31 @@ class PooledBinanceOrderBook:
                     self.buy_price[coin] = self.current_price[coin]
                     self.logger.info(f"BUY EVENT: {coin} at {self.current_price[coin]}")
                     self.logger.info(f"avg_distribution: {avg_distribution}")
-
-                    asyncio.run_coroutine_threadsafe(self.get_tracker_volume_coin(coin), self._loop)
+                    self.logger.info(f"summary_ask_orders: {summary_ask_orders}")
+                    #asyncio.run_coroutine_threadsafe(self.get_tracker_volume_coin(coin), self._loop)
+                    self.get_tracker_volume_coin(coin)
 
                     self.save_trading_event(coin)
         except Exception as e:
             self.logger.error(f"Error checking buy trading conditions for {coin}: {e}")
 
-    async def get_tracker_volume_coin(self, coin):
+    #async def get_tracker_volume_coin(self, coin):
+    def get_tracker_volume_coin(self, coin):
         self.tracker_collection[coin] = self.db_tracker[coin]
         # Find the most recent document in the collection (sorted by _id in descending order)
         last_tracker_doc = self.tracker_collection[coin].find_one(sort=[("_id", -1)])
         self.logger.info(f"Market Volume {coin}: {last_tracker_doc}")
-        await asyncio.sleep(60 - datetime.now().second - (datetime.now().microsecond / 1000000) + 5)
-        # Try again after waiting
-        last_tracker_doc = self.tracker_collection[coin].find_one(sort=[("_id", -1)])
-        self.logger.info(f"Market Volume {coin}: {last_tracker_doc}")
+        volume, is_estimated, time_span = self.calculate_last_minute_volume(coin)
+        if is_estimated:
+            self.logger.info(f"Estimated 1-minute volume for {coin}: {volume:.2f} (based on {time_span:.1f} seconds of data)")
+        else:
+            self.logger.info(f"Actual 1-minute volume for {coin}: {volume:.2f} (time span: {time_span:.1f} seconds)")
+    
+
+        # await asyncio.sleep(60 - datetime.now().second - (datetime.now().microsecond / 1000000) + 5)
+        # # Try again after waiting
+        # last_tracker_doc = self.tracker_collection[coin].find_one(sort=[("_id", -1)])
+        # self.logger.info(f"Market Volume {coin}: {last_tracker_doc}")
         
 
     def calculate_average_distribution(self, distributions):
