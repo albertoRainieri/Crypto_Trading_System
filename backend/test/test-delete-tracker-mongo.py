@@ -22,6 +22,8 @@ end_time = datetime.utcnow().replace(year=2025, month=2, day=1, hour=0, minute=0
 client = DatabaseConnection()
 db = client.get_db(DATABASE_TRACKER)
 
+assert client.db_url == "mongo", "The DB is mongo-analysis, start backend with analysis_mode=0"
+
 # Get the collection names
 collection_names = db.list_collection_names()
 n_collections = len(collection_names)

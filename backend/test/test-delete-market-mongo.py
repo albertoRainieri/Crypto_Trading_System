@@ -1,5 +1,6 @@
 import os,sys
 sys.path.insert(0,'..')
+from time import sleep
 
 import pymongo
 from datetime import datetime, timedelta
@@ -12,7 +13,7 @@ Inputs are "start_time" and "end_time"
 '''
 
 # Define the time range for deletion (midnight UTC until 05:28 UTC)
-start_time = datetime.utcnow().replace(year=2024, month=1, day=1, hour=13, minute=20, second=59, microsecond=0)
+start_time = datetime.utcnow().replace(year=2023, month=1, day=1, hour=13, minute=20, second=59, microsecond=0)
 #end_time = start_time + timedelta(hours=5, minutes=30)
 end_time = datetime.utcnow().replace(year=2025, month=2, day=1, hour=0, minute=0, second=0, microsecond=0)
 
@@ -21,6 +22,9 @@ end_time = datetime.utcnow().replace(year=2025, month=2, day=1, hour=0, minute=0
 # Connect to MongoDB
 client = DatabaseConnection()
 db = client.get_db(DATABASE_MARKET)
+
+
+assert client.db_url == "mongo", "The DB is mongo-analysis, start backend with analysis_mode=0"
 
 # Get the collection names
 collection_names = db.list_collection_names()
