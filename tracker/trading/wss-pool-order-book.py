@@ -127,7 +127,7 @@ class PooledBinanceOrderBook:
                 'lastUpdateId': None
             }
             self.buffered_events[coin] = []
-            self.last_db_update_time[coin] = datetime.now()
+            self.last_db_update_time[coin] = datetime.now() - timedelta(seconds=self.DB_UPDATE_MAX_WAITING_TIME)
             self.current_price[coin] = 0
             self.coin_orderbook_initialized[coin] = {'status': False, 'next_snapshot_time': last_snapshot_time}
             # Get just the volume_30_avg field from benchmark collection
@@ -257,12 +257,12 @@ class PooledBinanceOrderBook:
             #if datetime.now().second <= 10 and datetime.now().second >= 5:
             # self.logger.info(f'coin: {coin}; position: {self.coins.index(coin)}')
             
-            # If the order distribution is greater than threshold and db update time not reached
-            if (self.under_observation[coin]['status']) and (self.last_ask_order_distribution_1level.get(coin, 0) > self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD and
-                self.last_bid_order_distribution_1level.get(coin, 0) > self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD and
-                (datetime.now() - self.last_db_update_time[coin]).total_seconds() < self.DB_UPDATE_MAX_WAITING_TIME):
-                pass
-            elif (self.under_observation[coin]['status']) and (self.current_price[coin] != 0):
+            # If the order distribution is greater than threshold and min db update time (60seconds) not reached
+            # if (self.under_observation[coin]['status']) and (self.last_ask_order_distribution_1level[coin]> self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD and
+            #     self.last_bid_order_distribution_1level[coin]> self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD and
+            #     (datetime.now() - self.last_db_update_time[coin]).total_seconds() < self.DB_UPDATE_MAX_WAITING_TIME):
+            #     pass
+            if (self.under_observation[coin]['status']) and (self.current_price[coin] != 0):
                 self.analyze_order_book(coin)
 
 
@@ -560,6 +560,7 @@ class PooledBinanceOrderBook:
             if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD:
                 self.ask_1firstlevel_orderlevel_detected[coin] = True
                 self.ask_1firstlevel_orderlevel_detected_datetime[coin] = current_time
+
         elif type_update == 'bid':
             if self.last_bid_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD:
                 self.bid_1firstlevel_orderlevel_detected[coin] = True
@@ -567,10 +568,8 @@ class PooledBinanceOrderBook:
 
         self.last_db_update_time[coin] = current_time
 
-    def analyze_order_book(self, coin):
-        """Analyze the order book and update trading state for a specific coin"""
+    def get_statistics_on_order_book(self, coin, delta=0.01):
         try:
-            
             # Calculate price levels and distributions
             bid_orders = [(price, qty) for price, qty in self.order_books[coin]['bids'].items()]
             ask_orders = [(price, qty) for price, qty in self.order_books[coin]['asks'].items()]
@@ -584,7 +583,6 @@ class PooledBinanceOrderBook:
             total_ask_volume = sum(price * qty for price, qty in ask_orders)
             
             # Calculate summary orders with delta intervals
-            delta = 0.01
             summary_bid_orders = []
             summary_ask_orders = []
             next_delta_threshold = 0 + delta
@@ -595,7 +593,7 @@ class PooledBinanceOrderBook:
                 price_order = float(price)
                 quantity_order = float(qty)
                 cumulative_bid_volume += price_order * quantity_order
-                cumulative_bid_volume_ratio = self.round_((cumulative_bid_volume / total_bid_volume), 2)
+                cumulative_bid_volume_ratio = self.round_((cumulative_bid_volume / total_bid_volume), self.count_decimals(delta)-1)
                 
                 if cumulative_bid_volume_ratio >= next_delta_threshold:
                     summary_bid_orders.append((
@@ -611,7 +609,7 @@ class PooledBinanceOrderBook:
                 price_order = float(price)
                 quantity_order = float(qty)
                 cumulative_ask_volume += price_order * quantity_order
-                cumulative_ask_volume_ratio = self.round_((cumulative_ask_volume / total_ask_volume), 2)
+                cumulative_ask_volume_ratio = self.round_((cumulative_ask_volume / total_ask_volume), self.count_decimals(delta)-1)
                 
                 if cumulative_ask_volume_ratio >= next_delta_threshold:
                     summary_ask_orders.append((
@@ -639,11 +637,29 @@ class PooledBinanceOrderBook:
                 self.under_observation[coin]['riskmanagement_configuration']['price_change_jump']
             )
 
+            # if datetime.now().second == 0:
+            #     print(delta)
+            #     print(summary_ask_orders)
+
             #self.logger.info(f'coin: {coin}; ask_order_distribution: {ask_order_distribution}; bid_order_distribution: {bid_order_distribution}')
             
             # Update order distribution tracking
             self.last_ask_order_distribution_1level[coin] = ask_order_distribution[str(self.under_observation[coin]['riskmanagement_configuration']['price_change_jump'])]
             self.last_bid_order_distribution_1level[coin] = bid_order_distribution[str(self.under_observation[coin]['riskmanagement_configuration']['price_change_jump'])]
+            
+            return total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution
+        except Exception as e:
+            self.logger.error(f"Error getting statistics on order book for {coin}: {e}")
+            return 0, 0, [], [], {}, {}
+
+    def analyze_order_book(self, coin):
+        """Analyze the order book and update trading state for a specific coin"""
+        try:
+            #t1 = time.time()
+            total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution = self.get_statistics_on_order_book(coin)
+            #t2 = time.time()
+
+            #self.logger.info(f'time to get statistics on order book for {coin}: {self.round_(t2 - t1, 5)} seconds. Last ask : {self.last_ask_order_distribution_1level[coin]} Last bid : {self.last_bid_order_distribution_1level[coin]} -  {self.last_db_update_time[coin]}')
             
             # Check BUY Trading Conditions or Update Order Book Record based on thresholds
             current_time = datetime.now()
@@ -654,9 +670,11 @@ class PooledBinanceOrderBook:
                 (current_time - self.ask_1firstlevel_orderlevel_detected_datetime[coin] < timedelta(minutes=self.TIMEDELTA_MINUTES_FROM_1LEVEL_DETECTED_1)):
                 # First detection: Update immediately and mark this low level as detected
                 if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD and not self.ask_1firstlevel_orderlevel_detected[coin]:
+                    total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution = self.get_statistics_on_order_book(coin, delta=0.005)
                     self.process_order_book_update(coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, current_time, 'ask')
                 # Ongoing monitoring: Update at regular intervals during monitoring window
                 elif (current_time - self.last_db_update_time[coin]).total_seconds() >= self.DB_UPDATE_MIN_WAITING_TIME_1LEVEL:
+                    total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution = self.get_statistics_on_order_book(coin, delta=0.005)
                     self.process_order_book_update(coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, current_time, 'ask')
 
             # ASK SIDE ANALYSIS - MODERATE PRIORITY
@@ -685,7 +703,14 @@ class PooledBinanceOrderBook:
                 # Ongoing monitoring: Update at regular intervals
                 elif (current_time - self.last_db_update_time[coin]).total_seconds() >= self.DB_UPDATE_MIN_WAITING_TIME_1LEVEL:
                     self.process_order_book_update(coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, bid_order_distribution, current_time, 'bid')
-                
+
+            if self.ask_1firstlevel_orderlevel_detected[coin] == True and self.last_ask_order_distribution_1level[coin] > self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD:
+                self.ask_1firstlevel_orderlevel_detected[coin] = False
+
+            if self.bid_1firstlevel_orderlevel_detected[coin] == True and self.last_bid_order_distribution_1level[coin] > self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD:
+                self.bid_1firstlevel_orderlevel_detected[coin] = False
+
+
         except Exception as e:
             self.logger.error(f"Error analyzing order book for {coin}: {e}")
 
@@ -722,16 +747,19 @@ class PooledBinanceOrderBook:
             current_doc_id = self.under_observation[coin]['current_doc_id']
             
             filter_query = {"_id": current_doc_id}
+
+            new_doc = {
+                f"data.{now}": new_data,
+                "max_price": self.max_price[coin],
+                "initial_price": self.initial_price[coin],
+                "summary_jump_price_level": self.summary_jump_price_level.get(coin, {}),
+                "ask_order_distribution_list": self.ask_order_distribution_list.get(coin, []),
+                "buy": self.BUY[coin],
+                "buy_price": self.buy_price[coin]
+            }
+
             update_doc = {
-                "$set": {
-                    f"data.{now}": new_data,
-                    "max_price": self.max_price[coin],
-                    "initial_price": self.initial_price[coin],
-                    "summary_jump_price_level": self.summary_jump_price_level.get(coin, {}),
-                    "ask_order_distribution_list": self.ask_order_distribution_list.get(coin, []),
-                    "buy": self.BUY[coin],
-                    "buy_price": self.buy_price[coin]
-                }
+                "$set": new_doc
             }
             
             try:
@@ -775,7 +803,14 @@ class PooledBinanceOrderBook:
                 else:
                     raise e
         except Exception as e:
-            self.logger.error(f"Error updating order book record for {coin}: {e}")
+            try:
+
+                if datetime.now().second == 0 and datetime.now().minute % 10 == 0:
+                    self.logger.error(f"Error updating order book record for {coin}: {e}")
+                    self.logger.info(f'new_doc: {new_doc}')
+            except Exception as e:
+                self.logger.error(f"Error printing error {coin}: {e}")
+                
 
     def get_price_levels(self, price, orders, cumulative_volume_jump=0.03, price_change_limit=0.4, price_change_jump=0.025):
         '''
@@ -1043,6 +1078,7 @@ class PooledBinanceOrderBook:
                     for key in avg_distribution_keys:
                         if key == avg_distribution_keys[0]:
                             continue
+                        # 0.025 > price_change_target <= 0.05 (for example)
                         if price_change_target <= key and price_change_target > avg_distribution_keys[avg_distribution_keys.index(key) - 1]:
                             cumulative_volume += self.round_(avg_distribution[str(key)] * 100, 2)
                             price_change_target_print = self.round_(price_change_target*100, self.count_decimals(self.current_price[coin]))
