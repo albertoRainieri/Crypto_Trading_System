@@ -48,6 +48,7 @@ class PooledBinanceOrderBook:
         self.last_db_update_time = {}
         self.last_ask_order_distribution_1level = {}
         self.last_bid_order_distribution_1level = {}
+        self.ask_0firstlevel_orderlevel_detected = {}
         self.ask_1firstlevel_orderlevel_detected = {}
         self.bid_1firstlevel_orderlevel_detected = {}
         self.ask_1firstlevel_orderlevel_detected_datetime = {}
@@ -61,8 +62,9 @@ class PooledBinanceOrderBook:
         
         # Parameters
         # TODO: remove hardcoded values
-        self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD = float(os.getenv('ORDER_DISTRIBUTION_1LEVEL_THRESHOLD')) 
-        self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD = float(os.getenv('ORDER_DISTRIBUTION_2LEVEL_THRESHOLD'))
+        self.ORDER_DISTRIBUTION_0LEVEL_THRESHOLD = float(os.getenv('ORDER_DISTRIBUTION_0LEVEL_THRESHOLD')) #0.005
+        self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD = float(os.getenv('ORDER_DISTRIBUTION_1LEVEL_THRESHOLD')) #0.05
+        self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD = float(os.getenv('ORDER_DISTRIBUTION_2LEVEL_THRESHOLD')) #0.1
         self.DB_UPDATE_MIN_WAITING_TIME_1LEVEL = int(os.getenv('DB_UPDATE_MIN_WAITING_TIME_1LEVEL')) #15 seconds
         self.DB_UPDATE_MIN_WAITING_TIME_2LEVEL = int(os.getenv('DB_UPDATE_MIN_WAITING_TIME_2LEVEL')) #60 seconds
         self.DB_UPDATE_MAX_WAITING_TIME = int(os.getenv('DB_UPDATE_MAX_WAITING_TIME')) #300 seconds
@@ -150,6 +152,7 @@ class PooledBinanceOrderBook:
         self.last_ask_order_distribution_1level[coin] = 0
         self.last_bid_order_distribution_1level[coin] = 0
         self.ask_1firstlevel_orderlevel_detected[coin] = False
+        self.ask_0firstlevel_orderlevel_detected[coin] = False
         self.bid_1firstlevel_orderlevel_detected[coin] = False
         self.bid_price_levels_dt[coin] = []
         self.ask_price_levels_dt[coin] = []
@@ -557,7 +560,10 @@ class PooledBinanceOrderBook:
         )
 
         if type_update == 'ask':
-            if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD:
+            if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_0LEVEL_THRESHOLD:
+                self.ask_0firstlevel_orderlevel_detected[coin] = True
+
+            elif self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD:
                 self.ask_1firstlevel_orderlevel_detected[coin] = True
                 self.ask_1firstlevel_orderlevel_detected_datetime[coin] = current_time
 
@@ -668,8 +674,11 @@ class PooledBinanceOrderBook:
             # Check if ask order distribution is below critical threshold or in monitoring window
             if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD or \
                 (current_time - self.ask_1firstlevel_orderlevel_detected_datetime[coin] < timedelta(minutes=self.TIMEDELTA_MINUTES_FROM_1LEVEL_DETECTED_1)):
+                if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_0LEVEL_THRESHOLD and not self.ask_0firstlevel_orderlevel_detected[coin]:
+                    total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution = self.get_statistics_on_order_book(coin, delta=0.005)
+                    self.process_order_book_update(coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, current_time, 'ask')
                 # First detection: Update immediately and mark this low level as detected
-                if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD and not self.ask_1firstlevel_orderlevel_detected[coin]:
+                elif self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD and not self.ask_1firstlevel_orderlevel_detected[coin]:
                     total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution = self.get_statistics_on_order_book(coin, delta=0.005)
                     self.process_order_book_update(coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, current_time, 'ask')
                 # Ongoing monitoring: Update at regular intervals during monitoring window
@@ -709,6 +718,9 @@ class PooledBinanceOrderBook:
 
             if self.bid_1firstlevel_orderlevel_detected[coin] == True and self.last_bid_order_distribution_1level[coin] > self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD:
                 self.bid_1firstlevel_orderlevel_detected[coin] = False
+
+            if self.ask_0firstlevel_orderlevel_detected[coin] == True and self.last_ask_order_distribution_1level[coin] > self.ORDER_DISTRIBUTION_0LEVEL_THRESHOLD:
+                self.ask_0firstlevel_orderlevel_detected[coin] = False
 
 
         except Exception as e:
@@ -768,40 +780,45 @@ class PooledBinanceOrderBook:
                     self.logger.error(f"Order Book update failed for coin event_key {self.under_observation[coin]['event_key']} for coin {coin}")
             except Exception as e:
                 if "16777216" in str(e):
-                    # Create a new document with part number
-                    if current_doc_id == self.under_observation[coin]['start_observation']:
-                        new_doc_id = f"{self.under_observation[coin]['start_observation']}_part1"
-                    else:
-                        # Extract current part number and increment
-                        current_part = int(current_doc_id.split('_part')[1])
-                        new_doc_id = f"{self.under_observation[coin]['start_observation']}_part{current_part + 1}"
-                    
-                    new_doc = {
-                        "_id": new_doc_id,
-                        "parent_id": self.under_observation[coin]['start_observation'],
-                        "coin": coin,
-                        "data": {now: new_data},
-                        "max_price": self.max_price[coin],
-                        "initial_price": self.initial_price[coin],
-                        "summary_jump_price_level": self.summary_jump_price_level.get(coin, {}),
-                        "ask_order_distribution_list": self.ask_order_distribution_list.get(coin, []),
-                        "buy": self.BUY[coin],
-                        "buy_price": self.buy_price[coin],
-                        "is_continuation": True
-                    }
-                    self.orderbook_collection[coin].insert_one(new_doc)
-                    
-                    # Update the current document ID in metadata
-                    self.metadata_orderbook_collection.update_one(
-                        {"_id": self.under_observation[coin]['start_observation']},
-                        {"$set": {"current_doc_id": new_doc_id}}
-                    )
-                    
-                    # Update local reference
-                    self.under_observation[coin]['current_doc_id'] = new_doc_id
-                    self.logger.info(f"Created new continuation document {new_doc_id} for coin {coin}")
+                    try:
+                        # Create a new document with part number
+                        if current_doc_id == self.under_observation[coin]['start_observation']:
+                            new_doc_id = f"{self.under_observation[coin]['start_observation']}_part1"
+                        else:
+                            # Extract current part number and increment
+                            current_part = int(current_doc_id.split('_part')[1])
+                            new_doc_id = f"{self.under_observation[coin]['start_observation']}_part{current_part + 1}"
+                        
+                        new_doc = {
+                            "_id": new_doc_id,
+                            "parent_id": self.under_observation[coin]['start_observation'],
+                            "coin": coin,
+                            f"data.{now}": new_data,
+                            "max_price": self.max_price[coin],
+                            "initial_price": self.initial_price[coin],
+                            "summary_jump_price_level": self.summary_jump_price_level.get(coin, {}),
+                            "ask_order_distribution_list": self.ask_order_distribution_list.get(coin, []),
+                            "buy": self.BUY[coin],
+                            "buy_price": self.buy_price[coin],
+                            "is_continuation": True
+                        }
+                        self.orderbook_collection[coin].insert_one(new_doc)
+                        
+                        # Update the current document ID in metadata
+                        self.metadata_orderbook_collection.update_one(
+                            {"_id": self.under_observation[coin]['start_observation']},
+                            {"$set": {"current_doc_id": new_doc_id}}
+                        )
+                        
+                        # Update local reference
+                        self.under_observation[coin]['current_doc_id'] = new_doc_id
+                        self.logger.info(f"Created new continuation document {new_doc_id} for coin {coin}")
+                    except Exception as e:
+                        self.logger.error(f"Error initializing new document for {coin}: {e}")
+                        raise e
                 else:
-                    raise e
+                    self.logger.error(f"Error Case Not Detected {coin}: {e}")
+
         except Exception as e:
             try:
 
