@@ -1111,7 +1111,7 @@ class PooledBinanceOrderBook:
             self.ws_thread.start()
             
             # Also start the connection health check thread
-            threading.Thread(target=self.check_connection, daemon=True).start()
+            #threading.Thread(target=self.check_connection, daemon=True).start()
             
         except Exception as e:
             self.logger.error(f"Connection {self.connection_id} - Error in start method: {e}")
@@ -1454,9 +1454,10 @@ class PooledBinanceOrderBook:
                     if len(metadata_docs) != 0:
                         riskmanagement_configuration = self.get_riskmanagement_configuration()
                         for doc in metadata_docs:
-                            if doc["coin"] not in self.coins:
-                                continue
+                            
                             if doc["status"] == "pending":
+                                if doc["coin"] not in self.coins:
+                                    continue
                                 self.under_observation[doc["coin"]] = {
                                     'status': True, 
                                     'start_observation': doc["_id"], 
@@ -1471,6 +1472,8 @@ class PooledBinanceOrderBook:
                             elif doc["status"] == "running":
                                 n_coins_under_observation += 1
                                 numbers_filled.append(doc["number"])
+                                if doc["coin"] not in self.coins:
+                                    continue
 
                         for coin in coins_under_observation:
                             for number in range(len(numbers_filled)+1):
