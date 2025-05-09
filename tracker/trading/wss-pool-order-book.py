@@ -1442,7 +1442,8 @@ class PooledBinanceOrderBook:
                     }
                     self.buy_price[doc["coin"]] = doc["buy_price"]
                     self.BUY[doc["coin"]] = True
-            self.logger.info(f"Connection {self.connection_id} - There are {len(metadata_docs)} coins under observation in BUY status")
+            if self.connection_id == "1":
+                self.logger.info(f"Connection {self.connection_id} - There are {len(metadata_docs)} coins under observation in BUY status")
             metadata_docs = list(self.metadata_orderbook_collection.find({ "_id": {"$gt": timeframe_24hours}, "status": status}, {"coin": 1, "event_key": 1, "end_observation": 1, "riskmanagement_configuration": 1, "ranking": 1, "current_doc_id": 1} ))
             if len(metadata_docs) != 0:
                 for doc in metadata_docs:
@@ -1458,7 +1459,8 @@ class PooledBinanceOrderBook:
                             "ranking": doc["ranking"],
                             'current_doc_id': doc.get('current_doc_id', doc["_id"])  # Use stored current_doc_id or default to start_observation
                         }
-            self.logger.info(f"Connection {self.connection_id} - There are {len(metadata_docs)} coins under observation.")
+            if self.connection_id == "1":
+                self.logger.info(f"Connection {self.connection_id} - There are {len(metadata_docs)} coins under observation.")
             return
         else:
             #self.logger.info(f"Connection {self.connection_id} - Calling search_volatility_event_trigger on instance {self.connection_id}")
@@ -1568,7 +1570,7 @@ if __name__ == "__main__":
     
     # Create a MultiConnectionOrderBook with multiple connections
     # Adjust the connection_count as needed (5-10 suggested)
-    multi_order_book = MultiConnectionOrderBook(coins=coins, connection_count=10)
+    multi_order_book = MultiConnectionOrderBook(coins=coins, connection_count=int(os.getenv("CONNECTION_COUNT")))
     
     # Initialize all order book instances
     multi_order_book.initialization_process()
