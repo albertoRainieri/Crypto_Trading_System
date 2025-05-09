@@ -356,10 +356,10 @@ class PooledBinanceOrderBook:
             # self.logger.info(f'coin: {coin}; position: {self.coins.index(coin)}')
             
             # If the order distribution is greater than threshold and min db update time (60seconds) not reached
-            # if (self.under_observation[coin]['status']) and (self.last_ask_order_distribution_1level[coin]> self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD and
-            #     self.last_bid_order_distribution_1level[coin]> self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD and
-            #     (datetime.now() - self.last_db_update_time[coin]).total_seconds() < self.DB_UPDATE_MAX_WAITING_TIME):
-            #     pass
+            if (self.under_observation[coin]['status']) and (self.last_ask_order_distribution_1level[coin]> self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD and
+                self.last_bid_order_distribution_1level[coin]> self.ORDER_DISTRIBUTION_2LEVEL_THRESHOLD and
+                (datetime.now() - self.last_db_update_time[coin]).total_seconds() < self.DB_UPDATE_MAX_WAITING_TIME):
+                pass
             if (self.under_observation[coin]['status']) and (self.current_price[coin] != 0):
                 self.analyze_order_book(coin)
 
