@@ -297,9 +297,10 @@ class PooledBinanceOrderBook:
         self.coins = sorted(self.coins, key=lambda x: x not in coins_ongoing_buy)
         self.coins = sorted(self.coins, key=lambda x: x not in coins_ongoing_analysis)
         if LOG:
-            self.logger.info(f'coins_ongoing_analysis: {coins_ongoing_analysis}')
-            self.logger.info(f'coins_ongoing_buy: {coins_ongoing_buy}')
-            self.logger.info(f'Reordered coins list. First 10 coins: {self.coins[:10]}')
+            if self.connection_id == "1":
+                self.logger.info(f'coins_ongoing_analysis: {coins_ongoing_analysis}')
+                self.logger.info(f'coins_ongoing_buy: {coins_ongoing_buy}')
+                self.logger.info(f'Reordered coins list. First 10 coins: {self.coins[:10]}')
 
         last_snapshot_time = datetime.now()
         for coin in self.coins:
@@ -1399,7 +1400,7 @@ class PooledBinanceOrderBook:
 
     def search_volatility_event_trigger(self, start_script=False):
         """Search for volatility event trigger"""
-        self.logger.info(f"Connection {self.connection_id} - Searching for volatility event trigger")
+        #self.logger.info(f"Connection {self.connection_id} - Searching for volatility event trigger")
         if start_script:
             status = "running"
             timeframe_max_waiting_time_after_buy_hours = (datetime.now() - timedelta(days=1) - timedelta(minutes=self.MAX_WAITING_TIME_AFTER_BUY)).isoformat()
@@ -1440,7 +1441,7 @@ class PooledBinanceOrderBook:
             self.logger.info(f"Connection {self.connection_id} - There are {len(metadata_docs)} coins under observation.")
             return
         else:
-            self.logger.info(f"Connection {self.connection_id} - Calling search_volatility_event_trigger on instance {self.connection_id}")
+            #self.logger.info(f"Connection {self.connection_id} - Calling search_volatility_event_trigger on instance {self.connection_id}")
             while True:
                 try:
                     n_coins_under_observation = 0
@@ -1541,6 +1542,7 @@ class PooledBinanceOrderBook:
 if __name__ == "__main__":
     # Get command line arguments
     coins = PooledBinanceOrderBook.get_coins()
+    coins = coins[:80]
     
     # Create a MultiConnectionOrderBook with multiple connections
     # Adjust the connection_count as needed (5-10 suggested)
