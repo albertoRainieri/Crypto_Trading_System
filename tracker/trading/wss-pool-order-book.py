@@ -1562,6 +1562,8 @@ class PooledBinanceOrderBook:
 if __name__ == "__main__":
     # Get command line arguments
     coins = PooledBinanceOrderBook.get_coins()
+    coins = coins[:int(os.getenv("COINS_ORDERBOOK_POOL_SIZE"))]
+
     #coins = coins[:80]
     
     # Create a MultiConnectionOrderBook with multiple connections
