@@ -18,6 +18,9 @@ from constants.constants import *
 import re
 from time import sleep
 import asyncio
+from app.Helpers.Helpers import get_volume_standings
+from pymongo import DESCENDING
+
 
 class MultiConnectionOrderBook:
     """
@@ -1388,15 +1391,32 @@ class PooledBinanceOrderBook:
         return number_script
 
     @staticmethod
+    def get_volume_standings(db_volume_standings):
+        today_date = datetime.now().strftime("%Y-%m-%d")
+        volume_standings = db_volume_standings[COLLECTION_VOLUME_STANDINGS].find().sort([('_id', DESCENDING)]).limit(1).next()
+
+        return volume_standings
+
+    @staticmethod
     def get_coins():
+        client= DatabaseConnection()
+        db = client.get_db(DATABASE_VOLUME_STANDINGS)
+        volume_standings = PooledBinanceOrderBook.get_volume_standings(db)
+        client.close()
+
         type_USDT = os.getenv("TYPE_USDT")
         dir_info = "/tracker/json" 
         coins_list_path = f"{dir_info}/coins_list.json"
         f = open(coins_list_path, "r")
         coins_list_info = json.loads(f.read())
         coins = coins_list_info[type_USDT]
+        for coin in coins:
+            if coin not in volume_standings['standings']:
+                coins.remove(coin)
+
         #coins = coins[:20]
         return coins
+
 
     def search_volatility_event_trigger(self, start_script=False):
         """Search for volatility event trigger"""
@@ -1542,7 +1562,7 @@ class PooledBinanceOrderBook:
 if __name__ == "__main__":
     # Get command line arguments
     coins = PooledBinanceOrderBook.get_coins()
-    coins = coins[:80]
+    #coins = coins[:80]
     
     # Create a MultiConnectionOrderBook with multiple connections
     # Adjust the connection_count as needed (5-10 suggested)
