@@ -51,6 +51,10 @@ services:
       - crypto-net
 
   tracker:
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     container_name: tracker
     logging:
       driver: "json-file"

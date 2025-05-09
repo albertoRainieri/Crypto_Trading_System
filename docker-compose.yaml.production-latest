@@ -3,6 +3,10 @@ version: "3.5"
 services:
 
   backend:
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     container_name: backend-crypto
     logging:
       driver: "json-file"
