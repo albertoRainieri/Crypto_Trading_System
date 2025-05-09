@@ -1103,8 +1103,8 @@ class PooledBinanceOrderBook:
 
             # Run in a separate thread with ping interval and timeout
             self.ws_thread = threading.Thread(target=self.ws.run_forever, kwargs={
-                'ping_interval': self.ping_interval,
-                'ping_timeout': self.ping_timeout,
+                # 'ping_interval': self.ping_interval,
+                # 'ping_timeout': self.ping_timeout,
                 'skip_utf8_validation': True  # Add this to skip UTF8 validation for better performance
             })
             self.ws_thread.daemon = True
