@@ -19,15 +19,102 @@ import re
 from time import sleep
 import asyncio
 
+class MultiConnectionOrderBook:
+    """
+    Manages multiple PooledBinanceOrderBook instances, each handling a subset of coins.
+    This distributes the load across multiple WebSocket connections, reducing the risk of connection errors.
+    """
+    def __init__(self, coins: List[str], connection_count=10):
+        # Logger
+        self.logger = LoggingController.start_logging()
+        self.logger.info(f"Initializing MultiConnectionOrderBook with {connection_count} connections")
+        
+        self.coins = [coin.upper() for coin in coins]
+        self.connection_count = connection_count
+        self.order_book_instances = []
+        self.threads = []
+        
+        # Split coins into chunks for each connection
+        coin_chunks = self.split_coins(self.coins, connection_count)
+        
+        # Create separate instances for each chunk
+        for i, chunk in enumerate(coin_chunks):
+            self.logger.info(f"Creating instance {i+1} with {len(chunk)} coins")
+            instance = PooledBinanceOrderBook(coins=chunk, connection_id=i, connection_count=connection_count)
+            self.order_book_instances.append(instance)
+        
+        # Register signal handlers
+        signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGTERM, self.signal_handler)
+    
+    def split_coins(self, coins, chunks):
+        """Split the coins list into roughly equal chunks"""
+        avg = len(coins) // chunks
+        remainder = len(coins) % chunks
+        result = []
+        
+        start = 0
+        for i in range(chunks):
+            end = start + avg + (1 if i < remainder else 0)
+            result.append(coins[start:end])
+            start = end
+            
+        return result
+    
+    def initialization_process(self):
+        """Initialize all PooledBinanceOrderBook instances"""
+        for instance in self.order_book_instances:
+            instance.initialization_process()
+    
+    def wrap_search_volatility_event_trigger(self, start_script=False):
+        """Call search_volatility_event_trigger on all instances, each in its own thread"""
+        for instance in self.order_book_instances:
+            # Create a separate thread for each instance
+            t = threading.Thread(
+                target=instance.search_volatility_event_trigger,
+                args=(start_script,),
+                daemon=True
+            )
+            t.start()
+            # Add a small delay to avoid all threads starting at exactly the same time
+    
+    def start(self):
+        """Start all WebSocket connections in separate threads"""
+        for instance in self.order_book_instances:
+            thread = threading.Thread(target=instance.start)
+            thread.daemon = True
+            thread.start()
+            self.threads.append(thread)
+            # Add slight delay to avoid hammering the server
+            time.sleep(2)
+    
+    def restart_connection(self):
+        """Call restart_connection on first instance only"""
+        if self.order_book_instances:
+            # Only one instance needs to handle this
+            self.order_book_instances[0].restart_connection()
+    
+    def stop(self):
+        """Stop all WebSocket connections"""
+        for instance in self.order_book_instances:
+            instance.stop()
+    
+    def signal_handler(self, signum, frame):
+        """Handle signals gracefully"""
+        self.logger.info(f"Received signal {signum}, shutting down gracefully")
+        self.stop()
+        sys.exit(0)
+
 class PooledBinanceOrderBook:
-    def __init__(self, coins: List[str]):
+    def __init__(self, coins: List[str], connection_id=0, connection_count=8):
         # Logger
         self.logger = LoggingController.start_logging()
         
         self.coins = [coin.upper() for coin in coins]
         self.coins_lower = [coin.lower() for coin in coins]
         self.retry_connection = 0
-        
+        self.connection_id = connection_id
+        self.connection_count = connection_count
         # Order book state - one for each coin
         self.order_books = {}
         self.buffered_events = {}
@@ -101,9 +188,9 @@ class PooledBinanceOrderBook:
         signal.signal(signal.SIGTERM, self.signal_handler)
 
     def initialization_process(self):
-        last_snapshot_time = datetime.now() + timedelta(seconds=3)
+        last_snapshot_time = datetime.now()
         for coin in self.coins:
-            last_snapshot_time = last_snapshot_time + timedelta(seconds=3)
+            last_snapshot_time = last_snapshot_time + timedelta(seconds=30/self.connection_count)
             self.initialize_coin_status(coin=coin, last_snapshot_time=last_snapshot_time)
         #self.logger.info(f'benchmark: {self.benchmark}')
     
@@ -176,6 +263,7 @@ class PooledBinanceOrderBook:
                 {"_id": 1, "coin": 1, "buy_price": 1},
             )
         )
+
         for doc in docs:
             if doc["buy_price"] != 0:
                 coins_ongoing_buy.append(doc["coin"])
@@ -212,7 +300,7 @@ class PooledBinanceOrderBook:
 
         last_snapshot_time = datetime.now()
         for coin in self.coins:
-            last_snapshot_time = last_snapshot_time + timedelta(seconds=3)
+            last_snapshot_time = last_snapshot_time + timedelta(seconds=30)
             self.order_books[coin]['lastUpdateId'] = None
             self.coin_orderbook_initialized[coin] = {'status': False, 'next_snapshot_time': last_snapshot_time}
 
@@ -232,7 +320,7 @@ class PooledBinanceOrderBook:
             stream_data = data.get('data')
             
             if not stream or not stream_data:
-                self.logger.error(f"Received malformed message: {message[:100]}...")
+                self.logger.error(f"Connection {self.connection_id} - Received malformed message: {message[:100]}...")
                 return
                 
             # Extract coin from stream name (format: "btcusdt@depth")
@@ -243,7 +331,7 @@ class PooledBinanceOrderBook:
                 if self.BUY[coin]:
                     self.update_trading_and_metadata_event(coin)
                 else:
-                    self.logger.info(f'Observation ended for coin: {coin}. Initializing coin status.')
+                    self.logger.info(f'Connection {self.connection_id} - Observation ended for coin: {coin}. Initializing coin status.')
                     self.update_metadata_event(coin)
                 self.initialize_coin_status(coin=coin, start_script=False, last_snapshot_time=self.coin_orderbook_initialized[coin]['next_snapshot_time'])
 
@@ -271,18 +359,18 @@ class PooledBinanceOrderBook:
 
 
         except Exception as e:
-            self.logger.error(f"Error processing message: {e}")
+            self.logger.error(f"Connection {self.connection_id} - Error processing message: {e}")
             # Continue running despite errors
 
     def on_error(self, ws, error):
-        self.logger.error(f"WebSocket Error: {error}")
+        self.logger.error(f"Connection {self.connection_id} - WebSocket Error: {error}")
         # Don't stop if there's an error, just log it
 
     def on_close(self, ws, close_status_code, close_msg):
         """Handle WebSocket connection close"""
-        self.logger.info(f"WebSocket Connection Closed with code {close_status_code}: {close_msg}")
+        self.logger.info(f"Connection {self.connection_id} - WebSocket Connection Closed with code {close_status_code}: {close_msg}")
         if self.running and not self.should_exit:
-            self.logger.info(f"Attempting to reconnect...")
+            self.logger.info(f"Connection {self.connection_id} - Attempting to reconnect...")
             try:
                 # Reset connection-related state
                 with self.connection_lock:
@@ -300,12 +388,14 @@ class PooledBinanceOrderBook:
                 sleep(10)
                 
                 # Start new connection
-                self.logger.info(f"Starting new WebSocket connection...")
+                self.logger.info(f"Connection {self.connection_id} - Starting new WebSocket connection...")
                 self.start()
+                # Reset retry counter on successful connection
+                self.retry_connection = 0
             except Exception as e:
-                self.logger.error(f"Error during reconnection: {e}")
+                self.logger.error(f"Connection {self.connection_id} - Error during reconnection: {e}")
                 # If reconnection fails, try again after a delay
-                self.logger.info(f"Retrying reconnection after error...")
+                self.logger.info(f"Connection {self.connection_id} - Retrying reconnection after error...")
                 sleep(10)
                 self.on_close(ws, close_status_code, close_msg)
 
@@ -324,7 +414,7 @@ class PooledBinanceOrderBook:
                     ws.send(message, websocket.ABNF.OPCODE_PONG)
                     self.last_pong_time = datetime.now()
         except Exception as e:
-            self.logger.error(f"Error sending pong: {e}")
+            self.logger.error(f"Connection {self.connection_id} - Error sending pong: {e}")
             self.reconnect()
 
     def on_pong(self, ws, message):
@@ -333,7 +423,7 @@ class PooledBinanceOrderBook:
             with self.connection_lock:
                 self.last_pong_time = datetime.now()
         except Exception as e:
-            self.logger.error(f"Error handling pong: {e}")
+            self.logger.error(f"Connection {self.connection_id} - Error handling pong: {e}")
             self.reconnect()
 
     def reconnect(self):
@@ -353,7 +443,7 @@ class PooledBinanceOrderBook:
                     self.reconnect()
                 sleep(10)  # Check every 10 seconds
             except Exception as e:
-                self.logger.error(f"Error in connection check: {e}")
+                self.logger.error(f"Connection {self.connection_id} - Error in connection check: {e}")
                 sleep(5)
 
     def get_snapshot(self, coin):
@@ -364,12 +454,12 @@ class PooledBinanceOrderBook:
         try:
             if self.order_books[coin]['lastUpdateId'] is not None:
                 self.wait_for_snapshot(coin)
-                self.logger.info(f'Getting snapshot for coin: {coin}')
+                self.logger.info(f'Connection {self.connection_id} - Getting snapshot for coin: {coin}')
             snapshot_url = f"https://api.binance.com/api/v3/depth?symbol={coin}&limit=5000"
             self.last_minute_snapshots.append(datetime.now())
             response = requests.get(snapshot_url)
         except Exception as e:
-            self.logger.error(f"coin: {coin}; SNAPSHOT ERROR: {e}")
+            self.logger.error(f"Connection {self.connection_id} - coin: {coin}; SNAPSHOT ERROR: {e}")
             return
 
         #self.logger.info(f"Snapshot response: {response.status_code}")
@@ -389,7 +479,7 @@ class PooledBinanceOrderBook:
             
             self.process_buffered_events(coin)
         else:
-            self.logger.error(f"Error getting snapshot: {response.status_code}: {response.text}")
+            self.logger.error(f"Connection {self.connection_id} - Error getting snapshot: {response.status_code}: {response.text}")
 
     def get_last_minute_aggregate_trades(self, coin):
         """
@@ -427,7 +517,7 @@ class PooledBinanceOrderBook:
                 print(f"Error fetching data from Binance: {e}")
                 return []
         except Exception as e:
-            self.logger.error(f"Error fetching aggregate trades: {e}")
+            self.logger.error(f"Connection {self.connection_id} - Error fetching aggregate trades: {e}")
             return []
 
     def calculate_last_minute_volume(self, coin):
@@ -469,7 +559,7 @@ class PooledBinanceOrderBook:
             # Otherwise, return the actual volume without estimation
             return actual_volume / self.benchmark[coin], False, time_span_seconds
         except Exception as e:
-            self.logger.error(f"Error calculating last minute volume: {e}")
+            self.logger.error(f"Connection {self.connection_id} - Error calculating last minute volume: {e}")
             return 0, False, 0
 
     def process_buffered_events(self, coin):
@@ -655,7 +745,7 @@ class PooledBinanceOrderBook:
             
             return total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution
         except Exception as e:
-            self.logger.error(f"Error getting statistics on order book for {coin}: {e}")
+            self.logger.error(f"Connection {self.connection_id} - Error getting statistics on order book for {coin}: {e}")
             return 0, 0, [], [], {}, {}
 
     def analyze_order_book(self, coin):
@@ -724,7 +814,7 @@ class PooledBinanceOrderBook:
 
 
         except Exception as e:
-            self.logger.error(f"Error analyzing order book for {coin}: {e}")
+            self.logger.error(f"Connection {self.connection_id} - Error analyzing order book for {coin}: {e}")
 
     @staticmethod
     def round_(number, decimal):
@@ -777,7 +867,7 @@ class PooledBinanceOrderBook:
             try:
                 result = self.orderbook_collection[coin].update_one(filter_query, update_doc)
                 if result.modified_count != 1:
-                    self.logger.error(f"Order Book update failed for coin event_key {self.under_observation[coin]['event_key']} for coin {coin}")
+                    self.logger.error(f"Connection {self.connection_id} - Order Book update failed for coin event_key {self.under_observation[coin]['event_key']} for coin {coin}")
             except Exception as e:
                 if "16777216" in str(e):
                     try:
@@ -812,21 +902,21 @@ class PooledBinanceOrderBook:
                         
                         # Update local reference
                         self.under_observation[coin]['current_doc_id'] = new_doc_id
-                        self.logger.info(f"Created new continuation document {new_doc_id} for coin {coin}")
+                        self.logger.info(f"Connection {self.connection_id} - Created new continuation document {new_doc_id} for coin {coin}")
                     except Exception as e:
-                        self.logger.error(f"Error initializing new document for {coin}: {e}")
+                        self.logger.error(f"Connection {self.connection_id} - Error initializing new document for {coin}: {e}")
                         raise e
                 else:
-                    self.logger.error(f"Error Case Not Detected {coin}: {e}")
+                    self.logger.error(f"Connection {self.connection_id} - Error Case Not Detected {coin}: {e}")
 
         except Exception as e:
             try:
 
                 if datetime.now().second == 0 and datetime.now().minute % 10 == 0:
-                    self.logger.error(f"Error updating order book record for {coin}: {e}")
-                    self.logger.info(f'new_doc: {new_doc}')
+                    self.logger.error(f"Connection {self.connection_id} - Error updating order book record for {coin}: {e}")
+                    self.logger.info(f'Connection {self.connection_id} - new_doc: {new_doc}')
             except Exception as e:
-                self.logger.error(f"Error printing error {coin}: {e}")
+                self.logger.error(f"Connection {self.connection_id} - Error printing error {coin}: {e}")
                 
 
     def get_price_levels(self, price, orders, cumulative_volume_jump=0.03, price_change_limit=0.4, price_change_jump=0.025):
@@ -923,7 +1013,7 @@ class PooledBinanceOrderBook:
 
                 if len(self.last_minute_snapshots) > 20:
                     remaining_wait = 60 - (datetime.now() - self.last_minute_snapshots[-1]).total_seconds()
-                    self.logger.info(f'Waiting for snapshot for {coin} for {remaining_wait} seconds')
+                    self.logger.info(f"Connection {self.connection_id} - Waiting for snapshot for {coin} for {remaining_wait} seconds")
                     if remaining_wait > 0:
                         sleep(remaining_wait)
                 else:
@@ -933,7 +1023,7 @@ class PooledBinanceOrderBook:
             #self.logger.info(f'under_observation: {self.under_observation}')
 
         except Exception as e:
-            self.logger.error(f"Error in wait_for_snapshot: {e}")
+            self.logger.error(f"Connection {self.connection_id} - Error in wait_for_snapshot: {e}")
             # Continue despite errors, with a small delay
             sleep(5)
 
@@ -948,6 +1038,11 @@ class PooledBinanceOrderBook:
             # Wait for snapshot to avoid rate limit
             self.initialize_order_book()
             websocket.enableTrace(False)
+            
+            # Create WebSocket connection with proper URL
+            full_url = f"{self.ws_url}{','.join(self.parameters)}"
+            self.logger.info(f"Connection {self.connection_id} - Starting WebSocket with {self.parameters}")
+            
             self.ws = websocket.WebSocketApp(
                 self.ws_url,
                 on_message=self.on_message,
@@ -958,23 +1053,25 @@ class PooledBinanceOrderBook:
                 on_pong=self.on_pong
             )
 
-            self.ws.run_forever()
+            # Run in a separate thread with ping interval and timeout
+            self.ws_thread = threading.Thread(target=self.ws.run_forever, kwargs={
+                'ping_interval': self.ping_interval,
+                'ping_timeout': self.ping_timeout
+            })
+            self.ws_thread.daemon = True
+            self.ws_thread.start()
             
-            # self.ws_thread = threading.Thread(target=self.ws.run_forever, kwargs={
-            #     'ping_interval': self.ping_interval,
-            #     'ping_timeout': self.ping_timeout
-            # })
-            # self.ws_thread.daemon = True
-            # self.ws_thread.start()
+            # Also start the connection health check thread
+            threading.Thread(target=self.check_connection, daemon=True).start()
             
         except Exception as e:
-            self.logger.error(f"Error in start method: {e}")
+            self.logger.error(f"Connection {self.connection_id} - Error in start method: {e}")
             # Release the lock if start fails
             with self.connection_lock:
                 self.running = False
             # Try to restart after a delay
             if not self.should_exit:
-                self.logger.info("Attempting to restart after error...")
+                self.logger.info(f"Connection {self.connection_id} - Attempting to restart after error...")
                 sleep(10)
                 self.start()
 
@@ -988,7 +1085,7 @@ class PooledBinanceOrderBook:
                 try:
                     self.ws.close()
                 except Exception as e:
-                    self.logger.error(f"Error closing WebSocket: {e}")
+                    self.logger.error(f"Connection {self.connection_id} - Error closing WebSocket: {e}")
 
     def update_metadata_event(self, coin):
         metadata_filter = {
@@ -1001,7 +1098,7 @@ class PooledBinanceOrderBook:
             }
         result = self.metadata_orderbook_collection.update_one(metadata_filter, update_doc)
         if result.modified_count != 1:
-            self.logger.error(f"Metadata Collection update failed for {coin}")
+            self.logger.error(f"Connection {self.connection_id} - Metadata Collection update failed for {coin}")
 
     def update_trading_and_metadata_event(self, coin):
         """Update trading event with sell information for a specific coin"""
@@ -1011,7 +1108,7 @@ class PooledBinanceOrderBook:
             sell_ts = datetime.now().isoformat()
             gain = (sell_price - self.buy_price[coin]) / self.buy_price[coin]
             gain_print = PooledBinanceOrderBook.round_(gain*100, 3)
-            self.logger.info(f"SELL EVENT: {coin} at {sell_price}. GAIN: {gain_print}%")
+            self.logger.info(f"Connection {self.connection_id} - SELL EVENT: {coin} at {sell_price}. GAIN: {gain_print}%")
             # Update metadata collection with sell price
             
             metadata_filter = {
@@ -1026,7 +1123,7 @@ class PooledBinanceOrderBook:
             
             result = self.metadata_orderbook_collection.update_one(metadata_filter, update_doc)
             if result.modified_count != 1:
-                self.logger.error(f"Metadata Collection update failed for {coin}")
+                self.logger.error(f"Connection {self.connection_id} - Metadata Collection update failed for {coin}")
             
             filter_query = {"_id": self.under_observation[coin]['start_observation']}
             update_doc = {
@@ -1039,10 +1136,10 @@ class PooledBinanceOrderBook:
             
             result = self.trading_collection.update_one(filter_query, update_doc)
             if result.modified_count != 1:
-                self.logger.error(f"Trading Collection update failed for {coin} with id {self.id}_{coin}")
+                self.logger.error(f"Connection {self.connection_id} - Trading Collection update failed for {coin} with id {self.id}_{coin}")
             
         except Exception as e:
-            self.logger.error(f"Error updating trading event for {coin}: {e}")
+            self.logger.error(f"Connection {self.connection_id} - Error updating trading event for {coin}: {e}")
 
     def check_buy_trading_conditions(self, coin, summary_ask_orders):
         """Check if trading conditions are met for a specific coin"""
@@ -1071,16 +1168,16 @@ class PooledBinanceOrderBook:
                 if all_levels_valid:
                     self.BUY[coin] = True
                     self.buy_price[coin] = self.current_price[coin]
-                    self.logger.info(f"BUY EVENT: {coin} at {self.current_price[coin]}")
-                    self.logger.info(f"avg_distribution: {avg_distribution}")
-                    self.logger.info(f"summary_ask_orders: {summary_ask_orders}")
-                    self.discover_target_price(coin, summary_ask_orders, avg_distribution, n_target_levels=3)
+                    self.logger.info(f"Connection {self.connection_id} - BUY EVENT: {coin} at {self.current_price[coin]}")
+                    self.logger.info(f"Connection {self.connection_id} - avg_distribution: {avg_distribution}")
+                    self.logger.info(f"Connection {self.connection_id} - summary_ask_orders: {summary_ask_orders}")
+                    self.discover_target_price(coin, summary_ask_orders, avg_distribution, n_target_levels=6)
                     #asyncio.run_coroutine_threadsafe(self.get_tracker_volume_coin(coin), self._loop)
                     self.get_tracker_volume_coin(coin)
 
                     self.save_trading_event(coin)
         except Exception as e:
-            self.logger.error(f"Error checking buy trading conditions for {coin}: {e}")
+            self.logger.error(f"Connection {self.connection_id} - Error checking buy trading conditions for {coin}: {e}")
 
     def discover_target_price(self, coin, summary_ask_orders, avg_distribution, n_target_levels=3):
         """Discover the target price for a specific coin"""
@@ -1099,11 +1196,11 @@ class PooledBinanceOrderBook:
                         if price_change_target <= key and price_change_target > avg_distribution_keys[avg_distribution_keys.index(key) - 1]:
                             cumulative_volume += self.round_(avg_distribution[str(key)] * 100, 2)
                             price_change_target_print = self.round_(price_change_target*100, self.count_decimals(self.current_price[coin]))
-                            self.logger.info(f"Target price for {coin}: {target_price} (+{price_change_target_print}%) with cumulative volume {cumulative_volume}%")
+                            self.logger.info(f"Connection {self.connection_id} - Target price for {coin}: {target_price} (+{price_change_target_print}%) with cumulative volume {cumulative_volume}%")
                             n_targets += 1
                             break
         except Exception as e:
-            self.logger.error(f"Error discovering target price for {coin}: {e}")
+            self.logger.error(f"Connection {self.connection_id} - Error discovering target price for {coin}: {e}")
 
             
     #async def get_tracker_volume_coin(self, coin):
@@ -1111,12 +1208,12 @@ class PooledBinanceOrderBook:
         self.tracker_collection[coin] = self.db_tracker[coin]
         # Find the most recent document in the collection (sorted by _id in descending order)
         last_tracker_doc = self.tracker_collection[coin].find_one(sort=[("_id", -1)])
-        self.logger.info(f"Market Volume {coin}: {last_tracker_doc}")
+        self.logger.info(f"Connection {self.connection_id} - Market Volume {coin}: {last_tracker_doc}")
         volume, is_estimated, time_span = self.calculate_last_minute_volume(coin)
         if is_estimated:
-            self.logger.info(f"Estimated 1-minute volume for {coin}: {volume:.2f} (based on {time_span:.1f} seconds of data)")
+            self.logger.info(f"Connection {self.connection_id} - Estimated 1-minute volume for {coin}: {volume:.2f} (based on {time_span:.1f} seconds of data)")
         else:
-            self.logger.info(f"Actual 1-minute volume for {coin}: {volume:.2f} (time span: {time_span:.1f} seconds)")
+            self.logger.info(f"Connection {self.connection_id} - Actual 1-minute volume for {coin}: {volume:.2f} (time span: {time_span:.1f} seconds)")
     
 
         # await asyncio.sleep(60 - datetime.now().second - (datetime.now().microsecond / 1000000) + 5)
@@ -1137,7 +1234,7 @@ class PooledBinanceOrderBook:
             
             return {level: sum(values) / len(values) for level, values in avg_distribution.items()}
         except Exception as e:
-            self.logger.error(f"Error calculating average distribution: {e}")
+            self.logger.error(f"Connection {self.connection_id} - Error calculating average distribution: {e}")
             return avg_distribution
 
     def hit_jump_price_levels_range(self, coin, neighborhood_of_price_jump = 0.005):
@@ -1193,7 +1290,7 @@ class PooledBinanceOrderBook:
             
             return False
         except Exception as e:
-            self.logger.error(f"Error in hit_jump_price_levels_range for {coin}: {e}")
+            self.logger.error(f"Connection {self.connection_id} - Error in hit_jump_price_levels_range for {coin}: {e}")
             return False
     
     def save_trading_event(self, coin):
@@ -1220,7 +1317,7 @@ class PooledBinanceOrderBook:
             self.under_observation[coin]['end_observation'] = end_observation
             self.metadata_orderbook_collection.update_one({"_id": self.under_observation[coin]['start_observation']}, {"$set": {"buy_price": self.buy_price[coin], "end_observation": end_observation}})
         except Exception as e:
-            self.logger.error(f"Error saving_trading_event for {coin}: {e}")
+            self.logger.error(f"Connection {self.connection_id} - Error saving_trading_event for {coin}: {e}")
 
     @staticmethod
     def extract_timeframe(input_string):
@@ -1253,6 +1350,7 @@ class PooledBinanceOrderBook:
 
     def search_volatility_event_trigger(self, start_script=False):
         """Search for volatility event trigger"""
+        self.logger.info(f"Connection {self.connection_id} - Searching for volatility event trigger")
         if start_script:
             status = "running"
             timeframe_max_waiting_time_after_buy_hours = (datetime.now() - timedelta(days=1) - timedelta(minutes=self.MAX_WAITING_TIME_AFTER_BUY)).isoformat()
@@ -1262,6 +1360,8 @@ class PooledBinanceOrderBook:
                                                                 {"coin": 1, "event_key": 1, "end_observation": 1, "riskmanagement_configuration": 1, "buy_price": 1, "ranking": 1, "current_doc_id": 1} ))
             if len(metadata_docs) != 0:
                 for doc in metadata_docs:
+                    if doc["coin"] not in self.coins:
+                        continue
                     self.under_observation[doc["coin"]] = {
                         'status': True, 
                         'start_observation': doc["_id"], 
@@ -1272,10 +1372,12 @@ class PooledBinanceOrderBook:
                     }
                     self.buy_price[doc["coin"]] = doc["buy_price"]
                     self.BUY[doc["coin"]] = True
-            self.logger.info(f'There are {len(metadata_docs)} coins under observation in BUY status')
+            self.logger.info(f"Connection {self.connection_id} - There are {len(metadata_docs)} coins under observation in BUY status")
             metadata_docs = list(self.metadata_orderbook_collection.find({ "_id": {"$gt": timeframe_24hours}, "status": status}, {"coin": 1, "event_key": 1, "end_observation": 1, "riskmanagement_configuration": 1, "ranking": 1, "current_doc_id": 1} ))
             if len(metadata_docs) != 0:
                 for doc in metadata_docs:
+                    if doc["coin"] not in self.coins:
+                        continue
                     self.orderbook_collection[doc["coin"]] = self.db_orderbook[doc["event_key"]]
                     if not self.BUY[doc["coin"]]:
                         self.under_observation[doc["coin"]] = {
@@ -1286,9 +1388,10 @@ class PooledBinanceOrderBook:
                             "ranking": doc["ranking"],
                             'current_doc_id': doc.get('current_doc_id', doc["_id"])  # Use stored current_doc_id or default to start_observation
                         }
-            self.logger.info(f'There are {len(metadata_docs)} coins under observation.')
+            self.logger.info(f"Connection {self.connection_id} - There are {len(metadata_docs)} coins under observation.")
             return
         else:
+            self.logger.info(f"Connection {self.connection_id} - Calling search_volatility_event_trigger on instance {self.connection_id}")
             while True:
                 try:
                     n_coins_under_observation = 0
@@ -1298,9 +1401,12 @@ class PooledBinanceOrderBook:
                     update_doc = {}
                     coins_under_observation = []
                     metadata_docs = list(self.metadata_orderbook_collection.find({"_id": {"$gt": timeframe_1day}}, {"coin": 1, "event_key": 1, "end_observation": 1,"ranking": 1, "status": 1, "number": 1, "current_doc_id": 1}))
+                    # self.logger.info(f'metadata_docs: {metadata_docs}')
                     if len(metadata_docs) != 0:
                         riskmanagement_configuration = self.get_riskmanagement_configuration()
                         for doc in metadata_docs:
+                            if doc["coin"] not in self.coins:
+                                continue
                             if doc["status"] == "pending":
                                 self.under_observation[doc["coin"]] = {
                                     'status': True, 
@@ -1342,12 +1448,12 @@ class PooledBinanceOrderBook:
                                 "summary_jump_price_level": {},
                                 "ask_order_distribution_list": []
                             })
-                            self.logger.info(f"Coin {coin} - event_key: {event_key} - {number+1}/{len(numbers_filled)} - ranking: {ranking}")
+                            self.logger.info(f"Connection {self.connection_id} - Coin {coin} - event_key: {event_key} - {number+1}/{len(numbers_filled)} - ranking: {ranking}")
                         
                     next_run = 60 - datetime.now().second - datetime.now().microsecond / 1000000 + 5
                     sleep(next_run)
                 except Exception as e:
-                    self.logger.error(f"Error in search_volatility_event_trigger: {e}")
+                    self.logger.error(f"Connection {self.connection_id} - Error in search_volatility_event_trigger: {e}")
                             
 
     def restart_connection(self):
@@ -1371,10 +1477,10 @@ class PooledBinanceOrderBook:
 
             # define timestamp for next wss restart
             wss_restart_timestamp = (now + timedelta(seconds=total_remaining_seconds)).isoformat()
-            self.logger.info(f'on_restart_connection: Next wss restart {wss_restart_timestamp}')
+            self.logger.info(f"Connection {self.connection_id} - on_restart_connection: Next wss restart {wss_restart_timestamp}")
 
             sleep(total_remaining_seconds)
-            self.logger.info(f"Restart Connection")
+            self.logger.info(f"Connection {self.connection_id} - Restart Connection")
         finally:
             with self.connection_restart_lock:
                 self.connection_restart_running = False
@@ -1383,15 +1489,29 @@ class PooledBinanceOrderBook:
 if __name__ == "__main__":
     # Get command line arguments
     coins = PooledBinanceOrderBook.get_coins()
-    pooled_order_book = PooledBinanceOrderBook(coins=coins)
-    pooled_order_book.initialization_process()
-    # pooled_order_book.logger.info(f'under_observation: {pooled_order_book.under_observation}')
-    # in case of restart, check if there are already coins under observation
-    pooled_order_book.search_volatility_event_trigger(start_script=True)
-    # pooled_order_book.logger.info(f'under_observation: {pooled_order_book.under_observation}')
-    # set a restart connection thread to be executed every at midnight
-    threading.Thread(target=pooled_order_book.restart_connection).start()
-    # set a thread to be executed every 60 seconds to check if there are coins under observation
-    threading.Thread(target=pooled_order_book.search_volatility_event_trigger).start()
-    # start the pooled order book script
-    pooled_order_book.start()
+    
+    # Create a MultiConnectionOrderBook with multiple connections
+    # Adjust the connection_count as needed (5-10 suggested)
+    multi_order_book = MultiConnectionOrderBook(coins=coins, connection_count=10)
+    
+    # Initialize all order book instances
+    multi_order_book.initialization_process()
+    
+    # In case of restart, check if there are already coins under observation
+    multi_order_book.wrap_search_volatility_event_trigger(start_script=True)
+    
+    # Set a restart connection thread to be executed at midnight
+    threading.Thread(target=multi_order_book.restart_connection, daemon=True).start()
+    
+    # Set a thread to be executed every 60 seconds to check if there are coins under observation
+    threading.Thread(target=multi_order_book.wrap_search_volatility_event_trigger, daemon=True).start()
+    
+    # Start all the connections
+    multi_order_book.start()
+    
+    # Keep the main thread alive
+    try:
+        while True:
+            time.sleep(60)
+    except KeyboardInterrupt:
+        multi_order_book.stop()
