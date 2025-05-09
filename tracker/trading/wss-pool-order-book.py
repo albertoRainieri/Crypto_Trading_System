@@ -158,10 +158,11 @@ class PooledBinanceOrderBook:
         self.TIMEDELTA_MINUTES_FROM_1LEVEL_DETECTED_1 = int(os.getenv('TIMEDELTA_MINUTES_FROM_1LEVEL_DETECTED_1')) #10 minutes  
         self.TIMEDELTA_MINUTES_FROM_1LEVEL_DETECTED_2 = int(os.getenv('TIMEDELTA_MINUTES_FROM_1LEVEL_DETECTED_2')) #20minutes  
         self.MAX_WAITING_TIME_AFTER_BUY = int(os.getenv('MAX_WAITING_TIME_AFTER_BUY')) #60 minutes
-        self.ping_interval = 30
-        self.ping_timeout = 20  # Increased from 10 to 30 seconds
+        self.ping_interval = 120
+        self.ping_timeout = 60  # Increased from 20 to 60 seconds to handle production network latency
         self.connection_lock = threading.Lock()
         self.last_pong_time = None
+        self.last_ping_time = None
         self.connection_restart_lock = threading.Lock()
         self.connection_restart_running = False
         
@@ -265,6 +266,8 @@ class PooledBinanceOrderBook:
         )
 
         for doc in docs:
+            # if doc["coin"] not in self.coins:
+            #     continue
             if doc["buy_price"] != 0:
                 coins_ongoing_buy.append(doc["coin"])
             coins_ongoing_analysis.append(doc["coin"])
@@ -412,7 +415,8 @@ class PooledBinanceOrderBook:
             with self.connection_lock:
                 if self.ws and self.ws.sock and self.ws.sock.connected:
                     ws.send(message, websocket.ABNF.OPCODE_PONG)
-                    self.last_pong_time = datetime.now()
+                    self.last_ping_time = datetime.now()
+                    self.logger.debug(f"Connection {self.connection_id} - Received ping, sent pong")
         except Exception as e:
             self.logger.error(f"Connection {self.connection_id} - Error sending pong: {e}")
             self.reconnect()
@@ -422,6 +426,7 @@ class PooledBinanceOrderBook:
         try:
             with self.connection_lock:
                 self.last_pong_time = datetime.now()
+                self.logger.debug(f"Connection {self.connection_id} - Received pong")
         except Exception as e:
             self.logger.error(f"Connection {self.connection_id} - Error handling pong: {e}")
             self.reconnect()
@@ -429,22 +434,57 @@ class PooledBinanceOrderBook:
     def reconnect(self):
         """Handle reconnection logic"""
         if self.running and not self.should_exit:
-            self.logger.info(f"Reconnecting...")
+            self.logger.info(f"Connection {self.connection_id} - Reconnecting...")
+            # Try to close the connection more gracefully
+            try:
+                if self.ws and self.ws.sock and self.ws.sock.connected:
+                    self.ws.close()
+            except Exception as e:
+                self.logger.error(f"Connection {self.connection_id} - Error closing connection during reconnect: {e}")
+            
             self.stop()
-            sleep(5)  # Wait before reconnecting
+            sleep(10)  # Increased from 5 to 10 seconds to give more time for cleanup
             self.start()
 
     def check_connection(self):
         """Periodically check connection health"""
         while self.running and not self.should_exit:
             try:
-                if self.last_pong_time and (datetime.now() - self.last_pong_time).total_seconds() > 30:
-                    self.logger.warning(f"No pong received for 30 seconds, reconnecting...")
-                    self.reconnect()
+                now = datetime.now()
+                # Check if we've received a pong recently
+                # if self.last_pong_time and (now - self.last_pong_time).total_seconds() > 90:  # Increased from 30 to 90 seconds
+                #     self.logger.warning(f"Connection {self.connection_id} - No pong received for 90 seconds, reconnecting...")
+                #     self.reconnect()
+                #     # Sleep longer after reconnection attempt
+                #     sleep(20)
+                #     continue
+                    
+                # Also check if connection has been idle too long without any ping/pong
+                if self.last_ping_time and self.last_pong_time:
+                    last_activity = max(self.last_ping_time, self.last_pong_time)
+                    if (now - last_activity).total_seconds() > 120:  # 2 minutes without activity
+                        self.logger.warning(f"Connection {self.connection_id} - Connection idle for 120 seconds, reconnecting...")
+                        self.reconnect()
+                        sleep(20)
+                        continue
+                
+                # Manually send ping if connection seems stable but inactive
+                if self.ws and self.ws.sock and self.ws.sock.connected:
+                    if not self.last_ping_time or (now - self.last_ping_time).total_seconds() > 45:  # Send ping every 45 seconds
+                        try:
+                            self.ws.send(b'', websocket.ABNF.OPCODE_PING)
+                            self.last_ping_time = now
+                            self.logger.debug(f"Connection {self.connection_id} - Sent manual ping")
+                        except Exception as e:
+                            self.logger.error(f"Connection {self.connection_id} - Error sending manual ping: {e}")
+                            self.reconnect()
+                            sleep(20)
+                            continue
+                
                 sleep(10)  # Check every 10 seconds
             except Exception as e:
                 self.logger.error(f"Connection {self.connection_id} - Error in connection check: {e}")
-                sleep(5)
+                sleep(10)
 
     def get_snapshot(self, coin):
         """Get the initial order book snapshot"""
@@ -1043,6 +1083,10 @@ class PooledBinanceOrderBook:
             full_url = f"{self.ws_url}{','.join(self.parameters)}"
             self.logger.info(f"Connection {self.connection_id} - Starting WebSocket with {self.parameters}")
             
+            # Reset ping/pong tracking
+            self.last_ping_time = None
+            self.last_pong_time = None
+            
             self.ws = websocket.WebSocketApp(
                 self.ws_url,
                 on_message=self.on_message,
@@ -1056,7 +1100,8 @@ class PooledBinanceOrderBook:
             # Run in a separate thread with ping interval and timeout
             self.ws_thread = threading.Thread(target=self.ws.run_forever, kwargs={
                 'ping_interval': self.ping_interval,
-                'ping_timeout': self.ping_timeout
+                'ping_timeout': self.ping_timeout,
+                'skip_utf8_validation': True  # Add this to skip UTF8 validation for better performance
             })
             self.ws_thread.daemon = True
             self.ws_thread.start()
