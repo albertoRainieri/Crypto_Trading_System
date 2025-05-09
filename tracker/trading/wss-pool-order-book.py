@@ -923,7 +923,7 @@ class PooledBinanceOrderBook:
                             "_id": new_doc_id,
                             "parent_id": self.under_observation[coin]['start_observation'],
                             "coin": coin,
-                            f"data.{now}": new_data,
+                            "data": {},
                             "max_price": self.max_price[coin],
                             "initial_price": self.initial_price[coin],
                             "summary_jump_price_level": self.summary_jump_price_level.get(coin, {}),
@@ -933,6 +933,10 @@ class PooledBinanceOrderBook:
                             "is_continuation": True
                         }
                         self.orderbook_collection[coin].insert_one(new_doc)
+                        self.orderbook_collection[coin].update_one(
+                            {"_id": new_doc_id},
+                            {"$set": {f"data.{now}": new_data}}
+                        )
                         
                         # Update the current document ID in metadata
                         self.metadata_orderbook_collection.update_one(
