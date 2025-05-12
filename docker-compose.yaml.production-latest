@@ -7,7 +7,7 @@ services:
       nofile:
         soft: 65535
         hard: 65535
-    container_name: backend-crypto
+    container_name: backend
     logging:
       driver: "json-file"
       options:
@@ -46,7 +46,21 @@ services:
       nofile:
         soft: 65535
         hard: 65535
-    container_name: tracker-crypto
+    container_name: tracker
+    sysctls:
+      net.ipv4.tcp_moderate_rcvbuf: '1'
+      net.ipv4.tcp_window_scaling: '1'
+      net.ipv4.tcp_sack: '1'
+      net.ipv4.tcp_timestamps: '1'
+      net.ipv4.tcp_no_metrics_save: '1'
+      net.ipv4.tcp_keepalive_time: '60'
+      net.ipv4.tcp_keepalive_intvl: '15'
+      net.ipv4.tcp_keepalive_probes: '5'
+      net.ipv4.tcp_max_syn_backlog: '8192'
+      net.ipv4.tcp_syncookies: '1'
+      net.ipv4.tcp_tw_reuse: '1'
+      net.ipv4.tcp_fin_timeout: '30'
+      net.ipv4.ip_local_port_range: '1024 65535'    
     logging:
       driver: "json-file"
       options:
@@ -97,7 +111,7 @@ services:
       - crypto-net
 
   mongo:
-    container_name: mongo-crypto
+    container_name: mongo
     logging:
       driver: "json-file"
       options:
@@ -132,7 +146,7 @@ services:
       driver: "json-file"
       options:
           max-size: "5m"
-    container_name: mongo-express-crypto
+    container_name: mongo-express
     restart: always
     environment:
       ME_CONFIG_MONGODB_SERVER: mongo
@@ -148,6 +162,7 @@ services:
         - crypto-net
 
   nginx:
+    container_name: nginx
     build:
       context: ./nginx
       args:
