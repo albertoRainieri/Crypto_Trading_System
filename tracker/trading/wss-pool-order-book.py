@@ -936,17 +936,30 @@ class PooledBinanceOrderBook:
                             "buy_price": self.buy_price[coin],
                             "is_continuation": True
                         }
-                        self.orderbook_collection[coin].insert_one(new_doc)
-                        self.orderbook_collection[coin].update_one(
-                            {"_id": new_doc_id},
-                            {"$set": {f"data.{now}": new_data}}
-                        )
-                        
+                        try:
+                            self.orderbook_collection[coin].insert_one(new_doc)
+                        except Exception as e:
+                            if datetime.now().minute == 0:
+                                self.logger.error(f"Connection {self.connection_id} - new init: Error inserting new document for {coin}: {e}")
+                            #raise e
+                        try:
+                            self.orderbook_collection[coin].update_one(
+                                {"_id": new_doc_id},
+                                {"$set": {f"data.{now}": new_data}}
+                            )
+                        except Exception as e:
+                            if datetime.now().minute == 0:
+                                self.logger.error(f"Connection {self.connection_id} - new init:Error updating new document for {coin}: {e}")
+                            #raise e
                         # Update the current document ID in metadata
-                        self.metadata_orderbook_collection.update_one(
-                            {"_id": self.under_observation[coin]['start_observation']},
-                            {"$set": {"current_doc_id": new_doc_id}}
-                        )
+                        try:
+                            self.metadata_orderbook_collection.update_one(
+                                {"_id": self.under_observation[coin]['start_observation']},
+                                {"$set": {"current_doc_id": new_doc_id}}
+                            )
+                        except Exception as e:
+                            self.logger.error(f"Connection {self.connection_id} - Error updating current document ID in metadata for {coin}: {e}")
+                            raise e
                         
                         # Update local reference
                         self.under_observation[coin]['current_doc_id'] = new_doc_id
