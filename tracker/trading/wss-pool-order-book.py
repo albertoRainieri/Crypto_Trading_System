@@ -194,7 +194,7 @@ class PooledBinanceOrderBook:
     def initialization_process(self):
         last_snapshot_time = datetime.now()
         for coin in self.coins:
-            last_snapshot_time = last_snapshot_time + timedelta(seconds=30/self.connection_count)
+            last_snapshot_time = last_snapshot_time + timedelta(seconds=3*self.connection_count)
             self.initialize_coin_status(coin=coin, last_snapshot_time=last_snapshot_time)
         #self.logger.info(f'benchmark: {self.benchmark}')
     
@@ -968,7 +968,8 @@ class PooledBinanceOrderBook:
                         self.logger.error(f"Connection {self.connection_id} - Error initializing new document for {coin}: {e}")
                         raise e
                 else:
-                    self.logger.error(f"Connection {self.connection_id} - Error Case Not Detected {coin}: {e}")
+                    if datetime.now().minute % 10 == 0:
+                        self.logger.error(f"Connection {self.connection_id} - Error Case Not Detected {coin}: {e}")
 
         except Exception as e:
             try:
@@ -1446,6 +1447,7 @@ class PooledBinanceOrderBook:
                     if doc["coin"] not in self.coins:
                         continue
                     self.under_observation[doc["coin"]] = {
+                        'event_key': doc["event_key"],
                         'status': True, 
                         'start_observation': doc["_id"], 
                         'end_observation': doc["end_observation"], 
@@ -1465,6 +1467,7 @@ class PooledBinanceOrderBook:
                     self.orderbook_collection[doc["coin"]] = self.db_orderbook[doc["event_key"]]
                     if not self.BUY[doc["coin"]]:
                         self.under_observation[doc["coin"]] = {
+                            'event_key': doc["event_key"],
                             'status': True, 
                             'start_observation': doc["_id"], 
                             'end_observation': doc["end_observation"], 
