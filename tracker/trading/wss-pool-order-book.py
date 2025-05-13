@@ -194,7 +194,7 @@ class PooledBinanceOrderBook:
     def initialization_process(self):
         last_snapshot_time = datetime.now()
         for coin in self.coins:
-            last_snapshot_time = last_snapshot_time + timedelta(seconds=3*self.connection_count)
+            last_snapshot_time = last_snapshot_time + timedelta(seconds=4*self.connection_count)
             self.initialize_coin_status(coin=coin, last_snapshot_time=last_snapshot_time)
         #self.logger.info(f'benchmark: {self.benchmark}')
     
@@ -914,11 +914,25 @@ class PooledBinanceOrderBook:
                 
                 
                 if result.modified_count != 1:
-                    if datetime.now().minute % 10 == 0:
-                        self.logger.info(f"  - Raw result: {result.raw_result}")
-                        self.logger.info(f'filter_query: {filter_query}')
-                        self.logger.info(f'update_doc: {update_doc}')
-                        self.logger.error(f"Connection {self.connection_id} - Order Book update failed for coin event_key {self.under_observation[coin]['event_key']} for coin {coin}")
+                    # Check if document exists
+                    existing_doc = self.orderbook_collection[coin].find_one(filter_query)
+                    if not existing_doc:
+                        # Document doesn't exist, create new one
+                        new_doc["_id"] = current_doc_id
+                        new_doc["coin"] = coin
+                        new_doc["data"] = {now: new_data}
+                        try:
+                            self.orderbook_collection[coin].insert_one(new_doc)
+                        except Exception as e:
+                            if datetime.now().minute % 10 == 0:
+                                self.logger.error(f"Connection {self.connection_id} - Error inserting new document for {coin}: {e}")
+                    else:
+                        if datetime.now().minute % 10 == 0:
+
+                            self.logger.info(f"  - Raw result: {result.raw_result}")
+                            self.logger.info(f'filter_query: {filter_query}')
+                            self.logger.info(f'update_doc: {update_doc}')
+                            self.logger.error(f"Connection {self.connection_id} - Order Book update failed for coin event_key {self.under_observation[coin]['event_key']} for coin {coin}")
             except Exception as e:
                 if "16777216" in str(e):
                     try:
