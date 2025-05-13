@@ -300,7 +300,7 @@ class PooledBinanceOrderBook:
         self.coins = sorted(self.coins, key=lambda x: x not in coins_ongoing_buy)
         self.coins = sorted(self.coins, key=lambda x: x not in coins_ongoing_analysis)
         if LOG:
-            if self.connection_id == "1":
+            if self.connection_id == "0":
                 self.logger.info(f'coins_ongoing_analysis: {coins_ongoing_analysis}')
                 self.logger.info(f'coins_ongoing_buy: {coins_ongoing_buy}')
                 self.logger.info(f'Reordered coins list. First 10 coins: {self.coins[:10]}')
@@ -415,15 +415,16 @@ class PooledBinanceOrderBook:
 
     def on_ping(self, ws, message):
         """Handle ping from server by sending pong"""
-        try:
-            with self.connection_lock:
-                if self.ws and self.ws.sock and self.ws.sock.connected:
-                    ws.send(message, websocket.ABNF.OPCODE_PONG)
-                    self.last_ping_time = datetime.now()
-                    self.logger.debug(f"Connection {self.connection_id} - Received ping, sent pong")
-        except Exception as e:
-            self.logger.error(f"Connection {self.connection_id} - Error sending pong: {e}")
-            self.reconnect()
+        ws.send(message, websocket.ABNF.OPCODE_PONG)
+        # try:
+        #     with self.connection_lock:
+        #         if self.ws and self.ws.sock and self.ws.sock.connected:
+        #             ws.send(message, websocket.ABNF.OPCODE_PONG)
+        #             self.last_ping_time = datetime.now()
+        #             self.logger.debug(f"Connection {self.connection_id} - Received ping, sent pong")
+        # except Exception as e:
+        #     self.logger.error(f"Connection {self.connection_id} - Error sending pong: {e}")
+        #     self.reconnect()
 
     def on_pong(self, ws, message):
         """Handle pong from server by updating last pong time"""
@@ -697,7 +698,7 @@ class PooledBinanceOrderBook:
             if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_0LEVEL_THRESHOLD:
                 self.ask_0firstlevel_orderlevel_detected[coin] = True
 
-            elif self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD:
+            if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD:
                 self.ask_1firstlevel_orderlevel_detected[coin] = True
                 self.ask_1firstlevel_orderlevel_detected_datetime[coin] = current_time
 
@@ -910,8 +911,14 @@ class PooledBinanceOrderBook:
             
             try:
                 result = self.orderbook_collection[coin].update_one(filter_query, update_doc)
+                
+                
                 if result.modified_count != 1:
-                    self.logger.error(f"Connection {self.connection_id} - Order Book update failed for coin event_key {self.under_observation[coin]['event_key']} for coin {coin}")
+                    if datetime.now().minute % 10 == 0 and datetime.now().second > 0 and datetime.now().second < 10:
+                        self.logger.info(f"  - Raw result: {result.raw_result}")
+                        self.logger.info(f'filter_query: {filter_query}')
+                        self.logger.info(f'update_doc: {update_doc}')
+                        self.logger.error(f"Connection {self.connection_id} - Order Book update failed for coin event_key {self.under_observation[coin]['event_key']} for coin {coin}")
             except Exception as e:
                 if "16777216" in str(e):
                     try:
@@ -1457,7 +1464,7 @@ class PooledBinanceOrderBook:
                     }
                     self.buy_price[doc["coin"]] = doc["buy_price"]
                     self.BUY[doc["coin"]] = True
-            if self.connection_id == "1":
+            if self.connection_id == "0":
                 self.logger.info(f"Connection {self.connection_id} - There are {len(metadata_docs)} coins under observation in BUY status")
             metadata_docs = list(self.metadata_orderbook_collection.find({ "_id": {"$gt": timeframe_24hours}, "status": status}, {"coin": 1, "event_key": 1, "end_observation": 1, "riskmanagement_configuration": 1, "ranking": 1, "current_doc_id": 1} ))
             if len(metadata_docs) != 0:
@@ -1475,7 +1482,7 @@ class PooledBinanceOrderBook:
                             "ranking": doc["ranking"],
                             'current_doc_id': doc.get('current_doc_id', doc["_id"])  # Use stored current_doc_id or default to start_observation
                         }
-            if self.connection_id == "1":
+            if self.connection_id == "0":
                 self.logger.info(f"Connection {self.connection_id} - There are {len(metadata_docs)} coins under observation.")
             return
         else:
