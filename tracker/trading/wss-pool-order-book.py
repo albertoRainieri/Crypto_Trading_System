@@ -200,7 +200,7 @@ class PooledBinanceOrderBook:
         self.coins = sorted(self.coins, key=lambda x: x not in coins_ongoing_analysis)
         #self.print_coin_status(coins_ongoing_analysis, coins_ongoing_buy)
 
-        last_snapshot_time = datetime.now()
+        last_snapshot_time = datetime.now() + timedelta(seconds=5)
         for coin in self.coins:
             self.initialize_coin_status(coin=coin, last_snapshot_time=last_snapshot_time)
             last_snapshot_time = last_snapshot_time + timedelta(seconds=3.1*self.connection_count)
@@ -219,7 +219,7 @@ class PooledBinanceOrderBook:
         self._loop_thread = threading.Thread(target=run_event_loop, daemon=True)
         self._loop_thread.start()
 
-    def initialize_coin_status(self, coin, last_snapshot_time=datetime.now(), start_script=True):
+    def initialize_coin_status(self, coin, last_snapshot_time=datetime.now() + timedelta(seconds=5), start_script=True):
 
         if start_script:
             self.order_books[coin] = {
@@ -289,7 +289,7 @@ class PooledBinanceOrderBook:
         #self.print_coin_status(coins_ongoing_analysis, coins_ongoing_buy)
 
 
-        last_snapshot_time = datetime.now()
+        last_snapshot_time = datetime.now() + timedelta(seconds=5)
         for coin in self.coins:
             self.initialize_coin_status(coin=coin, last_snapshot_time=last_snapshot_time)
             last_snapshot_time = last_snapshot_time + timedelta(seconds=3.1*self.connection_count)
@@ -514,7 +514,7 @@ class PooledBinanceOrderBook:
             if self.order_books[coin]['lastUpdateId'] is not None:
                 self.wait_for_snapshot(coin)
                 self.logger.info(f'Connection {self.connection_id} - Getting snapshot for coin: {coin}')
-            self.logger.info(f'Connection {self.connection_id} - Getting snapshot for coin: {coin} last snapshot time: {self.coin_orderbook_initialized[coin]["next_snapshot_time"]}')
+            #self.logger.info(f'Connection {self.connection_id} - Getting snapshot for coin: {coin} last snapshot time: {self.coin_orderbook_initialized[coin]["next_snapshot_time"]}')
             snapshot_url = f"https://api.binance.com/api/v3/depth?symbol={coin}&limit=5000"
             self.last_minute_snapshots.append(datetime.now())
             response = requests.get(snapshot_url)
@@ -963,31 +963,22 @@ class PooledBinanceOrderBook:
                             "_id": new_doc_id,
                             "parent_id": self.under_observation[coin]['start_observation'],
                             "coin": coin,
-                            "data": {},
+                            "data": {now: new_data},
                             "max_price": self.max_price[coin],
                             "initial_price": self.initial_price[coin],
-                            "summary_jump_price_level": self.summary_jump_price_level.get(coin, {}),
-                            "ask_order_distribution_list": self.ask_order_distribution_list.get(coin, []),
+                            "summary_jump_price_level": self.summary_jump_price_level[coin],
+                            "ask_order_distribution_list": self.ask_order_distribution_list[coin],
                             "buy": self.BUY[coin],
                             "buy_price": self.buy_price[coin],
-                            "is_continuation": True
                         }
                         try:
-                            self.orderbook_collection[coin].insert_one(new_doc)
+                            result =self.orderbook_collection[coin].insert_one(new_doc)
+                            self.logger.info(f'coin: {coin}; result: {result}')
+                            self.logger.info(new_doc)
+                            
                         except Exception as e:
-                            if datetime.now().minute == 0:
-                                self.logger.error(f"Connection {self.connection_id} - new init: Error inserting new document for {coin}: {e}")
-                            #raise e
-                        try:
-                            self.orderbook_collection[coin].update_one(
-                                {"_id": new_doc_id},
-                                {"$set": {f"data.{now}": new_data}}
-                            )
-                        except Exception as e:
-                            if datetime.now().minute == 0:
-                                self.logger.error(f"Connection {self.connection_id} - new init:Error updating new document for {coin}: {e}")
-                            #raise e
-                        # Update the current document ID in metadata
+                            self.logger.error(f"Connection {self.connection_id} - new init: Error inserting new document for {coin}: {e}")
+
                         try:
                             self.metadata_orderbook_collection.update_one(
                                 {"_id": self.under_observation[coin]['start_observation']},
