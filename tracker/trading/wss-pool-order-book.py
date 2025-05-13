@@ -914,7 +914,7 @@ class PooledBinanceOrderBook:
                 
                 
                 if result.modified_count != 1:
-                    if datetime.now().minute % 10 == 0 and datetime.now().second > 0 and datetime.now().second < 10:
+                    if datetime.now().minute % 10 == 0:
                         self.logger.info(f"  - Raw result: {result.raw_result}")
                         self.logger.info(f'filter_query: {filter_query}')
                         self.logger.info(f'update_doc: {update_doc}')
