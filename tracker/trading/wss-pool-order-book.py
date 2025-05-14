@@ -783,14 +783,16 @@ class PooledBinanceOrderBook:
                 self.current_price[coin], summary_bid_orders, 
                 self.under_observation[coin]['riskmanagement_configuration']['strategy_jump'],
                 self.under_observation[coin]['riskmanagement_configuration']['limit'],
-                self.under_observation[coin]['riskmanagement_configuration']['price_change_jump']
+                self.under_observation[coin]['riskmanagement_configuration']['price_change_jump'],
+                delta
             )
             
             self.ask_price_levels_dt[coin], ask_order_distribution, ask_cumulative_level = self.get_price_levels(
                 self.current_price[coin], summary_ask_orders,
                 self.under_observation[coin]['riskmanagement_configuration']['strategy_jump'],
                 self.under_observation[coin]['riskmanagement_configuration']['limit'],
-                self.under_observation[coin]['riskmanagement_configuration']['price_change_jump']
+                self.under_observation[coin]['riskmanagement_configuration']['price_change_jump'],
+                delta
             )
 
             # if datetime.now().second == 0:
@@ -1009,7 +1011,7 @@ class PooledBinanceOrderBook:
                 self.logger.error(f"Connection {self.connection_id} - Error printing error {coin}: {e}")
                 
 
-    def get_price_levels(self, price, orders, cumulative_volume_jump=0.03, price_change_limit=0.4, price_change_jump=0.025):
+    def get_price_levels(self, price, orders, cumulative_volume_jump=0.03, price_change_limit=0.4, price_change_jump=0.025, delta=0.01):
         '''
         this function outputs the pricelevels (tuple: 4 elements), order_distribution, cumulative_level
         price_levels (TUPLE):
@@ -1028,7 +1030,8 @@ class PooledBinanceOrderBook:
         '''
         previous_level = 0
         price_levels = []
-        n_decimals = self.count_decimals(price)
+        n_decimals_price = self.count_decimals(price)
+        n_decimals_orderbook = self.count_decimals(delta) - 1
         cumulative_level_without_jump = 0
         price_change_level = price_change_jump
         order_distribution = {}
@@ -1049,7 +1052,7 @@ class PooledBinanceOrderBook:
             # in case is above next threshold, update price_change_level and initialize next price_change_level
             else:
                 # before moving to the next price level, update the relative level
-                order_distribution[str(price_change_level)] = self.round_(order_distribution[str(price_change_level)] - previous_cumulative_level,2)
+                order_distribution[str(price_change_level)] = self.round_(order_distribution[str(price_change_level)] - previous_cumulative_level, n_decimals_orderbook)
 
                 # now update the next price change level
                 previous_cumulative_level += order_distribution[str(price_change_level)]
@@ -1069,7 +1072,7 @@ class PooledBinanceOrderBook:
                 price_level = price * (1+price_change)
                 #info = (self.round_(price_level,n_decimals), price_change, cumulative_level, actual_jump)
                 #price_levels.append(info)
-                price_levels.append(self.round_(price_level,n_decimals))
+                price_levels.append(self.round_(price_level,n_decimals_price))
             elif abs(price_change) <= price_change_limit:
                 cumulative_level_without_jump = cumulative_level
 
