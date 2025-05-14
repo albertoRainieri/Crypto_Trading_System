@@ -967,7 +967,8 @@ class PooledBinanceOrderBook:
                             "max_price": self.max_price[coin],
                             "initial_price": self.initial_price[coin],
                             "summary_jump_price_level": self.summary_jump_price_level[coin],
-                            "ask_order_distribution_list": self.ask_order_distribution_list[coin],
+                            #"ask_order_distribution_list": self.ask_order_distribution_list[coin],
+                            "ask_order_distribution_list": [],
                             "buy": self.BUY[coin],
                             "buy_price": self.buy_price[coin],
                         }
