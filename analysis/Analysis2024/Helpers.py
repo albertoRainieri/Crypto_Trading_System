@@ -2771,7 +2771,7 @@ def filter_complete_info_by_current_eventkeys(output, complete_info):
 
 def get_price_levels(
     price,
-    bid_orders,
+    orders,
     cumulative_volume_jump=0.04,
     price_change_limit=0.25,
     price_change_jump=0.025,
@@ -2805,17 +2805,19 @@ def get_price_levels(
     ):
         order_distribution[str(round_(i, 3))] = 0
     previous_cumulative_level = 0
-    #print(bid_orders)
+    #print(orders)
 
-    for level in bid_orders:
+    for level in orders:
         cumulative_level = level[1]
         price_change = level[0]
-        # print(f'price_change: {price_change}')
+        
         # print(f'cumulative_level: {cumulative_level}')
+        # print(f'price_change: {price_change} vs {price_change_level}')
 
         # in this "if condition", I see how orders are distributed along the (0,price_change_limit) range,
         #  the chunks of orders are divided relative to "price_change_jump" (i.e. if var=0.025, I check in the [0,2.5%] price change window how deep is the order book and so on)
         # if price_change is below next threshold, keep updating the cumulative volume level for that price level
+
         if abs(price_change) <= price_change_level:
             order_distribution[str(price_change_level)] = cumulative_level
             # print(f'order_distribution if: {order_distribution}')
@@ -2837,14 +2839,18 @@ def get_price_levels(
             # next chunk is below next thrshold
             if ( abs(price_change) <= price_change_level and abs(price_change) <= price_change_limit):
                 order_distribution[str(price_change_level)] = cumulative_level
-                # print(f'order_distribution next chunk: {order_distribution}')
+            
+            # print(f'order_distribution next chunk: {order_distribution}')
+
+        if level == orders[-1]:
+            order_distribution[str(price_change_level)] = round_( order_distribution[str(price_change_level)] - previous_cumulative_level, n_decimals_orderbook )
+            previous_cumulative_level = cumulative_level
+
 
         # here, I discover the jumps, the info is stored in "price_levels"
-        if (
-            cumulative_level - previous_level >= cumulative_volume_jump
-            and abs(price_change) <= price_change_limit
-            and abs(price_change) >= 0.01
-        ):
+        if ( cumulative_level - previous_level >= cumulative_volume_jump
+            and abs(price_change) <= price_change_limit and abs(price_change) >= delta ):
+
             actual_jump = round_(cumulative_level - previous_level, 3)
             price_level = price * (1 + price_change)
             info = (
@@ -2863,6 +2869,8 @@ def get_price_levels(
         previous_level = cumulative_level
 
     # scale order_distribution to [0,100] range
+    # print(f'order_distribution: {order_distribution}')
+    # print(f'previous_cumulative_level: {previous_cumulative_level}')
     for lvl in order_distribution:
         if previous_cumulative_level != 0:
             order_distribution[lvl] = round_(
@@ -2870,7 +2878,15 @@ def get_price_levels(
             )
         else:
             order_distribution[lvl] = 0
-
+    # print(f'order_distribution: {order_distribution}')
+    sum_cumulative_level = sum(order_distribution.values())
+    if sum_cumulative_level < 0.9999 or sum_cumulative_level > 1.0001:
+        print(f'computation order_distribution error')
+        print(f'orders: {orders}')
+        print(f'order_distribution: {order_distribution}')
+        print(f'sum(order_distribution.values()): {sum(order_distribution.values())}')
+    else:
+        print(f'sum(order_distribution.values()): {sum(order_distribution.values())}')
     # if there are not jumps, at least I want to get the cumulative volume at the limit price level
     if len(price_levels) == 0:
         info = (None, None, cumulative_level_without_jump, False)
@@ -2878,7 +2894,7 @@ def get_price_levels(
 
     if cumulative_level_without_jump == 0:
         print('analyze this line: cumulative_level_without_jump == 0')
-        #print(bid_orders)
+        #print(orders)
 
     return price_levels, order_distribution, round_(previous_cumulative_level, 3)
 

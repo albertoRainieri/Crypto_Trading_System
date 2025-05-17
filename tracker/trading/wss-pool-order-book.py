@@ -95,9 +95,13 @@ class MultiConnectionOrderBook:
     
     def restart_connection(self):
         """Call restart_connection on first instance only"""
-        if self.order_book_instances:
+        for instance in self.order_book_instances:
             # Only one instance needs to handle this
-            self.order_book_instances[0].restart_connection()
+            self.logger.info(f'Restarting connection for instance {instance.connection_id}')
+            thread = threading.Thread(target=instance.restart_connection)
+            thread.daemon = True
+            thread.start()
+            self.threads.append(thread)
     
     def stop(self):
         """Stop all WebSocket connections"""
@@ -264,7 +268,7 @@ class PooledBinanceOrderBook:
         self.logger.info(f'coins_ongoing_buy: {coins_ongoing_buy}')
         self.logger.info(f'Reordered coins list. First 10 coins: {self.coins[:10]}')
 
-    def initialize_order_book(self, LOG=True):
+    def initialize_order_book(self, start_script):
         """
         Initialize the order book for all coins.
         
@@ -291,8 +295,9 @@ class PooledBinanceOrderBook:
 
         last_snapshot_time = datetime.now() + timedelta(seconds=5)
         for coin in self.coins:
-            self.initialize_coin_status(coin=coin, last_snapshot_time=last_snapshot_time)
-            last_snapshot_time = last_snapshot_time + timedelta(seconds=3.1*self.connection_count)
+            self.initialize_coin_status(coin=coin, last_snapshot_time=last_snapshot_time, start_script=start_script)
+            if start_script or self.connection_count < 10:
+                last_snapshot_time = last_snapshot_time + timedelta(seconds=3.1*self.connection_count)
 
     def get_riskmanagement_configuration(self):
         with open('/tracker/riskmanagement/riskmanagement.json', 'r') as f:
@@ -511,10 +516,13 @@ class PooledBinanceOrderBook:
         #self.logger.info(f'restart: {self.RESTART}')
         
         try:
-            if self.order_books[coin]['lastUpdateId'] is not None:
+            order_book = self.order_books[coin]
+            #self.logger.info(f'snapshot:Connection {self.connection_id} - {order_book}')
+            if order_book['bids'] != {}:
                 self.wait_for_snapshot(coin)
-                self.logger.info(f'Connection {self.connection_id} - Getting snapshot for coin: {coin}')
-            #self.logger.info(f'Connection {self.connection_id} - Getting snapshot for coin: {coin} last snapshot time: {self.coin_orderbook_initialized[coin]["next_snapshot_time"]}')
+                self.logger.info(f'Connection {self.connection_id} - Getting snapshot for coin after waiting: {coin}')
+            else:
+                self.logger.info(f'Connection {self.connection_id} - Getting snapshot for coin: {coin} last snapshot time: {self.coin_orderbook_initialized[coin]["next_snapshot_time"]}')
             snapshot_url = f"https://api.binance.com/api/v3/depth?symbol={coin}&limit=5000"
             self.last_minute_snapshots.append(datetime.now())
             response = requests.get(snapshot_url)
@@ -724,7 +732,7 @@ class PooledBinanceOrderBook:
 
         self.last_db_update_time[coin] = current_time
 
-    def get_statistics_on_order_book(self, coin, delta=0.01):
+    def get_statistics_on_order_book(self, coin, delta_ask=0.01, delta_bid=0.01):
         try:
             # Calculate price levels and distributions
             bid_orders = [(price, qty) for price, qty in self.order_books[coin]['bids'].items()]
@@ -741,50 +749,62 @@ class PooledBinanceOrderBook:
             # Calculate summary orders with delta intervals
             summary_bid_orders = []
             summary_ask_orders = []
-            next_delta_threshold = 0 + delta
-            
+            next_delta_threshold_bid = 0 + delta_bid
+            next_delta_threshold_ask = 0 + delta_ask
             # Calculate summary bid orders
             cumulative_bid_volume = 0
             for price, qty in bid_orders:
                 price_order = float(price)
                 quantity_order = float(qty)
                 cumulative_bid_volume += price_order * quantity_order
-                cumulative_bid_volume_ratio = self.round_((cumulative_bid_volume / total_bid_volume), self.count_decimals(delta)-1)
+                cumulative_bid_volume_ratio = self.round_((cumulative_bid_volume / total_bid_volume), self.count_decimals(delta_bid)-1)
                 
-                if cumulative_bid_volume_ratio >= next_delta_threshold:
+                
+                if cumulative_bid_volume_ratio >= next_delta_threshold_bid:
+                    price_change = self.round_((price_order - self.current_price[coin]) / self.current_price[coin], 3)
+                    if abs(price_change) > self.under_observation[coin]['riskmanagement_configuration']['limit']:
+                        break
                     summary_bid_orders.append((
-                        self.round_((price_order - self.current_price[coin]) / self.current_price[coin], 3),
+                        price_change,
                         cumulative_bid_volume_ratio
                     ))
-                    next_delta_threshold = cumulative_bid_volume_ratio + delta
+                    next_delta_threshold_bid = cumulative_bid_volume_ratio + delta_bid
             
             # Calculate summary ask orders
-            next_delta_threshold = 0 + delta
+            next_delta_threshold_ask = 0 + delta_ask
             cumulative_ask_volume = 0
             for price, qty in ask_orders:
                 price_order = float(price)
                 quantity_order = float(qty)
                 cumulative_ask_volume += price_order * quantity_order
-                cumulative_ask_volume_ratio = self.round_((cumulative_ask_volume / total_ask_volume), self.count_decimals(delta)-1)
+                cumulative_ask_volume_ratio = self.round_((cumulative_ask_volume / total_ask_volume), self.count_decimals(delta_ask)-1)
                 
-                if cumulative_ask_volume_ratio >= next_delta_threshold:
+
+                if cumulative_ask_volume_ratio >= next_delta_threshold_ask:
+                    price_change = self.round_((price_order - self.current_price[coin]) / self.current_price[coin], 3)
+                    if abs(price_change) > self.under_observation[coin]['riskmanagement_configuration']['limit']:
+                        break
                     summary_ask_orders.append((
                         self.round_((price_order - self.current_price[coin]) / self.current_price[coin], 3),
                         cumulative_ask_volume_ratio
                     ))
-                    next_delta_threshold = cumulative_ask_volume_ratio + delta
+                    next_delta_threshold_ask = cumulative_ask_volume_ratio + delta_ask
             
             # Calculate price levels and distributions using summary orders
             if not hasattr(self, 'bid_price_levels_dt'):
                 self.bid_price_levels_dt = {}
                 self.ask_price_levels_dt = {}
+
+            # if datetime.now().second == 0:
+            #     self.logger.info(f'coin: {coin}; summary_bid_orders: {summary_bid_orders}')
+            #     self.logger.info(f'coin: {coin}; summary_ask_orders: {summary_ask_orders}')
                 
             self.bid_price_levels_dt[coin], bid_order_distribution, bid_cumulative_level = self.get_price_levels(
                 self.current_price[coin], summary_bid_orders, 
                 self.under_observation[coin]['riskmanagement_configuration']['strategy_jump'],
                 self.under_observation[coin]['riskmanagement_configuration']['limit'],
                 self.under_observation[coin]['riskmanagement_configuration']['price_change_jump'],
-                delta
+                delta_bid
             )
             
             self.ask_price_levels_dt[coin], ask_order_distribution, ask_cumulative_level = self.get_price_levels(
@@ -792,8 +812,11 @@ class PooledBinanceOrderBook:
                 self.under_observation[coin]['riskmanagement_configuration']['strategy_jump'],
                 self.under_observation[coin]['riskmanagement_configuration']['limit'],
                 self.under_observation[coin]['riskmanagement_configuration']['price_change_jump'],
-                delta
+                delta_ask
             )
+            # if datetime.now().second == 0:
+            #     self.logger.info(f'coin: {coin}; bid_order_distribution: {bid_order_distribution}')
+            #     self.logger.info(f'coin: {coin}; ask_order_distribution: {ask_order_distribution}')
 
             # if datetime.now().second == 0:
             #     print(delta)
@@ -805,16 +828,19 @@ class PooledBinanceOrderBook:
             self.last_ask_order_distribution_1level[coin] = ask_order_distribution[str(self.under_observation[coin]['riskmanagement_configuration']['price_change_jump'])]
             self.last_bid_order_distribution_1level[coin] = bid_order_distribution[str(self.under_observation[coin]['riskmanagement_configuration']['price_change_jump'])]
             
-            return total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution
+            return total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution, bid_cumulative_level, ask_cumulative_level
         except Exception as e:
             self.logger.error(f"Connection {self.connection_id} - Error getting statistics on order book for {coin}: {e}")
-            return 0, 0, [], [], {}, {}
+            self.logger.info(f'summary_bid_orders: {summary_bid_orders}')
+            self.logger.info(f'summary_ask_orders: {summary_ask_orders}')
+
+            return 0, 0, [], [], {}, {}, 0, 0
 
     def analyze_order_book(self, coin):
         """Analyze the order book and update trading state for a specific coin"""
         try:
             #t1 = time.time()
-            total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution = self.get_statistics_on_order_book(coin)
+            total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution, bid_cumulative_level, ask_cumulative_level = self.get_statistics_on_order_book(coin)
             #t2 = time.time()
 
             #self.logger.info(f'time to get statistics on order book for {coin}: {self.round_(t2 - t1, 5)} seconds. Last ask : {self.last_ask_order_distribution_1level[coin]} Last bid : {self.last_bid_order_distribution_1level[coin]} -  {self.last_db_update_time[coin]}')
@@ -827,15 +853,15 @@ class PooledBinanceOrderBook:
             if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD or \
                 (current_time - self.ask_1firstlevel_orderlevel_detected_datetime[coin] < timedelta(minutes=self.TIMEDELTA_MINUTES_FROM_1LEVEL_DETECTED_1)):
                 if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_0LEVEL_THRESHOLD and not self.ask_0firstlevel_orderlevel_detected[coin]:
-                    total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution = self.get_statistics_on_order_book(coin, delta=0.005)
+                    total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution, bid_cumulative_level, ask_cumulative_level = self.get_statistics_on_order_book(coin, delta_ask=0.001)
                     self.process_order_book_update(coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, current_time, 'ask')
                 # First detection: Update immediately and mark this low level as detected
                 elif self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD and not self.ask_1firstlevel_orderlevel_detected[coin]:
-                    total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution = self.get_statistics_on_order_book(coin, delta=0.005)
+                    total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution, bid_cumulative_level, ask_cumulative_level = self.get_statistics_on_order_book(coin, delta_ask=0.005)
                     self.process_order_book_update(coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, current_time, 'ask')
                 # Ongoing monitoring: Update at regular intervals during monitoring window
                 elif (current_time - self.last_db_update_time[coin]).total_seconds() >= self.DB_UPDATE_MIN_WAITING_TIME_1LEVEL:
-                    total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution = self.get_statistics_on_order_book(coin, delta=0.005)
+                    total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution, bid_cumulative_level, ask_cumulative_level = self.get_statistics_on_order_book(coin, delta_ask=0.005)
                     self.process_order_book_update(coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, current_time, 'ask')
 
             # ASK SIDE ANALYSIS - MODERATE PRIORITY
@@ -976,8 +1002,8 @@ class PooledBinanceOrderBook:
                         }
                         try:
                             result =self.orderbook_collection[coin].insert_one(new_doc)
-                            self.logger.info(f'coin: {coin}; result: {result}')
-                            self.logger.info(new_doc)
+                            # self.logger.info(f'coin: {coin}; result: {result}')
+                            # self.logger.info(new_doc)
                             
                         except Exception as e:
                             self.logger.error(f"Connection {self.connection_id} - new init: Error inserting new document for {coin}: {e}")
@@ -1039,6 +1065,7 @@ class PooledBinanceOrderBook:
             order_distribution[str(self.round_(i,3))] = 0
         previous_cumulative_level = 0
 
+
         for level in orders:
             cumulative_level = level[1]
             price_change = level[0]
@@ -1065,6 +1092,10 @@ class PooledBinanceOrderBook:
                 # next chunk is below next thrshold
                 if abs(price_change) <= price_change_level and abs(price_change) <= price_change_limit:
                     order_distribution[str(price_change_level)] = cumulative_level
+    
+            if level == orders[-1]:
+                order_distribution[str(price_change_level)] = self.round_( order_distribution[str(price_change_level)] - previous_cumulative_level, n_decimals_orderbook )
+                previous_cumulative_level = cumulative_level
 
             # here, I discover the jumps, the info is stored in "price_levels"
             if cumulative_level - previous_level >= cumulative_volume_jump and abs(price_change) <= price_change_limit and abs(price_change) >= 0.01:
@@ -1086,7 +1117,15 @@ class PooledBinanceOrderBook:
                 order_distribution[lvl] = self.round_(order_distribution[lvl] / previous_cumulative_level,3)
             else:
                 order_distribution[lvl] = 0
-        
+
+        sum_cumulative_level = sum(order_distribution.values())
+        if len(orders) > 0 and (sum_cumulative_level < 0.99 or sum_cumulative_level > 1.01):
+            self.logger.info(f'computation order_distribution error')
+            self.logger.info(f'orders: {orders}')
+            self.logger.info(f'order_distribution: {order_distribution}')
+            self.logger.info(f'sum(order_distribution.values()): {sum_cumulative_level}')
+            self.logger.info(f'delta: {delta}')
+
         # if there are not jumps, at least I want to get the cumulative volume at the limit price level
         if len(price_levels) == 0:
             info = (None, None, cumulative_level_without_jump, False)
@@ -1130,7 +1169,7 @@ class PooledBinanceOrderBook:
         try:
             # Wait for snapshot to avoid rate limit
             if not start_script:
-                self.initialize_order_book()
+                self.initialize_order_book(start_script=start_script)
 
             websocket.enableTrace(False)
             # Create WebSocket connection with proper URL
@@ -1472,7 +1511,8 @@ class PooledBinanceOrderBook:
             timeframe_24hours = (datetime.now() - timedelta(days=1)).isoformat()
 
             metadata_docs = list(self.metadata_orderbook_collection.find({ "_id": {"$gt": timeframe_max_waiting_time_after_buy_hours}, "status": status,"buy_price": {"$ne": 0},"sell_price": 0},
-                                                                {"coin": 1, "event_key": 1, "end_observation": 1, "riskmanagement_configuration": 1, "buy_price": 1, "ranking": 1, "current_doc_id": 1} ))
+                                                                {"coin": 1, "event_key": 1, "end_observation": 1, "benchmark": 1,
+                                                                "riskmanagement_configuration": 1, "buy_price": 1, "ranking": 1, "current_doc_id": 1} ))
             if len(metadata_docs) != 0:
                 for doc in metadata_docs:
                     if doc["coin"] not in self.coins:
@@ -1486,11 +1526,13 @@ class PooledBinanceOrderBook:
                         "ranking": doc["ranking"],
                         'current_doc_id': doc.get('current_doc_id', doc["_id"])  # Use stored current_doc_id or default to start_observation
                     }
+                    if 'benchmark' in doc:
+                        self.benchmark[doc["coin"]] = doc["benchmark"]
                     self.buy_price[doc["coin"]] = doc["buy_price"]
                     self.BUY[doc["coin"]] = True
-            if self.connection_id == "0":
-                self.logger.info(f"Connection {self.connection_id} - There are {len(metadata_docs)} coins under observation in BUY status")
-            metadata_docs = list(self.metadata_orderbook_collection.find({ "_id": {"$gt": timeframe_24hours}, "status": status}, {"coin": 1, "event_key": 1, "end_observation": 1, "riskmanagement_configuration": 1, "ranking": 1, "current_doc_id": 1} ))
+
+            self.logger.info(f"Connection {self.connection_id} - There are {len(metadata_docs)} coins under observation in BUY status")
+            metadata_docs = list(self.metadata_orderbook_collection.find({ "_id": {"$gt": timeframe_24hours}, "status": status}, {"coin": 1, "event_key": 1, "end_observation": 1, "riskmanagement_configuration": 1, "ranking": 1, "current_doc_id": 1, "benchmark": 1} ))
             if len(metadata_docs) != 0:
                 for doc in metadata_docs:
                     if doc["coin"] not in self.coins:
@@ -1506,8 +1548,10 @@ class PooledBinanceOrderBook:
                             "ranking": doc["ranking"],
                             'current_doc_id': doc.get('current_doc_id', doc["_id"])  # Use stored current_doc_id or default to start_observation
                         }
-            if self.connection_id == "0":
-                self.logger.info(f"Connection {self.connection_id} - There are {len(metadata_docs)} coins under observation.")
+                        if 'benchmark' in doc:
+                            self.benchmark[doc["coin"]] = doc["benchmark"]
+            # if self.connection_id == "0":
+            #     self.logger.info(f"Connection {self.connection_id} - There are {len(metadata_docs)} coins under observation.")
             return
         else:
             #self.logger.info(f"Connection {self.connection_id} - Calling search_volatility_event_trigger on instance {self.connection_id}")
@@ -1528,6 +1572,8 @@ class PooledBinanceOrderBook:
                             if doc["status"] == "pending":
                                 if doc["coin"] not in self.coins:
                                     continue
+                                benchmark_doc = self.db_benchmark[doc["coin"]].find_one({}, {'volume_30_avg': 1})
+                                self.benchmark[doc["coin"]] = benchmark_doc.get('volume_30_avg') if benchmark_doc else None
                                 self.under_observation[doc["coin"]] = {
                                     'status': True, 
                                     'start_observation': doc["_id"], 
@@ -1548,7 +1594,7 @@ class PooledBinanceOrderBook:
                         for coin in coins_under_observation:
                             for number in range(len(numbers_filled)+1):
                                 if number not in numbers_filled:
-                                    update_doc[coin] = { "$set": { "status": "running", "riskmanagement_configuration": riskmanagement_configuration, "number": number } }
+                                    update_doc[coin] = { "$set": { "status": "running", "riskmanagement_configuration": riskmanagement_configuration, "number": number, "benchmark": self.benchmark[coin] } }
                                     numbers_filled.append(number)
                                     break
 
@@ -1592,10 +1638,11 @@ class PooledBinanceOrderBook:
             hours_remaining = 24 - now.hour - 1
 
             # total seconds until next wss restart
-            total_remaining_seconds = remaining_seconds + minutes_remaining * 60 + hours_remaining * 60 * 60
+            total_remaining_seconds = remaining_seconds + minutes_remaining * 60 + hours_remaining * 60 * 60 + (self.connection_id * 60) + self.connection_id
 
             # ONLY FOR TESTING
-            # total_remaining_seconds = 240 + remaining_seconds
+            #total_remaining_seconds = 3*60 + remaining_seconds + (self.connection_id * 60)
+
 
             # define timestamp for next wss restart
             wss_restart_timestamp = (now + timedelta(seconds=total_remaining_seconds)).isoformat()
@@ -1606,6 +1653,7 @@ class PooledBinanceOrderBook:
         finally:
             with self.connection_restart_lock:
                 self.connection_restart_running = False
+                threading.Thread(target=self.restart_connection, daemon=True).start()
                 self.ws.close()
 
 if __name__ == "__main__":
