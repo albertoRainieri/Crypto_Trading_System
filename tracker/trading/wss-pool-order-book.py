@@ -520,9 +520,9 @@ class PooledBinanceOrderBook:
             #self.logger.info(f'snapshot:Connection {self.connection_id} - {order_book}')
             if order_book['bids'] != {}:
                 self.wait_for_snapshot(coin)
-                self.logger.info(f'Connection {self.connection_id} - Getting snapshot for coin after waiting: {coin}')
-            else:
-                self.logger.info(f'Connection {self.connection_id} - Getting snapshot for coin: {coin} last snapshot time: {self.coin_orderbook_initialized[coin]["next_snapshot_time"]}')
+            #     self.logger.info(f'Connection {self.connection_id} - Getting snapshot for coin after waiting: {coin}')
+            # else:
+            #     self.logger.info(f'Connection {self.connection_id} - Getting snapshot for coin: {coin} last snapshot time: {self.coin_orderbook_initialized[coin]["next_snapshot_time"]}')
             snapshot_url = f"https://api.binance.com/api/v3/depth?symbol={coin}&limit=5000"
             self.last_minute_snapshots.append(datetime.now())
             response = requests.get(snapshot_url)
