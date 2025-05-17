@@ -28,11 +28,27 @@ LOST_CONNECTION = []
 MAX_CONNECTION_LOST = int(os.getenv("MAX_CONNECTION_LOST"))  # 2
 CHECK_PERIOD_MINUTES = int(os.getenv("CHECK_PERIOD_MINUTES"))  # 60
 SLEEP_LAST_LIST = int(os.getenv("SLEEP_LAST_LIST"))  # 60
+MAX_ERRORS_PER_MINUTE = 10
+errors_in_last_minute = []
 
 
 def on_error(ws, error):
     global error_summary
     global coin_list
+    global errors_in_last_minute
+
+    # Add current error timestamp to track errors per minute
+    now = datetime.now()
+    errors_in_last_minute.append(now)
+    
+    # Remove errors older than 1 minute
+    errors_in_last_minute = [t for t in errors_in_last_minute if (now - t).total_seconds() < 60]
+    
+    # Check if more than MAX_ERRORS_PER_MINUTE errors in last minute
+    if len(errors_in_last_minute) > MAX_ERRORS_PER_MINUTE:
+        logger.error(f"{LIST}: Too many errors in last minute ({len(errors_in_last_minute)}). Restarting connection.")
+        ws.close()
+        return
 
     error = str(error)
     if error not in coin_list:
@@ -54,8 +70,8 @@ def on_error(ws, error):
             ws.close()
         if "sell_volume" in error:
             ws.close()
-        else:
-            logger.error(f"Error not caught: #{error}#")
+        # else:
+        #     logger.error(f"Error not caught: #{error}#")
     else:
         sleep(60 - (datetime.now().second + (datetime.now().microsecond // 10**6)))
 
@@ -74,6 +90,10 @@ def restart_logic():
     This function restarts the wss connection every 24 hours
     """
     global error_summary
+    global errors_in_last_minute
+
+    # Reset errors in last minute counter on restart
+    errors_in_last_minute = []
 
     now = datetime.now()
     current_hour = now.hour
@@ -118,6 +138,19 @@ def on_message(ws, message):
         # LOCAL TEST
         # if (datetime.now().minute in [i for i in range(60)]) and datetime.now().second in [30]:
         #     raise ValueError("Connection to remote host was lost")
+        if instrument_name not in trade_ids:
+            doc_db[instrument_name] = {
+                "_id": None,
+                "price": None,
+                "n_trades": 0,
+                "buy_n": 0,
+                "volume": 0,
+                "buy_volume": 0,
+                "sell_volume": 0,
+            }
+            prices[instrument_name] = None
+            trade_ids[instrument_name] = []
+
 
         if trade_id not in trade_ids[instrument_name]:
             trade_ids[instrument_name].append(trade_id)
@@ -147,6 +180,7 @@ def on_open(ws):
     global prices
     global doc_db
     global coin_list
+    global trade_ids
 
     # msg = 'WSS CONNECTION STARTED'
     # logger.info(msg)
@@ -162,6 +196,8 @@ def on_open(ws):
     parameters = []
     for coin in coin_list:
         parameters.append(coin.lower() + "@aggTrade")
+
+    doc_db, prices, trade_ids = initializeVariables(coin_list)
 
     # print("### Opened ###")
     subscribe_message = {"method": "SUBSCRIBE", "params": parameters, "id": 1}
