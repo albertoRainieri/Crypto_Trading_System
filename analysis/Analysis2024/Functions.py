@@ -107,7 +107,7 @@ def total_function_multiprocessing(
     # define "end_interval_analysis". this is variable says "do not analyze events that are older than this date".
     # Since "minutes_price_windows" looks for N minutes observations after a specific event, I might get smaller time windows than expected (the most recent ones). This check should avoid this problem.
     end_interval_analysis = datetime.fromisoformat(
-        data["SOLUSDT"][-1]["_id"]
+        data["XRPUSDT"][-1]["_id"]
     ) - timedelta(
         days=1
     )  # last datetime from btcusdt - 3 days
@@ -417,6 +417,7 @@ def download_show_output(
     filter_field="mean",
     xth_percentile=99,
     filter_position=None,
+    get_coins_events_number=False,
 ):
     """
     This function takes as input data stored in analysis_json/ ans return the output available for pandas DATAFRAME.
@@ -693,38 +694,40 @@ def download_show_output(
             aggregate_complete_info[event_key] = complete_info[event_key]
 
     # here I detect how many coins would be actually analyzed
-    events_summary = []
-    for event_key in aggregate_complete_info:
-        for coin in aggregate_complete_info[event_key]["info"]:
-            if coin in get_currency_coin():
-                continue
-            for event in aggregate_complete_info[event_key]["info"][coin]:
-                if filter_position != None and event["lvl"] > filter_position:
-                    continue
-                events_summary.append((event["event"], coin, event["lvl"]))
-
-    sorted_events_summary = sorted(
-        events_summary, key=lambda x: datetime.fromisoformat(x[0])
-    )
-
     month_events = {}
-    discard_events = []
-    for event in sorted_events_summary:
-        if event in discard_events:
-            continue
-        else:
-            day_month_year = datetime.fromisoformat(event[0]).strftime("%Y-%m-%d")
-            if day_month_year not in month_events:
-                month_events[day_month_year] = 0
-            month_events[day_month_year] += 1
+    if get_coins_events_number:
+        events_summary = []
+        for event_key in aggregate_complete_info:
+            for coin in aggregate_complete_info[event_key]["info"]:
+                if coin in get_currency_coin():
+                    continue
+                for event in aggregate_complete_info[event_key]["info"][coin]:
+                    if filter_position != None and event["lvl"] > filter_position:
+                        continue
+                    events_summary.append((event["event"], coin, event["lvl"]))
 
-        position_event = sorted_events_summary.index(event)
-        for sub_event in sorted_events_summary[position_event + 1 :]:
-            if datetime.fromisoformat(sub_event[0]) > datetime.fromisoformat(
-                event[0]
-            ) + timedelta(days=1):
-                break
-            if sub_event[1] == event[1]:
-                discard_events.append(sub_event)
+        sorted_events_summary = sorted(
+            events_summary, key=lambda x: datetime.fromisoformat(x[0])
+        )
+
+        
+        discard_events = []
+        for event in sorted_events_summary:
+            if event in discard_events:
+                continue
+            else:
+                day_month_year = datetime.fromisoformat(event[0]).strftime("%Y-%m-%d")
+                if day_month_year not in month_events:
+                    month_events[day_month_year] = 0
+                month_events[day_month_year] += 1
+
+            position_event = sorted_events_summary.index(event)
+            for sub_event in sorted_events_summary[position_event + 1 :]:
+                if datetime.fromisoformat(sub_event[0]) > datetime.fromisoformat(
+                    event[0]
+                ) + timedelta(days=1):
+                    break
+                if sub_event[1] == event[1]:
+                    discard_events.append(sub_event)
 
     return aggregate_output, aggregate_complete_info, month_events

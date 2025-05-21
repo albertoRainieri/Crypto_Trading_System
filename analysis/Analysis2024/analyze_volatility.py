@@ -12,7 +12,7 @@ from multiprocessing import freeze_support
 # if True, the analysis starts from the current event-keys used in production
 # else, it starts an analysis based on the keys in "event_keys" folder
 def main():
-    KEEP_PRODUCTION_ANALYSIS = False
+    KEEP_PRODUCTION_ANALYSIS = True
 
     if not KEEP_PRODUCTION_ANALYSIS:
         analysis_name = 'analysis-nobuyvolume-3'
@@ -30,7 +30,7 @@ def main():
     analysis_timeframe=7
 
     UNLOCK = True
-    n_iterations = 30
+    n_iterations = 10
 
     for i in range(n_iterations):
         if UNLOCK:

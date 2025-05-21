@@ -26,6 +26,8 @@ ROOT_PATH = os.getcwd()
 TargetVariable1 = Literal["mean", "max", "min"]
 KEYS_TIMESERIES = ["vol_1m", "buy_vol_1m", "vol_5m", "buy_vol_5m", "vol_15m", "buy_vol_15m", "vol_30m", "buy_vol_30m", "vol_60m", "buy_vol_60m"]
 N_KEYS_TIMESERIES = len(KEYS_TIMESERIES)
+#ALGOCRYPTO_SERVER = 'https://algocrypto.eu'
+ALGOCRYPTO_SERVER = 'http://149.62.189.91'
 
 def round_(number, decimal):
     return float(format(number, f".{decimal}f"))
@@ -172,9 +174,12 @@ def get_order_book(initial_request):
                 print(tmp_request)
                 print(done_request)
                 print(
-                    f"{requests_server}/{orderbook_events} events for orderbook are going to be extracted in algocrypto.eu"
+                    f"{requests_server}/{orderbook_events} events for orderbook are going to be extracted in {ALGOCRYPTO_SERVER}"
                 )
-                url = "https://algocrypto.eu/analysis/get-order-book"
+
+
+                # url = "https://algocrypto.eu/analysis/get-order-book"
+                url = f"{ALGOCRYPTO_SERVER}/analysis/get-order-book"
                 # url = "http://localhost/analysis/get-order-book"
 
                 response = requests.post(url=url, json=tmp_request)
@@ -190,6 +195,7 @@ def get_order_book(initial_request):
                         )
                         if os.path.exists(path_order_book_event_key):
                             f = open(path_order_book_event_key, "r")
+                            print(f'{path_order_book_event_key} exists')
                             data_order_book_event_key = json.loads(f.read())
                         else:
                             data_order_book_event_key = {}
@@ -197,10 +203,13 @@ def get_order_book(initial_request):
                             if coin not in data_order_book_event_key:
                                 data_order_book_event_key[coin] = {}
                             for _id in response[event_key][coin]:
+                                if len(response[event_key][coin][_id]) > 0:
+                                    print(f'{_id} - coin: {coin} - n_obs: {len(response[event_key][coin][_id][0]["data"].keys())}')
+                                else:
+                                    print(f'{_id} - coin: {coin} - n_obs: 0')
+                                #print(response[event_key][coin][_id])
                                 metadata_order_book[event_key][coin].append(_id)
-                                data_order_book_event_key[coin][_id] = response[
-                                    event_key
-                                ][coin][_id]
+                                data_order_book_event_key[coin][_id] = response[event_key][coin][_id]
                         # Save the data_order_book_event_key
                         with open(path_order_book_event_key, "w") as outfile_data:
                             json.dump(data_order_book_event_key, outfile_data)
@@ -519,10 +528,9 @@ def get_benchmark_info():
         benchmark_info = json.load(f)
     else:
         print(f"{full_path} does not exist. Making the request to the server..")
-        ENDPOINT = "https://algocrypto.eu"
         METHOD = "/analysis/get-benchmarkinfo"
 
-        url_mosttradedcoins = ENDPOINT + METHOD
+        url_mosttradedcoins = ALGOCRYPTO_SERVER + METHOD
         response = requests.get(url_mosttradedcoins)
         print(f"StatusCode for getting get-benchmarkinfo: {response.status_code}")
         benchmark_info = response.json()
@@ -934,7 +942,8 @@ def update_optimized_results(optimized_results_path):
             # append start_timestamp
             request[event_key][coin].append(event)
 
-    url = "https://algocrypto.eu/analysis/get-pricechanges"
+    # url = "https://algocrypto.eu/analysis/get-pricechanges"
+    url = f"{ALGOCRYPTO_SERVER}/analysis/get-pricechanges"
     response = requests.post(url=url, json=request)
     response = json.loads(response.text)
     pricechanges = response["data"]
@@ -2201,6 +2210,37 @@ def print_event_key(event_key_i, n_event_keys, event_key):
     print(f"{event_key_i}/{n_event_keys} Event Key: {event_key}")
     print("#####################################################################")
 
+def get_orderbook_from_remote_metadata(download_all=True):
+    
+    # Make request to algocrypto server to get orderbook metadata
+
+    url = f"{ALGOCRYPTO_SERVER}/analysis/get-order-book-metadata"
+    #url = f"http://localhost/analysis/get-order-book-metadata"
+    max_start_timestamp = datetime(2025,5,1)
+    if not download_all:
+        with open(f"{ROOT_PATH}/analysis/Analysis2024/order_book/metadata.json", "r") as file:
+            metadata_order_book = json.load(file)
+            for event_key in metadata_order_book:
+                for coin in metadata_order_book[event_key]:
+                    for timestamp in metadata_order_book[event_key][coin]:
+                        if max_start_timestamp < datetime.fromisoformat(timestamp):
+                            max_start_timestamp = datetime.fromisoformat(timestamp)
+
+    request_order_book = {}
+    request_order_book["start_timestamp"] = max_start_timestamp.isoformat()
+
+    try:
+        response = requests.post(url, json=request_order_book)
+        if response.status_code == 200:
+            metadata_order_book = response.json()
+            return metadata_order_book
+        else:
+            print(f"Error getting orderbook metadata: {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"Exception getting orderbook metadata: {e}")
+        return None
+
 
 def get_timeseries(
     info,
@@ -2212,7 +2252,8 @@ def get_timeseries(
     event_keys_filter=[],
     n_processes=8,
     skip_if_strategy_exists=False,
-    analysis_name=None
+    analysis_name=None,
+    load_from_orderbook_metadata=True
 ):
     """
     check_past: minutes before event trigger
@@ -2249,7 +2290,10 @@ def get_timeseries(
                 request_order_book[event_key][coin].append(event["event"])
 
         # get full_timeseries
-        # metadata_full_timeseries, full_timeseries = get_full_timeseries(request_order_book, plot)
+        if load_from_orderbook_metadata:
+            # metadata_full_timeseries, full_timeseries = get_full_timeseries(request_order_book, plot)
+            request_order_book = get_orderbook_from_remote_metadata(request_order_book)
+
 
         # Download all data (order_book and timeseries)
         metadata_order_book = get_order_book(request_order_book)
@@ -2587,6 +2631,10 @@ def get_volume_standings_file(path_volume_standings, benchmark_json=None):
                 )
 
         standings = {}
+
+        # workoaround 2025-05-15
+
+
         # print(summary)
         for date in summary:
             if date not in standings:
@@ -2605,6 +2653,10 @@ def get_volume_standings_file(path_volume_standings, benchmark_json=None):
                 coin = obj["coin"]
                 final_standings[date][coin] = position
                 position += 1
+
+        # workoaround 2025-05-15
+        final_standings["2025-05-15"] = final_standings["2025-05-14"]
+
 
         with open(path_volume_standings, "w") as f:
             json.dump(final_standings, f, indent=4)
@@ -2843,8 +2895,9 @@ def get_price_levels(
             # print(f'order_distribution next chunk: {order_distribution}')
 
         if level == orders[-1]:
-            order_distribution[str(price_change_level)] = round_( order_distribution[str(price_change_level)] - previous_cumulative_level, n_decimals_orderbook )
-            previous_cumulative_level = cumulative_level
+            if price_change_level in order_distribution:
+                order_distribution[str(price_change_level)] = round_( order_distribution[str(price_change_level)] - previous_cumulative_level, n_decimals_orderbook )
+                previous_cumulative_level = cumulative_level
 
 
         # here, I discover the jumps, the info is stored in "price_levels"
@@ -2880,13 +2933,13 @@ def get_price_levels(
             order_distribution[lvl] = 0
     # print(f'order_distribution: {order_distribution}')
     sum_cumulative_level = sum(order_distribution.values())
-    if sum_cumulative_level < 0.9999 or sum_cumulative_level > 1.0001:
+    if sum_cumulative_level < 0.99 or sum_cumulative_level > 1.01:
         print(f'computation order_distribution error')
         print(f'orders: {orders}')
         print(f'order_distribution: {order_distribution}')
         print(f'sum(order_distribution.values()): {sum(order_distribution.values())}')
-    else:
-        print(f'sum(order_distribution.values()): {sum(order_distribution.values())}')
+    # else:
+    #     print(f'sum(order_distribution.values()): {sum(order_distribution.values())}')
     # if there are not jumps, at least I want to get the cumulative volume at the limit price level
     if len(price_levels) == 0:
         info = (None, None, cumulative_level_without_jump, False)

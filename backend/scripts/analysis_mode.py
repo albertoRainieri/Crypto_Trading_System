@@ -39,10 +39,10 @@ def main():
         logger.info('')
         logger.info('Iteration Started')
         now = datetime.now()
-        last_doc_saved_tracker = db_tracker['SOLUSDT'].find_one(sort=[("_id", -1)])
+        last_doc_saved_tracker = db_tracker['XRPUSDT'].find_one(sort=[("_id", -1)])
         last_timestamp_db_tracker = last_doc_saved_tracker['_id']
         last_timestamp_db = datetime.fromisoformat(last_doc_saved_tracker['_id'])
-        #last_doc_saved_market = db_market['SOLUSDT'].find_one(sort=[("_id", -1)])
+        #last_doc_saved_market = db_market['XRPUSDT'].find_one(sort=[("_id", -1)])
         get_benchmark_info(db_benchmark)
         
         # if last_doc_saved_tracker != None and last_doc_saved_market != None:
@@ -87,7 +87,8 @@ def main():
             logger.info('Started Run for recovering data from Server')
             # this section we make sure that analysis/json_tracker and, analysis/json_market and db are aligned
             path_json_tracker, path_json_market, data_tracker, data_market, last_datetime_saved, timedelta_market_tracker, TRACKER, MARKET= return_most_recent_json(last_timestamp_db)
-
+            logger.info(f'TRACKER: {TRACKER}')
+            logger.info(f'MARKET: {MARKET}')
             datetime_start = last_datetime_saved + timedelta(seconds=DELAY_SEARCH_SECONDS)
             
             # if there are more than DAYS days of missing data, keep fetching data
@@ -218,7 +219,7 @@ def update_data_json(response_tracker, response_market, data_tracker, data_marke
         JSON_PATH_DIR = '/analysis/json_tracker'
         logger.info(f'Start updating {path_json_tracker}')
         new_data = response_tracker.json()
-        btc_obs = len(new_data['SOLUSDT'])
+        btc_obs = len(new_data['XRPUSDT'])
         count_coins = sum([1 for coin in list(new_data.keys()) if len(new_data[coin]) != 0])
         logger.info(f'{btc_obs} new observations for {count_coins} BTC')
         for coin in new_data:
@@ -241,13 +242,13 @@ def update_data_json(response_tracker, response_market, data_tracker, data_marke
             logger.info(coin_obs[-1])
 
         if btc_obs == 0 and (datetime_end - datetime_start) >= timedelta(days=DAYS) - timedelta(minutes=1):
-            datetime_creation = (datetime.fromisoformat(data_tracker['data']['SOLUSDT'][-1]['_id']) + timedelta(days=DAYS))
+            datetime_creation = (datetime.fromisoformat(data_tracker['data']['XRPUSDT'][-1]['_id']) + timedelta(days=DAYS))
             datetime_creation = (pytz.utc.localize(datetime_creation)).isoformat()
         elif btc_obs == 0:
             print(datetime_end.isoformat())
             datetime_creation = datetime_end.isoformat()
         else:
-            datetime_creation = datetime.fromisoformat(data_tracker['data']['SOLUSDT'][-1]['_id'])
+            datetime_creation = datetime.fromisoformat(data_tracker['data']['XRPUSDT'][-1]['_id'])
             datetime_creation = (pytz.utc.localize(datetime_creation)).isoformat()
 
         data_tracker['datetime_creation'] = datetime_creation
@@ -257,13 +258,13 @@ def update_data_json(response_tracker, response_market, data_tracker, data_marke
         with open(path_json_tracker, 'w') as outfile:
             outfile.write(json_string)
         logger.info(f'Saving to {path_json_tracker} was succesfull') 
-        del data_tracker, json_string
+        #del data_tracker, json_string
 
     if MARKET:
         JSON_PATH_DIR = '/analysis/json_market'
         logger.info(f'Start updating {path_json_market}')
         new_data = response_market.json()
-        btc_obs = len(new_data['SOLUSDT'])
+        btc_obs = len(new_data['XRPUSDT'])
         count_coins = sum([1 for coin in list(new_data.keys()) if len(new_data[coin]) != 0])
         logger.info(f'{btc_obs} new observations for {count_coins} BTC')
         n_instrument_newdata = 0
@@ -290,13 +291,13 @@ def update_data_json(response_tracker, response_market, data_tracker, data_marke
         #     logger.info(coin_obs[-1])
 
         if btc_obs == 0 and datetime_end - datetime_start >= timedelta(days=DAYS) - timedelta(minutes=1):
-            datetime_creation = (datetime.fromisoformat(data_tracker['data']['SOLUSDT'][-1]['_id']) + timedelta(days=DAYS))
+            datetime_creation = (datetime.fromisoformat(data_tracker['data']['XRPUSDT'][-1]['_id']) + timedelta(days=DAYS))
             datetime_creation = (pytz.utc.localize(datetime_creation)).isoformat()
         elif btc_obs == 0:
 
             datetime_creation = datetime_end
         else:
-            datetime_creation = datetime.fromisoformat(data_market['data']['SOLUSDT'][-1]['_id'])
+            datetime_creation = datetime.fromisoformat(data_market['data']['XRPUSDT'][-1]['_id'])
             datetime_creation = (pytz.utc.localize(datetime_creation)).isoformat()
 
         data_market['datetime_creation'] = datetime_creation
@@ -326,6 +327,7 @@ def request_fetching_data(datetime_start_iso, datetime_end_iso, TRACKER, MARKET)
     Make request to the server for fetching data
     '''
     SERVER = 'https://algocrypto.eu'
+    SERVER = 'http://149.62.189.91'
     headers = {
             "accept": "application/json",
             "Authorization": f"Bearer {ACCESS_TOKEN}", 
@@ -466,6 +468,10 @@ def check_tracker_market_db_are_aligned(last_timestamp_fs_tracker, last_timestam
         timedelta_market_tracker = None
         TRACKER = True
         MARKET = True
+        if datetime.fromisoformat(pytz.utc.localize(last_timestamp_db).isoformat()) < datetime.fromisoformat(last_timestamp_fs_tracker):
+            logger.info('DB is behind, just TRACKER = True')
+            TRACKER = True
+            MARKET = False
     else:
         logger.info('Tracker and Market Json are NOT aligned ON THE FILESYSTEM')
         logger.info(f'Tracker Timestamp: {last_timestamp_fs_tracker}')
@@ -497,13 +503,14 @@ def check_tracker_market_db_are_aligned(last_timestamp_fs_tracker, last_timestam
         logger.info('WARNING: Market FS is aligned with Tracker DB, but they are behind Tracker FS')
     elif TRACKER and last_timestamp_fs == last_timestamp_db:
         logger.info('WARNING: Tracker FS is aligned with Tracker DB, but they are behind Market FS')
+    elif TRACKER and MARKET and last_timestamp_fs != last_timestamp_db:
+        logger.info(f'last_timestamp_fs FROM MARKET AND TRACKER: {last_timestamp_fs}')
+        logger.info(f'last_timestamp_db: {last_timestamp_db}')
+        logger.info('')
     elif MARKET and last_timestamp_fs != last_timestamp_db:
         logger.info('')
         logger.info('WARNING')
-        logger.info('Market FS is behind, Tracker FS and Tracker DB')
-        logger.info(f'Timestamp from Market FS {last_timestamp_fs}')
-        logger.info(f'Timestamp from Tracker FS {last_timestamp_db}')
-        logger.info('')
+        logger.info('FILESYSTEM IS ALIGNED BETWEEN MARKET AND TRACKER. BUT DB IS NOT')
     elif TRACKER and last_timestamp_fs != last_timestamp_db:
         logger.info('')
         logger.info('WARNING')
@@ -540,10 +547,12 @@ def return_most_recent_json(last_timestamp_db):
 
     # if at least one data.json exists, get saved data
     if len(list_json_tracker) != 0 and len(list_json_market) != 0:
-
+        logger.info('return_most_recent_json: both lists exist')
         # return the last timestamp saved in tracker, and market fs. 
         last_timestamp_fs_tracker, last_timestamp_fs_market, data_tracker, data_market, path_json_tracker, path_json_market = returnMostRecentTimestamp_TrackerMarket(path_dir_tracker, path_dir_market, list_json_tracker, list_json_market)
         last_timestamp_fs, timedelta_market_tracker, TRACKER, MARKET = check_tracker_market_db_are_aligned(last_timestamp_fs_tracker, last_timestamp_fs_market, last_timestamp_db)
+        logger.info(f'TRACKER AFTER CHECK: {TRACKER}')
+        logger.info(f'MARKET AFTER CHECK: {MARKET}')
         data_tracker_tmp, data_market_tmp, new_path_json_tracker, new_path_json_market = initialize_new_json(path_json_tracker, path_json_market, last_timestamp_fs_tracker, last_timestamp_fs_market, path_dir_tracker, path_dir_market, TRACKER, MARKET)
 
         # update data_tracker or data_market if new data structurtes have been initialized

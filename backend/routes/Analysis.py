@@ -53,3 +53,7 @@ async def get_crypto_timeseries(obj: dict = Body(...)):#, request: Request = Dep
 @router.post("/get-order-book")
 async def get_orderbook(obj: dict = Body(...)):#, request: Request = Depends(Authorization.get_current_active_user)):
     return AnalysisController.get_orderbook(obj)
+
+@router.post("/get-order-book-metadata")
+async def get_orderbook_metadata(obj: dict = Body(...)):#, request: Request = Depends(Authorization.get_current_active_user)):
+    return AnalysisController.get_orderbook_metadata(obj)

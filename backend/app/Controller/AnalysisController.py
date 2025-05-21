@@ -497,6 +497,8 @@ class AnalysisController:
         coins = list(request["info"][event_key].keys())
 
         response = {"data": {}, "msg": "All data have been downloaded", "retry": False}
+        keys_timeseries = ["vol_1m", "buy_vol_1m", "vol_5m", "buy_vol_5m", "vol_15m", "buy_vol_15m", "vol_30m", "buy_vol_30m", "vol_60m", "buy_vol_60m"]
+
         STOP = False
         n_coin = []
 
@@ -524,7 +526,10 @@ class AnalysisController:
                 timestamp_start = datetime_start.isoformat()
                 timestamp_end = datetime_end.isoformat()
 
-                filter_query = {"_id": 1, "price": 1, vol_field: 1, buy_vol_field: 1}
+                filter_query = {"_id": 1, "price": 1}
+                for field in keys_timeseries:
+                    filter_query[field] = 1
+
 
                 docs = list(
                     db_tracker[coin].find(
@@ -803,8 +808,15 @@ class AnalysisController:
         db_tracker = client.get_db(DATABASE_TRACKER)
         crypto_timeseries = {}
 
+        print(client.db_url)
+        assert client.db_url == "mongo-analysis", "The DB is mongo, start backend with analysis_mode=1"
+
         # get last data available
         all_data_downloaded = False
+        first_doc = db_tracker["SOLUSDT"].find_one(sort=[("_id", 1)])
+        first_timestamp = first_doc["_id"]
+        print(f"First Timestamp for SOLUSDT in tracker db: {first_timestamp}")
+
         last_doc = db_tracker["SOLUSDT"].find_one(sort=[("_id", -1)])
         last_timestamp = last_doc["_id"]
         print(f"Last Timestamp for SOLUSDT in tracker db: {last_timestamp}")
@@ -845,6 +857,26 @@ class AnalysisController:
         client.close()
         json_string = jsonable_encoder(response)
         return JSONResponse(content=json_string)
+
+    def get_orderbook_metadata(request):
+        client = DatabaseConnection()
+        db_order_book = client.get_db(DATABASE_ORDER_BOOK)
+
+        start_timestamp = request["start_timestamp"]
+        print(start_timestamp)
+        collection = db_order_book[COLLECTION_ORDERBOOK_METADATA]
+        print(collection)
+        docs = list(collection.find({"_id": {"$gte": start_timestamp}}, {"_id": 1}))
+        print(docs)
+        response = {"data": []}
+        for doc in docs:
+            print(doc)
+            response['data'].append(doc['_id'])
+        response = {"data": docs}
+        json_string = jsonable_encoder(response)
+        return JSONResponse(content=json_string)
+        
+        
 
     def get_orderbook(request):
         client = DatabaseConnection()
