@@ -866,7 +866,7 @@ class AnalysisController:
         print(start_timestamp)
         collection = db_order_book[COLLECTION_ORDERBOOK_METADATA]
         print(collection)
-        docs = list(collection.find({"_id": {"$gte": start_timestamp}}, {"_id": 1}))
+        docs = list(collection.find({"_id": {"$gte": start_timestamp}}, {"_id": 1, 'event_key': 1, 'coin': 1}))
         print(docs)
         response = {"data": []}
         for doc in docs:
