@@ -479,7 +479,8 @@ class AnalysisController:
         """
 
         if os.getenv("ANALYSIS") == "0":
-            return "CHANGE THIS ENV VAR: ANALYSIS TO 1. wrong db selected"
+            print("CHANGE THIS ENV VAR: ANALYSIS TO 1. wrong db selected")
+            return
         # print(request)
         # request = json.loads(request)
         # let's define a limit number of events for each coin. This is to avoid responses too heavy.
@@ -570,6 +571,7 @@ class AnalysisController:
                 f"All data have been downloaded. {total_timeseries_downloaded}/{total_timeseries_expected}"
             )
 
+        #print(response)
         client.close()
         json_string = jsonable_encoder(response)
         return JSONResponse(content=json_string)
@@ -863,14 +865,12 @@ class AnalysisController:
         db_order_book = client.get_db(DATABASE_ORDER_BOOK)
 
         start_timestamp = request["start_timestamp"]
-        print(start_timestamp)
         collection = db_order_book[COLLECTION_ORDERBOOK_METADATA]
-        print(collection)
-        docs = list(collection.find({"_id": {"$gte": start_timestamp}}, {"_id": 1, 'event_key': 1, 'coin': 1}))
-        print(docs)
+        end_timestamp = (datetime.now() - timedelta(hours=27)).isoformat()
+        docs = list(collection.find({"_id": {"$gte": start_timestamp, "$lt": end_timestamp}}, {"_id": 1, 'event_key': 1, 'coin': 1}))
         response = {"data": []}
         for doc in docs:
-            print(doc)
+            #print(doc)
             response['data'].append(doc['_id'])
         response = {"data": docs}
         json_string = jsonable_encoder(response)
