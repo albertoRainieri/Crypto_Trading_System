@@ -125,64 +125,67 @@ class AnalysisController:
             volume_last_7days_mean_list = []
             volume_last_7days_std_list = []
 
-            for field in fields:
-                if field == "volume_series":
-                    volume_series = cursor_benchmark[0][field]
+            if len(cursor_benchmark) > 0:
+                for field in fields:
+                    if field == "volume_series":
+                        volume_series = cursor_benchmark[0][field]
 
-                    for date in list(volume_series.keys()):
-                        date_split = date.split("-")
-                        year = int(date_split[0])
-                        month = int(date_split[1])
-                        day = int(date_split[2])
+                        for date in list(volume_series.keys()):
+                            date_split = date.split("-")
+                            year = int(date_split[0])
+                            month = int(date_split[1])
+                            day = int(date_split[2])
 
-                        if datetime(
-                            year=year, month=month, day=day
-                        ) > datetime.now() - timedelta(days=7):
-                            volume_last_7days_mean_list.append(volume_series[date][0])
-                            volume_last_7days_std_list.append(volume_series[date][1])
+                            if datetime(
+                                year=year, month=month, day=day
+                            ) > datetime.now() - timedelta(days=7):
+                                volume_last_7days_mean_list.append(volume_series[date][0])
+                                volume_last_7days_std_list.append(volume_series[date][1])
 
-                    if len(volume_last_7days_mean_list) > 0:
+                        if len(volume_last_7days_mean_list) > 0:
 
-                        vol_mean_7days = np.mean(volume_last_7days_mean_list)
-                        vol_std_7days = np.mean(volume_last_7days_std_list)
+                            vol_mean_7days = np.mean(volume_last_7days_mean_list)
+                            vol_std_7days = np.mean(volume_last_7days_std_list)
 
-                        dict_[coin]["vol_mean_7days"] = round_(vol_mean_7days, 2)
-                        dict_[coin]["vol_std_7days"] = round_(vol_std_7days, 2)
+                            dict_[coin]["vol_mean_7days"] = round_(vol_mean_7days, 2)
+                            dict_[coin]["vol_std_7days"] = round_(vol_std_7days, 2)
 
-                        if cursor_benchmark[0]["volume_30_avg"] != 0:
-                            dict_[coin]["momentum_7days_vol"] = round_(
-                                vol_mean_7days / cursor_benchmark[0]["volume_30_avg"], 2
+                            if cursor_benchmark[0]["volume_30_avg"] != 0:
+                                dict_[coin]["momentum_7days_vol"] = round_(
+                                    vol_mean_7days / cursor_benchmark[0]["volume_30_avg"], 2
+                                )
+                            else:
+                                dict_[coin]["momentum_7days_vol"] = 0
+
+                            # print(coin, ': ', dict_[coin]['momentum_7days_vol'])
+
+                        dict_[coin][field] = cursor_benchmark[0][field]
+
+                    elif field == "Last_30_Trades":
+                        # print(coin)
+                        if field in cursor_benchmark[0]:
+                            dict_[coin]["score_last_30_days"] = round_(
+                                cursor_benchmark[0][field]["score_last_30_trades"], 2
+                            )
+                            dict_[coin]["n_obs"] = len(
+                                cursor_benchmark[0][field]["list_last_30_trades"]
                             )
                         else:
-                            dict_[coin]["momentum_7days_vol"] = 0
-
-                        # print(coin, ': ', dict_[coin]['momentum_7days_vol'])
-
-                    dict_[coin][field] = cursor_benchmark[0][field]
-
-                elif field == "Last_30_Trades":
-                    # print(coin)
-                    if field in cursor_benchmark[0]:
-                        dict_[coin]["score_last_30_days"] = round_(
-                            cursor_benchmark[0][field]["score_last_30_trades"], 2
-                        )
-                        dict_[coin]["n_obs"] = len(
-                            cursor_benchmark[0][field]["list_last_30_trades"]
-                        )
+                            dict_[coin]["score_last_30_days"] = 0
+                            dict_[coin]["n_obs"] = 0
                     else:
-                        dict_[coin]["score_last_30_days"] = 0
-                        dict_[coin]["n_obs"] = 0
-                else:
-                    dict_[coin][field] = cursor_benchmark[0][field]
+                        dict_[coin][field] = cursor_benchmark[0][field]
 
-            for key, value in dict_[coin].items():
-                if isinstance(value, dict):
-                    # Handle nested dictionaries
-                    dict_[coin][key] = {
-                        k: AnalysisController.safe_float(v) for k, v in value.items()
-                    }
-                else:
-                    dict_[coin][key] = AnalysisController.safe_float(value)
+                for key, value in dict_[coin].items():
+                    if isinstance(value, dict):
+                        # Handle nested dictionaries
+                        dict_[coin][key] = {
+                            k: AnalysisController.safe_float(v) for k, v in value.items()
+                        }
+                    else:
+                        dict_[coin][key] = AnalysisController.safe_float(value)
+            else:
+                print(f"WARNING:No Benchmark data for {coin}")
 
         client.close()
         dict_ = AnalysisController.sanitize_dict(dict_)
