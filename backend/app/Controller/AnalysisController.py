@@ -869,7 +869,7 @@ class AnalysisController:
 
         start_timestamp = request["start_timestamp"]
         collection = db_order_book[COLLECTION_ORDERBOOK_METADATA]
-        end_timestamp = (datetime.now() - timedelta(hours=27)).isoformat()
+        end_timestamp = (datetime.now() - timedelta(days=2)).isoformat()
         docs = list(collection.find({"_id": {"$gte": start_timestamp, "$lt": end_timestamp}}, {"_id": 1, 'event_key': 1, 'coin': 1}))
         response = {"data": []}
         for doc in docs:
