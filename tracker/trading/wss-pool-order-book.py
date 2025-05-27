@@ -1037,7 +1037,7 @@ class PooledBinanceOrderBook:
                 self.logger.error(f"Connection {self.connection_id} - Error printing error {coin}: {e}")
                 
 
-    def get_price_levels(self, price, orders, cumulative_volume_jump=0.03, price_change_limit=0.4, price_change_jump=0.025, delta=0.01):
+    def get_price_levels(self, price, orders, cumulative_volume_jump=0.03, price_change_limit=0.25, price_change_jump=0.025, delta=0.01):
         '''
         this function outputs the pricelevels (tuple: 4 elements), order_distribution, cumulative_level
         price_levels (TUPLE):
@@ -1389,6 +1389,9 @@ class PooledBinanceOrderBook:
             [ (average price jump level, list_of_jump_price_levels )]
         '''
         try:
+            if self.under_observation[coin]['riskmanagement_configuration']['distance_jump_to_current_price'] == None:
+                return True
+
             if not hasattr(self, 'bid_price_levels_dt') or coin not in self.bid_price_levels_dt:
                 return False
                 
