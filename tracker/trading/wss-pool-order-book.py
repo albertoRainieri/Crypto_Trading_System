@@ -165,8 +165,8 @@ class PooledBinanceOrderBook:
         self.DB_UPDATE_MIN_WAITING_TIME_2LEVEL = int(os.getenv('DB_UPDATE_MIN_WAITING_TIME_2LEVEL')) #60 seconds
         self.DB_UPDATE_MAX_WAITING_TIME = int(os.getenv('DB_UPDATE_MAX_WAITING_TIME')) #300 seconds
         self.TIMEDELTA_MINUTES_FROM_1LEVEL_DETECTED_1 = int(os.getenv('TIMEDELTA_MINUTES_FROM_1LEVEL_DETECTED_1')) #10 minutes  
-        self.TIMEDELTA_MINUTES_FROM_1LEVEL_DETECTED_2 = int(os.getenv('TIMEDELTA_MINUTES_FROM_1LEVEL_DETECTED_2')) #20minutes  
-        self.MAX_WAITING_TIME_AFTER_BUY = int(os.getenv('MAX_WAITING_TIME_AFTER_BUY')) #60 minutes
+        self.TIMEDELTA_MINUTES_FROM_1LEVEL_DETECTED_2 = int(os.getenv('TIMEDELTA_MINUTES_FROM_1LEVEL_DETECTED_2')) #60minutes  
+        self.MAX_WAITING_TIME_AFTER_BUY = int(os.getenv('MAX_WAITING_TIME_AFTER_BUY')) #180 minutes
         self.ping_interval = 120
         self.ping_timeout = 60  # Increased from 20 to 60 seconds to handle production network latency
         self.connection_lock = threading.Lock()
@@ -737,6 +737,11 @@ class PooledBinanceOrderBook:
             # Calculate price levels and distributions
             bid_orders = [(price, qty) for price, qty in self.order_books[coin]['bids'].items()]
             ask_orders = [(price, qty) for price, qty in self.order_books[coin]['asks'].items()]
+
+            # # Calculate size of bid orders in KB
+            # bid_orders_size = sys.getsizeof(bid_orders) / 1024
+            # ask_orders_size = sys.getsizeof(ask_orders) / 1024
+
             
             # Sort orders by price
             bid_orders.sort(key=lambda x: x[0], reverse=True)
@@ -790,6 +795,14 @@ class PooledBinanceOrderBook:
                     ))
                     next_delta_threshold_ask = cumulative_ask_volume_ratio + delta_ask
             
+            # # Calculate size of summary orders in KB
+            # summary_bid_orders_size = sys.getsizeof(summary_bid_orders) / 1024
+            # summary_ask_orders_size = sys.getsizeof(summary_ask_orders) / 1024
+
+            # self.logger.info(f'coin: {coin}; summary_bid_orders_size: {summary_bid_orders_size}KB; bid_orders_size: {bid_orders_size}KB')
+            # self.logger.info(f'coin: {coin}; summary_ask_orders_size: {summary_ask_orders_size}KB; ask_orders_size: {ask_orders_size}KB')
+
+
             # Calculate price levels and distributions using summary orders
             if not hasattr(self, 'bid_price_levels_dt'):
                 self.bid_price_levels_dt = {}
@@ -840,7 +853,7 @@ class PooledBinanceOrderBook:
         """Analyze the order book and update trading state for a specific coin"""
         try:
             #t1 = time.time()
-            total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution, bid_cumulative_level, ask_cumulative_level = self.get_statistics_on_order_book(coin)
+            total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution, bid_cumulative_level, ask_cumulative_level = self.get_statistics_on_order_book(coin, delta_ask=0.005)
             #t2 = time.time()
 
             #self.logger.info(f'time to get statistics on order book for {coin}: {self.round_(t2 - t1, 5)} seconds. Last ask : {self.last_ask_order_distribution_1level[coin]} Last bid : {self.last_bid_order_distribution_1level[coin]} -  {self.last_db_update_time[coin]}')
@@ -853,15 +866,15 @@ class PooledBinanceOrderBook:
             if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD or \
                 (current_time - self.ask_1firstlevel_orderlevel_detected_datetime[coin] < timedelta(minutes=self.TIMEDELTA_MINUTES_FROM_1LEVEL_DETECTED_1)):
                 if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_0LEVEL_THRESHOLD and not self.ask_0firstlevel_orderlevel_detected[coin]:
-                    total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution, bid_cumulative_level, ask_cumulative_level = self.get_statistics_on_order_book(coin, delta_ask=0.005)
+                    #total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution, bid_cumulative_level, ask_cumulative_level = self.get_statistics_on_order_book(coin, delta_ask=0.005)
                     self.process_order_book_update(coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, current_time, 'ask')
                 # First detection: Update immediately and mark this low level as detected
                 elif self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD and not self.ask_1firstlevel_orderlevel_detected[coin]:
-                    total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution, bid_cumulative_level, ask_cumulative_level = self.get_statistics_on_order_book(coin, delta_ask=0.005)
+                    #total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution, bid_cumulative_level, ask_cumulative_level = self.get_statistics_on_order_book(coin, delta_ask=0.005)
                     self.process_order_book_update(coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, current_time, 'ask')
                 # Ongoing monitoring: Update at regular intervals during monitoring window
                 elif (current_time - self.last_db_update_time[coin]).total_seconds() >= self.DB_UPDATE_MIN_WAITING_TIME_1LEVEL:
-                    total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution, bid_cumulative_level, ask_cumulative_level = self.get_statistics_on_order_book(coin, delta_ask=0.005)
+                    #total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution, bid_cumulative_level, ask_cumulative_level = self.get_statistics_on_order_book(coin, delta_ask=0.005)
                     self.process_order_book_update(coin, total_bid_volume, total_ask_volume, summary_bid_orders, summary_ask_orders, ask_order_distribution, current_time, 'ask')
 
             # ASK SIDE ANALYSIS - MODERATE PRIORITY
@@ -1286,10 +1299,8 @@ class PooledBinanceOrderBook:
                 
             max_change = (self.max_price[coin] - self.initial_price[coin]) / self.initial_price[coin]
             current_price_drop = abs((self.current_price[coin] - self.max_price[coin]) / self.max_price[coin])
-            is_jump_price_level = self.hit_jump_price_levels_range(coin)
             
-            if (is_jump_price_level and 
-                current_price_drop >= self.under_observation[coin]['riskmanagement_configuration']['price_drop_limit'] and 
+            if (current_price_drop >= self.under_observation[coin]['riskmanagement_configuration']['price_drop_limit'] and 
                 max_change <= self.under_observation[coin]['riskmanagement_configuration']['max_limit']):
                 
                 # Check ask order distribution
@@ -1303,14 +1314,15 @@ class PooledBinanceOrderBook:
                         break
 
                 if all_levels_valid:
-                    self.BUY[coin] = True
-                    self.buy_price[coin] = self.current_price[coin]
-                    self.logger.info(f"Connection {self.connection_id} - BUY EVENT: {coin} at {self.current_price[coin]}")
-                    self.logger.info(f"Connection {self.connection_id} - avg_distribution: {avg_distribution}")
-                    self.logger.info(f"Connection {self.connection_id} - summary_ask_orders: {summary_ask_orders}")
-                    self.discover_target_price(coin, summary_ask_orders, avg_distribution, n_target_levels=6)
-                    #asyncio.run_coroutine_threadsafe(self.get_tracker_volume_coin(coin), self._loop)
-                    self.get_tracker_volume_coin(coin)
+                    if self.hit_jump_price_levels_range(coin):
+                        self.BUY[coin] = True
+                        self.buy_price[coin] = self.current_price[coin]
+                        self.logger.info(f"Connection {self.connection_id} - BUY EVENT: {coin} at {self.current_price[coin]}")
+                        self.logger.info(f"Connection {self.connection_id} - avg_distribution: {avg_distribution}")
+                        self.logger.info(f"Connection {self.connection_id} - summary_ask_orders: {summary_ask_orders}")
+                        self.discover_target_price(coin, summary_ask_orders, avg_distribution, n_target_levels=6)
+                        #asyncio.run_coroutine_threadsafe(self.get_tracker_volume_coin(coin), self._loop)
+                        self.get_tracker_volume_coin(coin)
 
                     self.save_trading_event(coin)
         except Exception as e:
