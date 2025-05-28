@@ -1317,12 +1317,27 @@ class PooledBinanceOrderBook:
                     if self.hit_jump_price_levels_range(coin):
                         self.BUY[coin] = True
                         self.buy_price[coin] = self.current_price[coin]
+                        self.logger.info('--------------------------------')
+                        self.logger.info('--------------------------------')
                         self.logger.info(f"Connection {self.connection_id} - BUY EVENT: {coin} at {self.current_price[coin]}")
+                        self.logger.info('------------ 0.005 ask orders ----------------')
                         self.logger.info(f"Connection {self.connection_id} - avg_distribution: {avg_distribution}")
                         self.logger.info(f"Connection {self.connection_id} - summary_ask_orders: {summary_ask_orders}")
+                        _, _, _, summary_ask_orders_001, ask_order_distribution_001, _, _, _ = self.get_statistics_on_order_book(coin, delta_ask=0.001)
+                        self.logger.info('------------ 0.001 ask orders ----------------')
+                        self.logger.info(f"Connection {self.connection_id} - ask_order_distribution_001: {ask_order_distribution_001}")
+                        self.logger.info(f"Connection {self.connection_id} - summary_ask_orders_001: {summary_ask_orders_001}")
+                        self.logger.info('------------- 0.005 target price -------------')
+                        self.logger.info('Target Price delta 0.005')
                         self.discover_target_price(coin, summary_ask_orders, avg_distribution, n_target_levels=6)
+                        self.logger.info('------------- 0.001 target price -------------')
+                        self.logger.info('Target Price delta 0.001')
+                        self.discover_target_price(coin, summary_ask_orders_001, avg_distribution, n_target_levels=6)
+                        self.logger.info('-------------- Tracker Volume ----------------')
                         #asyncio.run_coroutine_threadsafe(self.get_tracker_volume_coin(coin), self._loop)
                         self.get_tracker_volume_coin(coin)
+                        self.logger.info('--------------------------------')
+                        self.logger.info('--------------------------------')
 
                     self.save_trading_event(coin)
         except Exception as e:
