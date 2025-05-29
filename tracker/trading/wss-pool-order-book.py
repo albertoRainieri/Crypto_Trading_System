@@ -1323,7 +1323,7 @@ class PooledBinanceOrderBook:
                         self.logger.info('------------ 0.005 ask orders ----------------')
                         self.logger.info(f"Connection {self.connection_id} - avg_distribution: {avg_distribution}")
                         self.logger.info(f"Connection {self.connection_id} - summary_ask_orders: {summary_ask_orders}")
-                        _, _, _, summary_ask_orders_001, ask_order_distribution_001, _, _, _ = self.get_statistics_on_order_book(coin, delta_ask=0.001)
+                        _, total_ask_volume, _, summary_ask_orders_001, ask_order_distribution_001, _, _, _ = self.get_statistics_on_order_book(coin, delta_ask=0.001)
                         self.logger.info('------------ 0.001 ask orders ----------------')
                         self.logger.info(f"Connection {self.connection_id} - ask_order_distribution_001: {ask_order_distribution_001}")
                         self.logger.info(f"Connection {self.connection_id} - summary_ask_orders_001: {summary_ask_orders_001}")
@@ -1335,7 +1335,7 @@ class PooledBinanceOrderBook:
                         self.discover_target_price(coin, summary_ask_orders_001, n_target_levels=10)
                         self.logger.info('-------------- Tracker Volume ----------------')
                         #asyncio.run_coroutine_threadsafe(self.get_tracker_volume_coin(coin), self._loop)
-                        self.get_tracker_volume_coin(coin)
+                        self.get_tracker_volume_coin(coin, total_ask_volume, summary_ask_orders_001)
                         self.logger.info('--------------------------------')
                         self.logger.info('--------------------------------')
 
@@ -1366,17 +1366,27 @@ class PooledBinanceOrderBook:
 
             
     #async def get_tracker_volume_coin(self, coin):
-    def get_tracker_volume_coin(self, coin):
-        self.tracker_collection[coin] = self.db_tracker[coin]
-        # Find the most recent document in the collection (sorted by _id in descending order)
-        last_tracker_doc = self.tracker_collection[coin].find_one(sort=[("_id", -1)])
-        self.logger.info(f"Connection {self.connection_id} - Market Volume {coin}: {last_tracker_doc}")
-        volume, is_estimated, time_span = self.calculate_last_minute_volume(coin)
-        if is_estimated:
-            self.logger.info(f"Connection {self.connection_id} - Estimated 1-minute volume for {coin}: {volume:.2f} (based on {time_span:.1f} seconds of data)")
-        else:
-            self.logger.info(f"Connection {self.connection_id} - Actual 1-minute volume for {coin}: {volume:.2f} (time span: {time_span:.1f} seconds)")
-    
+    def get_tracker_volume_coin(self, coin, total_ask_volume, summary_ask_orders_001):
+        try:
+            self.tracker_collection[coin] = self.db_tracker[coin]
+            # Find the most recent document in the collection (sorted by _id in descending order)
+            last_tracker_doc = self.tracker_collection[coin].find_one(sort=[("_id", -1)])
+            self.logger.info(f"Connection {self.connection_id} - Market Volume {coin}: {last_tracker_doc}")
+            volume, is_estimated, time_span = self.calculate_last_minute_volume(coin)
+            if is_estimated:
+                self.logger.info(f"Connection {self.connection_id} - Estimated 1-minute volume for {coin}: {volume:.2f} (based on {time_span:.1f} seconds of data)")
+            else:
+                self.logger.info(f"Connection {self.connection_id} - Actual 1-minute volume for {coin}: {volume:.2f} (time span: {time_span:.1f} seconds)")
+        
+            print('--------------------------------')
+            percentage_volume_ask_wrt_price_range = summary_ask_orders_001[-1][1] # cumulative volume of ask orders in the 25% price range
+            absolute_volume_ask_wrt_price_range = self.round_(percentage_volume_ask_wrt_price_range * total_ask_volume, 2) # absolute volume of ask orders in the 25% price range
+            ask_volume_weight = self.round_(absolute_volume_ask_wrt_price_range / self.benchmark[coin], 2) # ask volume weight wrt to benchmark
+            benchmark_volume_print = self.round_(self.benchmark[coin], 2)
+            self.logger.info(f"Connection {self.connection_id} - Ask volume weight for {coin}: {ask_volume_weight}% on benchmark --> {absolute_volume_ask_wrt_price_range} on {benchmark_volume_print} ask volume")
+
+        except Exception as e:
+            self.logger.error(f"Connection {self.connection_id} - Error getting tracker volume for {coin}: {e}")
 
         # await asyncio.sleep(60 - datetime.now().second - (datetime.now().microsecond / 1000000) + 5)
         # # Try again after waiting
