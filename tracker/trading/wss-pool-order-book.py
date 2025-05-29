@@ -1329,10 +1329,10 @@ class PooledBinanceOrderBook:
                         self.logger.info(f"Connection {self.connection_id} - summary_ask_orders_001: {summary_ask_orders_001}")
                         self.logger.info('------------- 0.005 target price -------------')
                         self.logger.info('Target Price delta 0.005')
-                        self.discover_target_price(coin, summary_ask_orders, avg_distribution, n_target_levels=6)
+                        self.discover_target_price(coin, summary_ask_orders, n_target_levels=6)
                         self.logger.info('------------- 0.001 target price -------------')
                         self.logger.info('Target Price delta 0.001')
-                        self.discover_target_price(coin, summary_ask_orders_001, avg_distribution, n_target_levels=6)
+                        self.discover_target_price(coin, summary_ask_orders_001, n_target_levels=10)
                         self.logger.info('-------------- Tracker Volume ----------------')
                         #asyncio.run_coroutine_threadsafe(self.get_tracker_volume_coin(coin), self._loop)
                         self.get_tracker_volume_coin(coin)
@@ -1343,26 +1343,24 @@ class PooledBinanceOrderBook:
         except Exception as e:
             self.logger.error(f"Connection {self.connection_id} - Error checking buy trading conditions for {coin}: {e}")
 
-    def discover_target_price(self, coin, summary_ask_orders, avg_distribution, n_target_levels=3):
+    def discover_target_price(self, coin, summary_ask_orders, n_target_levels=3):
         """Discover the target price for a specific coin"""
         try:
-            avg_distribution_keys = sorted([0] + [float(x) for x in list(avg_distribution.keys())])
+            #avg_distribution_keys = sorted([0] + [float(x) for x in list(avg_distribution.keys())])
             n_targets = 0
-            cumulative_volume = 0
+            cumulative_volume_last_level = summary_ask_orders[-1][1]
+
             for level in summary_ask_orders:
                 if n_targets < n_target_levels:
                     price_change_target = level[0]
                     target_price = self.round_(self.current_price[coin] * (1 + price_change_target), self.count_decimals(self.current_price[coin]))
-                    for key in avg_distribution_keys:
-                        if key == avg_distribution_keys[0]:
-                            continue
-                        # 0.025 > price_change_target <= 0.05 (for example)
-                        if price_change_target <= key and price_change_target > avg_distribution_keys[avg_distribution_keys.index(key) - 1]:
-                            cumulative_volume += self.round_(avg_distribution[str(key)] * 100, 2)
-                            price_change_target_print = self.round_(price_change_target*100, self.count_decimals(self.current_price[coin]))
-                            self.logger.info(f"Connection {self.connection_id} - Target price for {coin}: {target_price} (+{price_change_target_print}%) with cumulative volume {cumulative_volume}%")
-                            n_targets += 1
-                            break
+                    cumulative_volume_wrt_last_level = level[1] / cumulative_volume_last_level
+                    price_range = self.under_observation[coin]['riskmanagement_configuration']['limit']*100
+                    price_change_target_print = self.round_(price_change_target*100, self.count_decimals(self.current_price[coin]))
+                    self.logger.info(f"Connection {self.connection_id} - Target price for {coin}: {target_price} (+{price_change_target_print}%) with cumulative volume {cumulative_volume_wrt_last_level}% Considering only {price_range}% of the price range")
+                    n_targets += 1
+                    break
+
         except Exception as e:
             self.logger.error(f"Connection {self.connection_id} - Error discovering target price for {coin}: {e}")
 
