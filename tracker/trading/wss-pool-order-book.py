@@ -115,6 +115,8 @@ class MultiConnectionOrderBook:
         sys.exit(0)
 
 class PooledBinanceOrderBook:
+    ip_banned = False
+
     def __init__(self, coins: List[str], connection_id=0, connection_count=8):
         # Logger
         self.logger = LoggingController.start_logging()
@@ -530,7 +532,14 @@ class PooledBinanceOrderBook:
             #     self.logger.info(f'Connection {self.connection_id} - Getting snapshot for coin: {coin} last snapshot time: {self.coin_orderbook_initialized[coin]["next_snapshot_time"]}')
             snapshot_url = f"https://api.binance.com/api/v3/depth?symbol={coin}&limit=5000"
             self.last_minute_snapshots.append(datetime.now())
-            response = requests.get(snapshot_url)
+            if not self.ip_banned:
+                response = requests.get(snapshot_url)
+            else:
+                self.logger.info(f"Connection {self.connection_id} - IP banned. Waiting for ban to expire...")
+                # Get random delay between 1-10 seconds when IP banned
+                delay = random.uniform(1.0, 10.0)
+                sleep(delay)
+                return
         except Exception as e:
             self.logger.error(f"Connection {self.connection_id} - coin: {coin}; SNAPSHOT ERROR: {e}")
             return
@@ -563,7 +572,9 @@ class PooledBinanceOrderBook:
                     if ban_timestamp:
                         ban_datetime = datetime.fromtimestamp(ban_timestamp).isoformat()
                         self.logger.info(f"Connection {self.connection_id} - IP banned until {ban_datetime}. Waiting for ban to expire...")
-                        sleep(ban_timestamp - time.time() + 10)
+                        self.ip_banned = True
+                        sleep(ban_timestamp - time.time() + 5)
+                        self.ip_banned = False
                         #self.get_snapshot(coin)
             except Exception as e:
                 self.logger.error(f"Connection {self.connection_id} - Error getting ban timestamp: {e}")
