@@ -1380,7 +1380,7 @@ class PooledBinanceOrderBook:
                     price_change_target = level[0]
                     target_price = self.round_(self.current_price[coin] * (1 + price_change_target), self.count_decimals(self.current_price[coin]))
                     #cumulative_volume_wrt_last_level = level[1] / cumulative_volume_last_level
-                    cumulative_volume_wrt_last_level = (level[1]  / cumulative_volume_last_level)*100
+                    cumulative_volume_wrt_last_level = self.round_((level[1]  / cumulative_volume_last_level)*100, 2)
                     absolute_ask_order_volume_level = level[1] * total_ask_volume
                     ask_order_volume_weight = self.round_(absolute_ask_order_volume_level / self.benchmark[coin], 2)
                     #price_range = self.under_observation[coin]['riskmanagement_configuration']['limit']*100
