@@ -1354,14 +1354,15 @@ class PooledBinanceOrderBook:
                 if n_targets < n_target_levels:
                     price_change_target = level[0]
                     target_price = self.round_(self.current_price[coin] * (1 + price_change_target), self.count_decimals(self.current_price[coin]))
-                    cumulative_volume_wrt_last_level = level[1] / cumulative_volume_last_level
-                    absolute_ask_order_volume_level = cumulative_volume_wrt_last_level * total_ask_volume
+                    #cumulative_volume_wrt_last_level = level[1] / cumulative_volume_last_level
+                    cumulative_volume_wrt_last_level = (level[1]  / cumulative_volume_last_level)*100
+                    absolute_ask_order_volume_level = level[1] * total_ask_volume
                     ask_order_volume_weight = self.round_(absolute_ask_order_volume_level / self.benchmark[coin], 2)
                     #price_range = self.under_observation[coin]['riskmanagement_configuration']['limit']*100
-                    price_change_target_print = self.round_(price_change_target*100, self.count_decimals(self.current_price[coin]))
+                    price_change_target_print = self.round_(price_change_target*100, 2)
                     self.logger.info(f"Connection {self.connection_id} - Target price for {coin}: {target_price} (+{price_change_target_print}%) with cumulative volume {cumulative_volume_wrt_last_level}%. Ask order volume weight: {ask_order_volume_weight}% wrt to benchmark")
                     n_targets += 1
-                    break
+                    #break
 
         except Exception as e:
             self.logger.error(f"Connection {self.connection_id} - Error discovering target price for {coin}: {e}")
