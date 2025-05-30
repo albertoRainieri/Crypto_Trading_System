@@ -579,7 +579,6 @@ class PooledBinanceOrderBook:
             except Exception as e:
                 self.logger.error(f"Connection {self.connection_id} - Error getting ban timestamp: {e}")
 
-            datetime.fromtimestamp(ban_timestamp)
                 
     def extract_ban_timestamp(self, error_text):
         """Extract ban timestamp from error message using regex"""
