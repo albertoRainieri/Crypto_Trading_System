@@ -808,6 +808,15 @@ class AnalysisController:
         json_string = jsonable_encoder(response)
         return JSONResponse(content=json_string)
 
+    def get_last_timestamp_tracker():
+        client = DatabaseConnection()
+        db_tracker = client.get_db(DATABASE_TRACKER)
+        last_doc = db_tracker["XRPUSDT"].find_one(sort=[("_id", -1)])
+        last_timestamp = last_doc["_id"]
+        response = {"data": last_timestamp}
+        json_string = jsonable_encoder(response)
+        return JSONResponse(content=json_string)
+
     def get_crypto_timeseries(request):
         client = DatabaseConnection()
         db_tracker = client.get_db(DATABASE_TRACKER)
@@ -825,9 +834,7 @@ class AnalysisController:
         last_doc = db_tracker["SOLUSDT"].find_one(sort=[("_id", -1)])
         last_timestamp = last_doc["_id"]
         print(f"Last Timestamp for SOLUSDT in tracker db: {last_timestamp}")
-        if datetime.fromisoformat(request["SOLUSDT"][-1]) > datetime.fromisoformat(
-            last_timestamp
-        ):
+        if datetime.fromisoformat(request["SOLUSDT"][-1]) > datetime.fromisoformat(last_timestamp):
             all_data_downloaded = True
 
         for coin in request:
@@ -870,7 +877,7 @@ class AnalysisController:
         start_timestamp = request["start_timestamp"]
         collection = db_order_book[COLLECTION_ORDERBOOK_METADATA]
         end_timestamp = (datetime.now() - timedelta(days=2)).isoformat()
-        docs = list(collection.find({"_id": {"$gte": start_timestamp, "$lt": end_timestamp}}, {"_id": 1, 'event_key': 1, 'coin': 1}))
+        docs = list(collection.find({"_id": {"$gte": start_timestamp, "$lt": end_timestamp}, "status": "running"}, {"_id": 1, 'event_key': 1, 'coin': 1}))
         response = {"data": []}
         for doc in docs:
             #print(doc)
