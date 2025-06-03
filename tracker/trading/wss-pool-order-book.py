@@ -907,7 +907,7 @@ class PooledBinanceOrderBook:
             # Check if ask order distribution is below critical threshold or in monitoring window
             if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD or \
                 (current_time - self.ask_1firstlevel_orderlevel_detected_datetime[coin] < timedelta(minutes=self.TIMEDELTA_MINUTES_FROM_1LEVEL_DETECTED_1)):
-                if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_0LEVEL_THRESHOLD and not self.ask_0firstlevel_orderlevel_detected[coin]:
+                if self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_0LEVEL_THRESHOLD:# and not self.ask_0firstlevel_orderlevel_detected[coin]:
                     self.process_order_book_update(coin, summary_bid_orders, summary_ask_orders, ask_order_distribution, current_time, 'ask')
                 # First detection: Update immediately and mark this low level as detected
                 elif self.last_ask_order_distribution_1level[coin] <= self.ORDER_DISTRIBUTION_1LEVEL_THRESHOLD and not self.ask_1firstlevel_orderlevel_detected[coin]:
