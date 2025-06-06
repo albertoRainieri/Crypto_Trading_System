@@ -137,8 +137,17 @@ class TradingController:
                         end_observation = (datetime.now() + timedelta(minutes=int(timeframe))).isoformat()
                         db_collection.insert( {"_id": _id,"coin": coin,"event_key": event_key, "status": "pending", "buy_price": 0, "sell_price": 0,
                                                  "end_observation": end_observation, "riskmanagement_configuration": None, "ranking": ranking} )
-                        return
-
+                    elif len(docs) == 1:
+                        # Get the _id from the first doc (assuming only one per coin in this window)
+                        try:
+                            doc_id = docs[0]["_id"]
+                            new_end_observation = (datetime.now() + timedelta(minutes=int(timeframe))).isoformat()
+                            db_collection.update_one( {"_id": doc_id}, {"$set": {"end_observation": new_end_observation, "status": "on_update"}})
+                        except Exception as e:
+                            logger.error(f"TradingController: Error updating orderbook metadata for {coin}: {e}")
+                            continue
+                    
+                    return
 
     def extract_timeframe(input_string):
         """

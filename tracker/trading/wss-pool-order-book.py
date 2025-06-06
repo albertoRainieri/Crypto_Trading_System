@@ -20,7 +20,408 @@ from time import sleep
 import asyncio
 from app.Helpers.Helpers import get_volume_standings
 from pymongo import DESCENDING
+import websockets
 
+class BinancePriceTracker:
+    def __init__(self, coin, buy_price, targets, stop_loss, orderbook_id, ranking, strategy_configuration,
+                 datetime_buy=None, high_since_buy=None, low_since_buy=None, high_dt=None, low_dt=None,
+                 last_low_print=None, last_high_print=None, EARLY_STOP_LOSS=False, initialize=True):
+        """
+        Initialize the BinancePriceTracker for a specific coin.
+        """
+        try:
+            self.logger = LoggingController.start_logging()
+            #self.logger.info(f"Initializing BinancePriceTracker for {coin.upper()}")
+            self.coin = coin.upper()  # Ensure coin is uppercase
+            # Fix the WebSocket URL format for individual coin streams
+            self.url = f"wss://stream.binance.com:9443/ws/{self.coin.lower()}@miniTicker"
+            self.ws = None
+            self.ranking = ranking  # Ranking of the coin in the order book
+            self.strategy_configuration = strategy_configuration  # Configuration for the trading strategy
+            self.initialize = initialize
+
+            # Trading Information
+            self.orderbook_id = orderbook_id  # Unique identifier for the order book
+            self.buy_price = buy_price
+            if datetime_buy is None:
+                self.datetime_buy = datetime.now()
+            else:
+                self.datetime_buy = datetime_buy
+            self.targets = targets # List of target prices for taking profit
+            self.stop_loss = stop_loss # Stop loss percentage below buy price
+            self.current_price = buy_price
+            self.high_since_buy = high_since_buy
+            self.low_since_buy = low_since_buy
+            if self.high_since_buy is None:
+                self.high_since_buy = buy_price
+            if self.low_since_buy is None:
+                self.low_since_buy = buy_price
+            self.high_dt = high_dt   # Timestamp of the highest price since buy
+            self.low_dt = low_dt  # Timestamp of the lowest price since buy
+            if self.high_dt is None:
+                self.high_dt = self.datetime_buy.isoformat()  
+            if self.low_dt is None:
+                self.low_dt = self.datetime_buy.isoformat()
+
+            self.MINUTES_NO_ACTION = self.strategy_configuration.get('MINUTES_NO_ACTION', 10)  # Minutes to wait before triggering stop loss
+            self.MINUTES_FORCE_ACTION = self.strategy_configuration.get('MINUTES_FORCE_ACTION',360)
+
+            self.MINUTES_FORCE_ACTION = 2
+            self.PRICE_MOVEMENT_PRINT = 0.02
+            self.EARLY_STOP_LOSS = EARLY_STOP_LOSS  # Flag to indicate if early stop loss has been triggered
+            self.last_low_print = last_low_print  # Variable to store the last low price printed
+            self.last_high_print = last_high_print  # Variable to store the last high price printed
+            if self.last_low_print is None:
+                self.last_low_print = buy_price
+            if self.last_high_print is None:
+                self.last_high_print = buy_price
+
+            # Lifecycle management
+            self.running = True
+            self.loop = None  # Will store the event loop
+            self.cleanup_event = None  # Will be initialized in run()
+            self.cleanup_task = None  # Task to handle cleanup
+            self.main_task = None  # Store the main connection task
+            self.current_minute = datetime.now().strftime('%Y-%m-%d-%H-%M')
+
+            # DB connection
+            self.client = DatabaseConnection()
+            self.db_trading = self.client.get_db(DATABASE_TRADING)
+            self.trading_collection = self.db_trading["albertorainieri"]
+
+            self.set_target_prices_status(targets)
+            if self.initialize:
+                self.initialize_db_trading_event()
+            else:
+                self.logger.info(f"Resuming tracking for {self.coin.upper()} with existing trade data.")
+        except Exception as e:
+            self.logger.error(f"Error initializing BinancePriceTracker for {coin.upper()}: {e}")
+            raise
+
+    @staticmethod
+    def get_current_trades():
+        """
+        Get the current trades from the trading database.
+        
+        Returns:
+            List of current trades
+        """
+        client = DatabaseConnection()
+        db_trading = client.get_db(DATABASE_TRADING)
+        trading_collection = db_trading["albertorainieri"]
+        trades = list(trading_collection.find({"status": "on_trade"}))
+        client.close()
+        return trades
+
+    @staticmethod
+    async def resume_trades_tracking(trades):
+        """
+        Resume tracking trades that were interrupted.
+        
+        Args:
+            trades (list): List of trades to resume tracking
+        """
+
+        trackers = []
+        for trade in trades:
+            coin = trade['coin']
+            buy_price = trade['buy_price']
+            targets = trade['targets']
+            stop_loss = trade['stop_loss']
+            orderbook_id = trade['orderbook_id']
+            ranking = trade['ranking']
+            strategy_configuration = trade['strategy']
+            datetime_buy = datetime.fromisoformat(trade['buy_ts'])
+            high_since_buy = trade.get('high_since_buy', buy_price)
+            low_since_buy = trade.get('low_since_buy', buy_price)
+            high_dt = trade.get('high_dt', datetime.now().isoformat())
+            low_dt = trade.get('low_dt', datetime.now().isoformat())
+            last_low_print = trade.get('last_low_print', buy_price)
+            last_high_print = trade.get('last_high_print', buy_price)
+            EARLY_STOP_LOSS = trade.get('early_stop_loss', False)
+            initialize = False
+
+            trading_event = BinancePriceTracker(
+                coin=coin, buy_price=buy_price, targets=targets, stop_loss=stop_loss, orderbook_id=orderbook_id,
+                ranking=ranking, strategy_configuration=strategy_configuration, datetime_buy=datetime_buy,
+                high_since_buy=high_since_buy, low_since_buy=low_since_buy, high_dt=high_dt, low_dt=low_dt,
+                last_low_print=last_low_print, last_high_print=last_high_print,
+                EARLY_STOP_LOSS=EARLY_STOP_LOSS, initialize=initialize)
+
+            #threading.Thread(target=trading_event.run, daemon=True).start()
+            trackers.append(asyncio.create_task(trading_event.run()))
+        await asyncio.gather(*trackers)
+        
+
+
+
+    def set_target_prices_status(self, targets):
+        """
+        Set the target prices for taking profit.
+        
+        Args:
+            targets (list): List of target prices for taking profit
+        """
+
+        self.targets = sorted(targets)
+        #self.logger.info(f"Setting target prices for {self.coin.upper()}: {self.targets}")
+        self.target_prices_status = {}
+        target_i = 0
+        for target in self.targets:
+            target_i += 1
+
+            self.target_prices_status[str(target_i)] = {'target': target,
+                'reached': False,
+            }
+
+    async def connect(self):
+        while self.running:
+            try:
+                async with websockets.connect(self.url) as ws:
+                    self.logger.info(f"Successfully connected to {self.url}")
+                    self.ws = ws
+                    await self.receive_messages()
+            except websockets.exceptions.ConnectionClosed as e:
+                if not self.running:
+                    self.logger.info("Connection closed due to shutdown")
+                    break
+                self.logger.warning(f"WebSocket connection closed for {self.coin}: {e}. Reconnecting...")
+                await asyncio.sleep(5)  # wait before reconnecting
+            except websockets.exceptions.InvalidURI as e:
+                self.logger.error(f"Invalid WebSocket URI for {self.coin}: {self.url}. Error: {e}")
+                break
+            except Exception as e:
+                if not self.running:
+                    self.logger.info("Connection closed due to shutdown")
+                    break
+                self.logger.error(f"Unexpected connection error for {self.coin}: {e}. Reconnecting...")
+                await asyncio.sleep(5)  # wait before reconnecting
+
+    async def receive_messages(self):
+        try:
+            #self.logger.info(f"Starting to receive messages for {self.coin}")
+            async for message in self.ws:
+                #print(f"Received message: {message}")  # Debug line to verify messages
+                if not self.running:
+                    break
+                try:
+                    data = json.loads(message)
+                    self.current_price = float(data['c'])  # 'c' is the latest price (close price)
+                    self.handle_price_update()  # Remove the parameter since method doesn't take any
+                except json.JSONDecodeError as e:
+                    self.logger.error(f"JSON decode error for {self.coin.upper()}: {e}")
+                except KeyError as e:
+                    self.logger.error(f"Missing key in message data for {self.coin.upper()}: {e}")
+                    self.logger.error(f"Message data: {data}")
+        except Exception as e:
+            if self.running:
+                self.logger.error(f"Error in receive_messages: {e}")
+
+
+    def update_db_trading_event(self, SELL=False):
+
+        #self.logger.info(f"Updating DB trading event for {self.coin.upper()} at {self.current_price}. SELL={SELL}")
+        update_doc = {
+                    "current_price": self.current_price,
+                    "high_since_buy": self.high_since_buy,
+                    "high_dt": self.high_dt,
+                    "low_since_buy": self.low_since_buy,
+                    "low_dt": self.low_dt,
+                    "last_low_print": self.last_low_print,
+                    "last_high_print": self.last_high_print,
+                    "early_stop_loss": self.EARLY_STOP_LOSS,
+                    "target_prices_status": self.target_prices_status,
+                    "early_stop_loss": self.EARLY_STOP_LOSS,
+                }
+        if SELL:
+            update_doc["gain"] = (self.current_price - self.buy_price) / self.buy_price * 100
+            update_doc["sell_price"] = self.current_price
+            update_doc["sell_ts"] = datetime.now().isoformat()
+            update_doc["status"] = "closed"
+
+
+        self.trading_collection.update_one(
+            {"_id": self.datetime_buy.isoformat()},
+            {
+                "$set": update_doc
+            }
+        )
+
+    def initialize_db_trading_event(self):
+        """
+        Input:
+        - current_price
+        - buy_price
+        - datetime_buy
+        - coin
+        - targets
+        - stop_loss
+        - high_since_buy
+        - low_since_buy
+        - high_dt
+        - low_dt
+        - target_prices_status
+        - EARLY_STOP_LOSS
+        - last_low_print
+        - last_high_print
+        """
+        self.trading_collection.insert_one({
+            "_id": self.datetime_buy.isoformat(),
+            "orderbook_id": self.orderbook_id,
+            "status": "on_trade",
+            "coin": self.coin,
+            "gain": '',
+            "buy_price": self.buy_price,
+            "buy_ts": self.datetime_buy.isoformat(),
+            "current_price": self.current_price,
+            "sell_price": '',
+            "sell_ts": '',
+            "high_since_buy": self.high_since_buy,
+            "high_dt": self.high_dt,
+            "low_since_buy": self.low_since_buy,
+            "low_dt": self.low_dt,
+            "last_low_print": self.last_low_print,
+            "last_high_print": self.last_high_print,
+            "early_stop_loss": self.EARLY_STOP_LOSS,
+            "target_prices_status": self.target_prices_status,
+            "ranking": self.ranking,
+            "targets": self.targets,
+            "stop_loss": self.stop_loss,
+            "early_stop_loss": self.EARLY_STOP_LOSS,
+            "strategy": self.strategy_configuration,
+        })
+        self.logger.info(f"New DB Record Saved for {self.coin.upper()} at {self.buy_price} on {self.datetime_buy.isoformat()}")
+        
+
+    def handle_price_update(self):
+
+        try:
+            now = datetime.now()
+            #self.logger.info(now.isoformat())
+            # Print the current date in yyyy-mm-dd-HH-MM format
+
+            if self.current_price > self.high_since_buy:
+                self.high_since_buy = self.current_price
+                self.high_dt = now.isoformat()
+                if self.current_price > self.last_high_print * (1 + self.PRICE_MOVEMENT_PRINT):
+                    profit = (self.current_price - self.buy_price) / self.buy_price * 100
+                    self.logger.info(f"New high for {self.coin.upper()} at {self.current_price} (profit: {profit:.2f}%)")
+                    self.last_high_print = self.current_price
+            
+            if self.current_price < self.low_since_buy:
+                self.low_since_buy = self.current_price
+                self.low_dt = now.isoformat()
+                if self.current_price < self.last_low_print * (1 - self.PRICE_MOVEMENT_PRINT):
+                    loss = (self.current_price - self.buy_price) / self.buy_price * 100
+                    self.logger.info(f"New low for {self.coin.upper()} at {self.current_price} (loss: {loss:.2f}%)")
+                    self.last_low_print = self.current_price
+
+            all_targets_reached = True
+            for target_i in self.target_prices_status:
+                if not self.target_prices_status[target_i]['reached']:
+                    all_targets_reached = False
+                    if self.current_price >= self.target_prices_status[target_i]['target']:
+                        self.target_prices_status[target_i]['reached'] = True
+                        profit_ptg = (self.current_price - self.buy_price) / self.buy_price * 100
+                        target_print = self.target_prices_status[target_i]['target']
+                        self.logger.info(f"Target price {target_print} reached for {self.coin.upper()} at {self.current_price} ({profit_ptg:.2f}%)")
+                    
+            if all_targets_reached:
+                self.logger.info(f"All target prices reached for {self.coin.upper()} at {self.current_price}. Stopping tracking.")
+                self.update_db_trading_event(SELL=True)
+                self.loop.create_task(self.close())  # Use self.loop instead of asyncio
+
+            if self.current_price <= self.stop_loss and not self.EARLY_STOP_LOSS:
+                if now - self.datetime_buy > timedelta(minutes=self.MINUTES_NO_ACTION):
+                    loss_ptg = (self.current_price - self.buy_price) / self.buy_price * 100
+                    self.logger.info(f"Stop loss triggered for {self.coin.upper()} at {self.current_price}. Loss: {loss_ptg:.2f}%")
+                    self.update_db_trading_event(SELL=True)
+                    self.loop.create_task(self.close())  # Use self.loop instead of asyncio
+                else:
+                    self.EARLY_STOP_LOSS = True
+                    self.logger.info(f"Stop loss triggered for {self.coin.upper()} at {self.current_price} during NO ACTION WINDOW")
+                    
+            if now - self.datetime_buy >= timedelta(minutes=self.MINUTES_FORCE_ACTION):
+                self.logger.info(f"Force action for {self.coin.upper()} at {self.current_price} after {self.MINUTES_FORCE_ACTION} minutes without action")
+                self.logger.info(f'high price: {self.high_since_buy} reach at {self.high_dt}')
+                self.logger.info(f'low price: {self.low_since_buy} reach at {self.low_dt}')
+                self.update_db_trading_event(SELL=True)
+                self.loop.create_task(self.close())  # Use self.loop instead of asyncio
+            
+            #self.logger.info(now.strftime('%Y-%m-%d-%H-%M'))
+            if self.current_minute != now.strftime('%Y-%m-%d-%H-%M') and now - self.datetime_buy < timedelta(minutes=self.MINUTES_FORCE_ACTION):
+                self.update_db_trading_event()
+                self.current_minute = now.strftime('%Y-%m-%d-%H-%M')
+
+        except Exception as e:
+            self.logger.error(f"Error handling price update for {self.coin.upper()}: {e}")
+            # Continue running despite errors
+        #self.logger.info(f"{self.coin.upper()} price: {price}")
+
+    async def cleanup(self):
+        """Cleanup all resources"""
+        try:
+            # Close websocket
+            if self.ws:
+                await self.ws.close()
+                self.logger.info(f"WebSocket connection closed for {self.coin.upper()}")
+
+            # Cancel main task if it exists
+            if self.main_task and not self.main_task.done():
+                self.main_task.cancel()
+                try:
+                    await self.main_task
+                except asyncio.CancelledError:
+                    pass
+
+            # Cancel cleanup task if it exists
+            if self.cleanup_task and not self.cleanup_task.done():
+                self.cleanup_task.cancel()
+                try:
+                    await self.cleanup_task
+                except asyncio.CancelledError:
+                    pass
+
+            # Close all logging handlers
+            for handler in self.logger.handlers[:]:
+                handler.close()
+                self.logger.removeHandler(handler)
+
+        except Exception as e:
+            print(f"Error during cleanup cleanup(): {e}")  # Use print as logger might be closed
+
+    async def close(self):
+        """Properly close the price tracker and cleanup resources"""
+        if not self.running:  # Prevent multiple closes
+            return
+            
+        self.running = False
+        self.logger.info(f"Stopping price tracker for {self.coin.upper()}")
+        
+        # Set cleanup event
+        self.cleanup_event.set()
+        
+        # Perform cleanup
+        await self.cleanup()
+
+    async def run(self):
+        """Run the price tracker with proper cleanup handling"""
+        try:
+            self.loop = asyncio.get_event_loop()
+            self.cleanup_event = asyncio.Event()
+            self.cleanup_task = self.loop.create_task(self.cleanup_event.wait())
+            self.main_task = self.loop.create_task(self.connect())
+
+            await asyncio.wait(
+                [self.main_task, self.cleanup_task],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+        except asyncio.CancelledError:
+            self.logger.info(f"Price tracker cancelled for {self.coin.upper()}")
+        except Exception as e:
+            self.logger.error(f"Error in price tracker: {e}")
+        finally:
+            await self.close()
 
 class MultiConnectionOrderBook:
     """
@@ -42,7 +443,7 @@ class MultiConnectionOrderBook:
         
         # Create separate instances for each chunk
         for i, chunk in enumerate(coin_chunks):
-            self.logger.info(f"Creating instance {i+1} with {len(chunk)} coins")
+            #self.logger.info(f"Creating instance {i+1} with {len(chunk)} coins")
             instance = PooledBinanceOrderBook(coins=chunk, connection_id=i, connection_count=connection_count)
             self.order_book_instances.append(instance)
         
@@ -97,7 +498,7 @@ class MultiConnectionOrderBook:
         """Call restart_connection on first instance only"""
         for instance in self.order_book_instances:
             # Only one instance needs to handle this
-            self.logger.info(f'Restarting connection for instance {instance.connection_id}')
+            #self.logger.info(f'Restarting connection for instance {instance.connection_id}')
             thread = threading.Thread(target=instance.restart_connection)
             thread.daemon = True
             thread.start()
@@ -183,14 +584,13 @@ class PooledBinanceOrderBook:
         # Database connectionprocess_order_book_update
         self.client = DatabaseConnection()
         self.db_orderbook = self.client.get_db(DATABASE_ORDER_BOOK)
-        self.db_trading = self.client.get_db(DATABASE_TRADING)
+        
         self.db_tracker = self.client.get_db(DATABASE_TRACKER)
         self.db_benchmark = self.client.get_db(DATABASE_BENCHMARK)
 
         self.orderbook_collection = {}
         self.tracker_collection = {}
         self.metadata_orderbook_collection = self.db_orderbook[COLLECTION_ORDERBOOK_METADATA]
-        self.trading_collection = self.db_trading["albertorainieri"]
         
         # Combined stream URL
         self.parameters = [f"{coin.lower()}@depth" for coin in self.coins]
@@ -310,6 +710,27 @@ class PooledBinanceOrderBook:
         with open('/tracker/riskmanagement/riskmanagement.json', 'r') as f:
             riskmanagement_configuration = json.load(f)
         return riskmanagement_configuration['parameters']
+    
+    def check_recent_trades(self, coin, minutes_check=15):
+        """
+        Get the current trades from the trading database.
+        
+        Returns:
+            List of current trades
+        """
+        client = DatabaseConnection()
+        db_trading = client.get_db(DATABASE_TRADING)
+        trading_collection = db_trading["albertorainieri"]
+        fifteen_minutes_ago = (datetime.now() - timedelta(minutes=minutes_check)).isoformat()
+        trades = list(trading_collection.find({
+            "status": "on_trade",
+            "coin": coin,
+            "_id": {"$gt": fifteen_minutes_ago}
+        }))
+        client.close()
+        if len(trades) > 0:
+            return True
+        return False
 
 
     def get_ongoing_analysis_coins(self):
@@ -360,11 +781,9 @@ class PooledBinanceOrderBook:
             coin = coin_with_depth.upper()
 
             if self.under_observation[coin]['status'] and datetime.now() > datetime.fromisoformat(self.under_observation[coin]['end_observation']):
-                if self.BUY[coin]:
-                    self.update_trading_and_metadata_event(coin)
-                else:
-                    self.logger.info(f'Connection {self.connection_id} - Observation ended for coin: {coin}. Initializing coin status.')
-                    self.update_metadata_event(coin)
+
+                self.logger.info(f'Connection {self.connection_id} - Observation ended for coin: {coin}. Initializing coin status.')
+                self.update_metadata_event(coin)
                 self.initialize_coin_status(coin=coin, start_script=False, last_snapshot_time=self.coin_orderbook_initialized[coin]['next_snapshot_time'])
 
             if self.coin_orderbook_initialized[coin]['status'] == False and datetime.now() > self.coin_orderbook_initialized[coin]['next_snapshot_time']:
@@ -750,7 +1169,7 @@ class PooledBinanceOrderBook:
         #     self.bid_order_distribution_list[coin] = self.update_bid_order_distribution_list(order_distribution, coin)
 
 
-        if type_update == 'ask' and not self.BUY[coin]:
+        if type_update == 'ask':# and not self.BUY[coin]:
             self.check_buy_trading_conditions(coin, summary_ask_orders)
 
         self.update_order_book_record(
@@ -1289,47 +1708,6 @@ class PooledBinanceOrderBook:
         if result.modified_count != 1:
             self.logger.error(f"Connection {self.connection_id} - Metadata Collection update failed for {coin}")
 
-    def update_trading_and_metadata_event(self, coin):
-        """Update trading event with sell information for a specific coin"""
-        try:
-
-            sell_price = self.current_price[coin]
-            sell_ts = datetime.now().isoformat()
-            gain = (sell_price - self.buy_price[coin]) / self.buy_price[coin]
-            gain_print = PooledBinanceOrderBook.round_(gain*100, 3)
-            self.logger.info(f"Connection {self.connection_id} - SELL EVENT: {coin} at {sell_price}. GAIN: {gain_print}%")
-            # Update metadata collection with sell price
-            
-            metadata_filter = {
-                "_id": self.under_observation[coin]['start_observation'],
-            }
-            update_doc = {
-                "$set": {
-                    "sell_price": sell_price,
-                    "status": "completed"
-                }
-            }
-            
-            result = self.metadata_orderbook_collection.update_one(metadata_filter, update_doc)
-            if result.modified_count != 1:
-                self.logger.error(f"Connection {self.connection_id} - Metadata Collection update failed for {coin}")
-            
-            filter_query = {"_id": self.under_observation[coin]['start_observation']}
-            update_doc = {
-                "$set": {
-                    "gain": gain,
-                    "sell_ts": sell_ts,
-                    "sell_price": sell_price
-                }
-            }
-            
-            result = self.trading_collection.update_one(filter_query, update_doc)
-            if result.modified_count != 1:
-                self.logger.error(f"Connection {self.connection_id} - Trading Collection update failed for {coin} with id {self.id}_{coin}")
-            
-        except Exception as e:
-            self.logger.error(f"Connection {self.connection_id} - Error updating trading event for {coin}: {e}")
-
     def check_buy_trading_conditions(self, coin, summary_ask_orders):
         """Check if trading conditions are met for a specific coin"""
         try:
@@ -1354,7 +1732,11 @@ class PooledBinanceOrderBook:
 
                 if all_levels_valid:
                     if self.hit_jump_price_levels_range(coin):
-                        self.BUY[coin] = True
+                        
+                        n_targets = self.under_observation[coin]['riskmanagement_configuration'].get('MINIMUM_NUMBER_TARGETS', 10)
+                        target_threshold = self.under_observation[coin]['riskmanagement_configuration'].get('MINIMUM_TARGET_THRESHOLD', 0.01)
+                        target_threshold_i = self.under_observation[coin]['riskmanagement_configuration'].get('MINIMUM_TARGET_THRESHOLD_I', 1)
+
                         self.buy_price[coin] = self.current_price[coin]
                         self.logger.info('--------------------------------')
                         self.logger.info('--------------------------------')
@@ -1366,7 +1748,9 @@ class PooledBinanceOrderBook:
                         self.logger.info("")
                         self.logger.info('------------- 0.001 target price -------------')
                         self.logger.info('Target Price delta 0.001')
-                        self.discover_target_price(coin, summary_ask_orders, n_target_levels=10, total_ask_volume=self.total_ask_volume[coin])
+                        targets = self.discover_target_price(coin, summary_ask_orders, total_ask_volume=self.total_ask_volume[coin],
+                                                             n_target_levels=n_targets,  target_threshold=target_threshold, target_threshold_i=target_threshold_i)
+                        
                         self.logger.info("")
                         self.logger.info('-------------- Tracker Volume ----------------')
                         self.get_tracker_volume_coin(coin, self.total_ask_volume[coin], summary_ask_orders)
@@ -1374,16 +1758,39 @@ class PooledBinanceOrderBook:
                         self.logger.info('--------------------------------')
                         self.logger.info('--------------------------------')
 
-                    self.save_trading_event(coin)
+                        if len(targets) > 0:
+                            stop_loss = self.current_price[coin] * (1 - self.under_observation[coin]['riskmanagement_configuration']['stop_loss'])
+                            orderbook_id = self.under_observation[coin]['start_observation']
+                            ranking = self.under_observation[coin]['ranking']
+                            strategy_configuration = self.under_observation[coin]['riskmanagement_configuration']
+                            minutes_check_recent_trades = self.under_observation[coin]['riskmanagement_configuration'].get('MINUTES_CHECK_RECENT_TRADES', 15)
+
+                            if not self.check_recent_trades(coin, minutes_check_recent_trades):
+                                trading_event = BinancePriceTracker(coin, buy_price=self.current_price[coin], targets=targets,
+                                                                stop_loss=stop_loss, orderbook_id=orderbook_id, 
+                                                                ranking=ranking, strategy_configuration=strategy_configuration)
+                            else:
+                                self.logger.info(f"Connection {self.connection_id} - Recent trades found for {coin}. Skipping buy event.")
+                                return
+                            
+                            # Start the trading event in a separate thread since we're in a sync context
+                            def run_trading_event():
+                                asyncio.run(trading_event.run())
+                            
+                            threading.Thread(target=run_trading_event, daemon=True).start()
+                        else:
+                            self.logger.info(f"Connection {self.connection_id} - No valid target prices found for {coin}. Skipping buy event.")
+
         except Exception as e:
             self.logger.error(f"Connection {self.connection_id} - Error checking buy trading conditions for {coin}: {e}")
 
-    def discover_target_price(self, coin, summary_ask_orders, n_target_levels=3, total_ask_volume=0):
+    def discover_target_price(self, coin, summary_ask_orders, total_ask_volume=0, n_target_levels=10, target_threshold=0.01, target_threshold_i=1):
         """Discover the target price for a specific coin"""
         try:
             #avg_distribution_keys = sorted([0] + [float(x) for x in list(avg_distribution.keys())])
             n_targets = 0
             cumulative_volume_last_level = summary_ask_orders[-1][1]
+            targets = []
 
             for level in summary_ask_orders:
                 if n_targets < n_target_levels:
@@ -1397,10 +1804,16 @@ class PooledBinanceOrderBook:
                     price_change_target_print = self.round_(price_change_target*100, 2)
                     self.logger.info(f"Connection {self.connection_id} - Target price for {coin}: {target_price} (+{price_change_target_print}%) with cumulative volume {cumulative_volume_wrt_last_level}%. Ask order volume weight: {ask_order_volume_weight}% wrt to benchmark")
                     n_targets += 1
+                    if price_change_target >= target_threshold:
+                        targets.append(target_price)
+                    elif n_targets == target_threshold_i:
+                        self.logger.info(f"Connection {self.connection_id} - Target price for {coin} did not respect the threshold {target_threshold*100}%. Skipping Buy Event")
+                        return targets
 
+            return targets
         except Exception as e:
             self.logger.error(f"Connection {self.connection_id} - Error discovering target price for {coin}: {e}")
-
+            return None
             
     #async def get_tracker_volume_coin(self, coin):
     def get_tracker_volume_coin(self, coin, total_ask_volume, summary_ask_orders):
@@ -1506,32 +1919,6 @@ class PooledBinanceOrderBook:
             self.logger.error(f"Connection {self.connection_id} - Error in hit_jump_price_levels_range for {coin}: {e}")
             return False
     
-    def save_trading_event(self, coin):
-        """Save trading event to database"""
-        try:
-            buy_ts = datetime.now().isoformat()
-            self.trading_collection.insert_one({
-                "_id": self.under_observation[coin]['start_observation'],
-                "coin": coin,
-                "gain": '',
-                "buy_price": self.buy_price[coin],
-                "sell_price": '',
-                "buy_ts": buy_ts,
-                "sell_ts": '',
-                "ranking": self.under_observation[coin]['ranking'],
-                "initial_price": self.initial_price[coin],
-                "max_price": self.max_price[coin],
-                "strategy": self.under_observation[coin]['riskmanagement_configuration']
-            })
-
-            #end_observation is only used for observing the coin, it is not used for the trading event
-            # the sell event is dependant to market conditions, and the sell event is ultimately executed in case end_observation is reached
-            end_observation = max(datetime.fromisoformat(self.under_observation[coin]['end_observation']), datetime.now() + timedelta(minutes=self.MAX_WAITING_TIME_AFTER_BUY)).isoformat()
-            self.under_observation[coin]['end_observation'] = end_observation
-            self.metadata_orderbook_collection.update_one({"_id": self.under_observation[coin]['start_observation']}, {"$set": {"buy_price": self.buy_price[coin], "end_observation": end_observation}})
-        except Exception as e:
-            self.logger.error(f"Connection {self.connection_id} - Error saving_trading_event for {coin}: {e}")
-
     @staticmethod
     def extract_timeframe(input_string):
         """Extract the timeframe value from the input string"""
@@ -1591,8 +1978,11 @@ class PooledBinanceOrderBook:
                                                                 "riskmanagement_configuration": 1, "buy_price": 1, "ranking": 1, "current_doc_id": 1} ))
             if len(metadata_docs) != 0:
                 for doc in metadata_docs:
+                    coin_print = doc["coin"]
+                    
                     if doc["coin"] not in self.coins:
                         continue
+                    #self.logger.info(f'Start: {coin_print}')
                     self.under_observation[doc["coin"]] = {
                         'event_key': doc["event_key"],
                         'status': True, 
@@ -1607,12 +1997,14 @@ class PooledBinanceOrderBook:
                     self.buy_price[doc["coin"]] = doc["buy_price"]
                     self.BUY[doc["coin"]] = True
 
-            self.logger.info(f"Connection {self.connection_id} - There are {len(metadata_docs)} coins under observation in BUY status")
+            #self.logger.info(f"Connection {self.connection_id} - There are {len(metadata_docs)} coins under observation in BUY status")
             metadata_docs = list(self.metadata_orderbook_collection.find({ "_id": {"$gt": timeframe_24hours}, "status": status}, {"coin": 1, "event_key": 1, "end_observation": 1, "riskmanagement_configuration": 1, "ranking": 1, "current_doc_id": 1, "benchmark": 1} ))
             if len(metadata_docs) != 0:
                 for doc in metadata_docs:
+                    coin_print = doc["coin"]
                     if doc["coin"] not in self.coins:
                         continue
+                    #self.logger.info(f'Start: {coin_print}')
                     self.orderbook_collection[doc["coin"]] = self.db_orderbook[doc["event_key"]]
                     if not self.BUY[doc["coin"]]:
                         self.under_observation[doc["coin"]] = {
@@ -1644,10 +2036,13 @@ class PooledBinanceOrderBook:
                     if len(metadata_docs) != 0:
                         riskmanagement_configuration = self.get_riskmanagement_configuration()
                         for doc in metadata_docs:
-                            
+                            if doc["coin"] not in self.coins:
+                                if doc["status"] == "running":
+                                    numbers_filled.append(doc["number"])
+                                continue
+
                             if doc["status"] == "pending":
-                                if doc["coin"] not in self.coins:
-                                    continue
+                                
                                 benchmark_doc = self.db_benchmark[doc["coin"]].find_one({}, {'volume_30_avg': 1})
                                 self.benchmark[doc["coin"]] = benchmark_doc.get('volume_30_avg') if benchmark_doc else None
                                 self.under_observation[doc["coin"]] = {
@@ -1662,10 +2057,14 @@ class PooledBinanceOrderBook:
                                 coins_under_observation.append(doc["coin"])
                                 
                             elif doc["status"] == "running":
-                                n_coins_under_observation += 1
                                 numbers_filled.append(doc["number"])
-                                if doc["coin"] not in self.coins:
-                                    continue
+
+                            elif doc["status"] == "on_update":
+                                coin_print = doc["coin"]
+                                end_observation = doc["end_observation"]
+                                self.logger.info(f"Connection {self.connection_id}: {coin_print} new volatility event - the orderbook polling will continue until {end_observation}")
+                                self.under_observation[doc["coin"]]['end_observation'] = doc["end_observation"]
+                                self.metadata_orderbook_collection.update_one({"_id": doc["_id"]}, {"$set": {"status": "running"}})
 
                         for coin in coins_under_observation:
                             for number in range(len(numbers_filled)+1):
@@ -1733,6 +2132,11 @@ class PooledBinanceOrderBook:
                 self.ws.close()
 
 if __name__ == "__main__":
+
+    # Get Current Trades
+    trades = BinancePriceTracker.get_current_trades()
+    asyncio.run(BinancePriceTracker.resume_trades_tracking(trades))
+
     # Get command line arguments
     coins = PooledBinanceOrderBook.get_coins()
     coins = coins[:int(os.getenv("COINS_ORDERBOOK_POOL_SIZE"))]

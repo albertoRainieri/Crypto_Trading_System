@@ -298,9 +298,7 @@ class TrackerController:
                 # asyncio.create_task(TradingController.check_event_triggering(coin, doc_db, volatility_coin, logger, db_logger, risk_configuration))
 
                 # ASYNC DISABLED. THIS IS PREFERRED CHOICE even if CPU Support is high
-                TradingController.buy_event_analysis(
-                    coin, doc_db, risk_configuration, logger, volume_standings
-                )
+                TradingController.buy_event_analysis( coin, doc_db, risk_configuration, logger, volume_standings)
                 # logger.info(doc_db)
 
                 db_tracker[coin].insert(doc_db)

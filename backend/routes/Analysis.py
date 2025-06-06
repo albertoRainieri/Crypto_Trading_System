@@ -57,3 +57,7 @@ async def get_orderbook(obj: dict = Body(...)):#, request: Request = Depends(Aut
 @router.post("/get-order-book-metadata")
 async def get_orderbook_metadata(obj: dict = Body(...)):#, request: Request = Depends(Authorization.get_current_active_user)):
     return AnalysisController.get_orderbook_metadata(obj)
+
+@router.get("/get-last-timestamp-tracker")
+async def get_last_timestamp_tracker():#, request: Request = Depends(Authorization.get_current_active_user)):
+    return AnalysisController.get_last_timestamp_tracker()
