@@ -2062,9 +2062,9 @@ class PooledBinanceOrderBook:
                             elif doc["status"] == "on_update":
                                 coin_print = doc["coin"]
                                 end_observation = doc["end_observation"]
-                                self.logger.info(f"Connection {self.connection_id}: {coin_print} new volatility event - the orderbook polling will continue until {end_observation}")
+                                #self.logger.info(f"Connection {self.connection_id}: {coin_print} new volatility event - the orderbook polling will continue until {end_observation}")
                                 self.under_observation[doc["coin"]]['end_observation'] = doc["end_observation"]
-                                self.metadata_orderbook_collection.update_one({"_id": doc["_id"]}, {"$set": {"status": "running"}})
+                                self.metadata_orderbook_collection.update_one({"_id": doc["_id"]}, {"$set": {"status": "running", "end_observation": doc["end_observation"]}})
 
                         for coin in coins_under_observation:
                             for number in range(len(numbers_filled)+1):
