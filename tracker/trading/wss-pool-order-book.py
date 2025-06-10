@@ -8,6 +8,7 @@ import os
 import sys
 import random
 import signal
+import traceback
 sys.path.insert(1, os.path.join(sys.path[0], ".."))
 from datetime import datetime, timedelta
 from database.DatabaseConnection import DatabaseConnection
@@ -657,8 +658,8 @@ class PooledBinanceOrderBook:
         self.max_price[coin] = 0
         self.initial_price[coin] = 0
         self.buy_price[coin] = 0
-        self.last_ask_order_distribution_1level[coin] = 0
-        self.last_bid_order_distribution_1level[coin] = 0
+        self.last_ask_order_distribution_1level[coin] = 1
+        self.last_bid_order_distribution_1level[coin] = 1
         self.ask_1firstlevel_orderlevel_detected[coin] = False
         self.ask_0firstlevel_orderlevel_detected[coin] = False
         self.bid_1firstlevel_orderlevel_detected[coin] = False
@@ -1269,22 +1270,27 @@ class PooledBinanceOrderBook:
             # if datetime.now().second == 0:
             #     self.logger.info(f'coin: {coin}; summary_bid_orders: {summary_bid_orders}')
             #     self.logger.info(f'coin: {coin}; summary_ask_orders: {summary_ask_orders}')
-                
-            self.bid_price_levels_dt[coin], bid_order_distribution, bid_cumulative_level = self.get_price_levels(
-                self.current_price[coin], summary_bid_orders, 
-                self.under_observation[coin]['riskmanagement_configuration']['strategy_jump'],
-                self.under_observation[coin]['riskmanagement_configuration']['limit'],
-                self.under_observation[coin]['riskmanagement_configuration']['price_change_jump'],
-                delta_bid
-            )
+            ask_order_distribution = {}
+            bid_order_distribution = {}
             
-            self.ask_price_levels_dt[coin], ask_order_distribution, ask_cumulative_level = self.get_price_levels(
-                self.current_price[coin], summary_ask_orders,
-                self.under_observation[coin]['riskmanagement_configuration']['strategy_jump'],
-                self.under_observation[coin]['riskmanagement_configuration']['limit'],
-                self.under_observation[coin]['riskmanagement_configuration']['price_change_jump'],
-                delta_ask
-            )
+            if len(summary_bid_orders) > 0:
+                self.bid_price_levels_dt[coin], bid_order_distribution, bid_cumulative_level = self.get_price_levels(
+                    self.current_price[coin], summary_bid_orders, 
+                    self.under_observation[coin]['riskmanagement_configuration']['strategy_jump'],
+                    self.under_observation[coin]['riskmanagement_configuration']['limit'],
+                    self.under_observation[coin]['riskmanagement_configuration']['price_change_jump'],
+                    delta_bid
+                )
+            
+            if len(summary_ask_orders) > 0:
+                self.ask_price_levels_dt[coin], ask_order_distribution, ask_cumulative_level = self.get_price_levels(
+                    self.current_price[coin], summary_ask_orders,
+                    self.under_observation[coin]['riskmanagement_configuration']['strategy_jump'],
+                    self.under_observation[coin]['riskmanagement_configuration']['limit'],
+                    self.under_observation[coin]['riskmanagement_configuration']['price_change_jump'],
+                    delta_ask
+                )
+
             # if datetime.now().second == 0:
             #     self.logger.info(f'coin: {coin}; bid_order_distribution: {bid_order_distribution}')
             #     self.logger.info(f'coin: {coin}; ask_order_distribution: {ask_order_distribution}')
@@ -1302,10 +1308,11 @@ class PooledBinanceOrderBook:
             return summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution
         except Exception as e:
             self.logger.error(f"Connection {self.connection_id} - Error getting statistics on order book for {coin}: {e}")
+            self.logger.error(f"Connection {self.connection_id} - Traceback: {traceback.format_exc()}")
             self.logger.info(f'summary_bid_orders: {summary_bid_orders}')
             self.logger.info(f'summary_ask_orders: {summary_ask_orders}')
 
-            return 0, 0, [], [], {}, {}, 0, 0
+            return [], [], {}, {}
 
     def analyze_order_book(self, coin):
         """Analyze the order book and update trading state for a specific coin"""
