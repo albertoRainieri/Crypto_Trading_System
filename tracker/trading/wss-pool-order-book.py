@@ -24,7 +24,7 @@ import websockets
 
 class BinancePriceTracker:
     def __init__(self, coin, buy_price, targets, stop_loss, orderbook_id, ranking, strategy_configuration,
-                 datetime_buy=None, high_since_buy=None, low_since_buy=None, high_dt=None, low_dt=None,
+                 datetime_buy=datetime.now(), high_since_buy=None, low_since_buy=None, high_dt=None, low_dt=None,
                  last_low_print=None, last_high_print=None, EARLY_STOP_LOSS=False, initialize=True):
         """
         Initialize the BinancePriceTracker for a specific coin.
@@ -43,10 +43,7 @@ class BinancePriceTracker:
             # Trading Information
             self.orderbook_id = orderbook_id  # Unique identifier for the order book
             self.buy_price = buy_price
-            if datetime_buy is None:
-                self.datetime_buy = datetime.now()
-            else:
-                self.datetime_buy = datetime_buy
+            self.datetime_buy = datetime_buy
             self.targets = targets # List of target prices for taking profit
             self.stop_loss = stop_loss # Stop loss percentage below buy price
             self.current_price = buy_price
@@ -1609,7 +1606,7 @@ class PooledBinanceOrderBook:
         try:
             not_ready_to_go = True
 
-            while not_ready_to_go and not self.should_exit:
+            while not_ready_to_go:
                 
                 self.last_minute_snapshots = [x for x in self.last_minute_snapshots if (datetime.now() - x).total_seconds() <= 60]
                 self.last_minute_snapshots.sort(reverse=True)
@@ -2038,7 +2035,9 @@ class PooledBinanceOrderBook:
                         for doc in metadata_docs:
                             if doc["coin"] not in self.coins:
                                 if doc["status"] == "running":
-                                    numbers_filled.append(doc["number"])
+                                    number_doc = doc.get("number", None)
+                                    if number_doc is not None:
+                                        numbers_filled.append(number_doc)
                                 continue
 
                             if doc["status"] == "pending":
@@ -2057,7 +2056,9 @@ class PooledBinanceOrderBook:
                                 coins_under_observation.append(doc["coin"])
                                 
                             elif doc["status"] == "running":
-                                numbers_filled.append(doc["number"])
+                                number_doc = doc.get("number", None)
+                                if number_doc is not None:
+                                    numbers_filled.append(number_doc)
 
                             elif doc["status"] == "on_update":
                                 coin_print = doc["coin"]
