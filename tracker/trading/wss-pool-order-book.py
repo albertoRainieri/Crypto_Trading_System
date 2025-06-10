@@ -1307,6 +1307,8 @@ class PooledBinanceOrderBook:
             
             return summary_bid_orders, summary_ask_orders, ask_order_distribution, bid_order_distribution
         except Exception as e:
+            under_observation = self.under_observation[coin]
+            self.logger.info(f'under_observation: {under_observation}')
             self.logger.error(f"Connection {self.connection_id} - Error getting statistics on order book for {coin}: {e}")
             self.logger.error(f"Connection {self.connection_id} - Traceback: {traceback.format_exc()}")
             self.logger.info(f'summary_bid_orders: {summary_bid_orders}')
