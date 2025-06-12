@@ -25,7 +25,7 @@ import websockets
 
 class BinancePriceTracker:
     def __init__(self, coin, buy_price, targets, stop_loss, orderbook_id, ranking, strategy_configuration,
-                 datetime_buy=datetime.now(), high_since_buy=None, low_since_buy=None, high_dt=None, low_dt=None,
+                 datetime_buy=None, high_since_buy=None, low_since_buy=None, high_dt=None, low_dt=None,
                  last_low_print=None, last_high_print=None, EARLY_STOP_LOSS=False, initialize=True):
         """
         Initialize the BinancePriceTracker for a specific coin.
@@ -44,6 +44,8 @@ class BinancePriceTracker:
             # Trading Information
             self.orderbook_id = orderbook_id  # Unique identifier for the order book
             self.buy_price = buy_price
+            if datetime_buy is None:
+                datetime_buy = datetime.now()
             self.datetime_buy = datetime_buy
             self.targets = targets # List of target prices for taking profit
             self.stop_loss = stop_loss # Stop loss percentage below buy price
@@ -263,6 +265,7 @@ class BinancePriceTracker:
         - last_low_print
         - last_high_print
         """
+        self.logger.info(f"Initializing DB trading event for {self.coin.upper()} at {self.buy_price} on {self.datetime_buy.isoformat()}")
         self.trading_collection.insert_one({
             "_id": self.datetime_buy.isoformat(),
             "orderbook_id": self.orderbook_id,
@@ -421,6 +424,47 @@ class BinancePriceTracker:
         finally:
             await self.close()
 
+class SharedOrderBookState:
+    """Singleton class to share state across all PooledBinanceOrderBook instances"""
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+    
+    def __init__(self):
+        if not self._initialized:
+            self.shared_data = {"ip_banned": False, "last_minute_snapshots": []}
+            self.data_lock = threading.Lock()
+            self._initialized = True
+            self.on_sleep = {}
+    
+    def get_shared_data(self, key, default=None):
+        with self.data_lock:
+            return self.shared_data.get(key, default)
+    
+    def set_shared_data(self, key, value):
+        with self.data_lock:
+            self.shared_data[key] = value
+    
+    def update_last_minute_snapshots(self):
+        with self.data_lock:
+            last_minute_snapshots = self.shared_data["last_minute_snapshots"]
+            last_minute_snapshots.append(datetime.now())
+
+            last_minute_snapshots = [x for x in last_minute_snapshots if (datetime.now() - x).total_seconds() < 60]
+            last_minute_snapshots.sort(reverse=True)
+            self.shared_data["last_minute_snapshots"] = last_minute_snapshots
+        
+        return last_minute_snapshots
+
+
+
 class MultiConnectionOrderBook:
     """
     Manages multiple PooledBinanceOrderBook instances, each handling a subset of coins.
@@ -481,11 +525,11 @@ class MultiConnectionOrderBook:
             t.start()
             # Add a small delay to avoid all threads starting at exactly the same time
     
-    def start(self, start_script=True):
+    def start(self):
         """Start all WebSocket connections in separate threads"""
         for instance in self.order_book_instances:
             
-            thread = threading.Thread(target=instance.start, args=(start_script,))
+            thread = threading.Thread(target=instance.start)
             thread.daemon = True
             thread.start()
             self.threads.append(thread)
@@ -514,11 +558,21 @@ class MultiConnectionOrderBook:
         sys.exit(0)
 
 class PooledBinanceOrderBook:
-    ip_banned = False
+    # Shared attributes across all instances
+    shared_data = {}  # Dictionary to store shared data
+    shared_lock = threading.Lock()  # Thread-safe access to shared data
 
-    def __init__(self, coins: List[str], connection_id=0, connection_count=8):
+    def __init__(self, coins: List[str], connection_id=0, connection_count=8, TEST_RESTART=False):
         # Logger
         self.logger = LoggingController.start_logging()
+        
+        # Initialize shared state instance
+        self.TEST_RESTART = TEST_RESTART
+        if self.TEST_RESTART:
+            self.NOT_RESTARTED = True
+            self.ts_restart = datetime.now() + timedelta(minutes=10)
+        self.shared_state = SharedOrderBookState()
+        self.start_script = True
         
         self.coins = [coin.upper() for coin in coins]
         self.coins_lower = [coin.lower() for coin in coins]
@@ -554,7 +608,6 @@ class PooledBinanceOrderBook:
         self.bid_price_levels_dt = {}
         self.ask_price_levels_dt = {}
         self.coin_orderbook_initialized = {}
-        self.last_minute_snapshots = []
         self.benchmark = {}
         self.total_bid_volume = {}
         self.total_ask_volume = {}
@@ -599,6 +652,24 @@ class PooledBinanceOrderBook:
         # Register signal handlers
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
+
+    def get_shared_attribute(self, key, default=None):
+        """Get a shared attribute using class variable approach"""
+        with self.shared_lock:
+            return self.shared_data.get(key, default)
+    
+    def set_shared_attribute(self, key, value):
+        """Set a shared attribute using class variable approach"""
+        with self.shared_lock:
+            self.shared_data[key] = value
+    
+    def get_shared_state_attribute(self, key, default=None):
+        """Get a shared attribute using singleton approach"""
+        return self.shared_state.get_shared_data(key, default)
+    
+    def set_shared_state_attribute(self, key, value):
+        """Set a shared attribute using singleton approach"""
+        self.shared_state.set_shared_data(key, value)
 
     def first_initialization_process(self):
         coins_ongoing_analysis, coins_ongoing_buy = self.get_ongoing_analysis_coins()
@@ -686,7 +757,7 @@ class PooledBinanceOrderBook:
            - Last: remaining coins
         4. Initializes order book status and snapshot timing for each coin
         """
-        self.logger.info(f'initialize_order_book')
+        #self.logger.info(f'connection {self.connection_id} - initialize_order_book: start_script: {start_script}')
         f = open("/tracker/riskmanagement/riskmanagement.json", "r")
         self.risk_configuration = json.loads(f.read())
         self.event_keys = list(self.risk_configuration["event_keys"].keys())
@@ -769,6 +840,14 @@ class PooledBinanceOrderBook:
             # They include a 'stream' field that identifies the source
             stream = data.get('stream')
             stream_data = data.get('data')
+
+            if self.TEST_RESTART:
+                # Throw error to test WebSocket restart functionality
+                if self.NOT_RESTARTED and datetime.now() > self.ts_restart + timedelta(seconds=random.randint(0, 10)):
+                    self.NOT_RESTARTED = False
+                    self.ws.close()
+                    
+                    #raise Exception("TEST_RESTART: Forcing WebSocket restart")
             
             if not stream or not stream_data:
                 #self.logger.error(f"Connection {self.connection_id} - Received malformed message: {message[:100]}...")
@@ -785,7 +864,7 @@ class PooledBinanceOrderBook:
                 self.initialize_coin_status(coin=coin, start_script=False, last_snapshot_time=self.coin_orderbook_initialized[coin]['next_snapshot_time'])
 
             if self.coin_orderbook_initialized[coin]['status'] == False and datetime.now() > self.coin_orderbook_initialized[coin]['next_snapshot_time']:
-    
+                #self.logger.info(f'connection {self.connection_id} - getting snapshot for coin: {coin} - next_snapshot_time: {self.coin_orderbook_initialized[coin]["next_snapshot_time"]}')
                 self.get_snapshot(coin)
                 self.coin_orderbook_initialized[coin]['status'] = True
                         
@@ -834,8 +913,12 @@ class PooledBinanceOrderBook:
                     self.running = False
                 
                 # Fixed 10 second delay for reconnection
-                self.logger.info("Waiting 10 seconds before reconnecting")
-                sleep(10)
+                if self.start_script:
+                    sleep_seconds = 60
+                else:
+                    sleep_seconds = 10
+                self.logger.info(f"Connection {self.connection_id} - Waiting {sleep_seconds} seconds before reconnecting")
+                sleep(sleep_seconds)
                 
                 # Start new connection
                 self.logger.info(f"Connection {self.connection_id} - Starting new WebSocket connection...")
@@ -856,6 +939,70 @@ class PooledBinanceOrderBook:
         subscribe_message = {"method": "SUBSCRIBE", "params": self.parameters, "id": 1}
         ws.send(json.dumps(subscribe_message))
 
+    def start(self):
+        """Start the WebSocket connection for all coins"""
+        #self.logger.info(f"Connection {self.connection_id} - START: start_script: {self.start_script}")
+        with self.connection_lock:
+            if self.running:
+                return
+            self.running = True
+        
+        try:
+            # Wait for snapshot to avoid rate limit
+            if self.start_script:
+                self.initialize_order_book(start_script=self.start_script)
+
+            websocket.enableTrace(False)
+            # Create WebSocket connection with proper URL
+            self.logger.info(f"Connection {self.connection_id} - Starting WebSocket with {self.parameters} - self.start_script: {self.start_script}")
+            
+            # Reset ping/pong tracking
+            self.last_ping_time = None
+            self.last_pong_time = None
+            
+            self.ws = websocket.WebSocketApp(
+                self.ws_url,
+                on_message=self.on_message,
+                on_error=self.on_error,
+                on_close=self.on_close,
+                on_open=self.on_open,
+                on_ping=self.on_ping,
+                on_pong=self.on_pong)
+
+            # Run in a separate thread with ping interval and timeout
+            self.ws_thread = threading.Thread(target=self.ws.run_forever, kwargs={
+                # 'ping_interval': self.ping_interval,
+                # 'ping_timeout': self.ping_timeout,
+                'skip_utf8_validation': True  # Add this to skip UTF8 validation for better performance
+            })
+            self.ws_thread.daemon = True
+            self.ws_thread.start()
+            
+            # Also start the connection health check thread
+            #threading.Thread(target=self.check_connection, daemon=True).start()
+            
+        except Exception as e:
+            self.logger.error(f"Connection {self.connection_id} - Error in start method: {e}")
+            # Release the lock if start fails
+            with self.connection_lock:
+                self.running = False
+            # Try to restart after a delay
+            if not self.should_exit:
+                self.logger.info(f"Connection {self.connection_id} - Attempting to restart after error...")
+                sleep(10)
+                self.start()
+
+    def stop(self):
+        """Stop the WebSocket connection"""
+        with self.connection_lock:
+            if not self.running:
+                return
+            self.running = False
+            if self.ws:
+                try:
+                    self.ws.close()
+                except Exception as e:
+                    self.logger.error(f"Connection {self.connection_id} - Error closing WebSocket: {e}")
     def on_ping(self, ws, message):
         """Handle ping from server by sending pong"""
         ws.send(message, websocket.ABNF.OPCODE_PONG)
@@ -879,20 +1026,6 @@ class PooledBinanceOrderBook:
             self.logger.error(f"Connection {self.connection_id} - Error handling pong: {e}")
             self.reconnect()
 
-    def reconnect(self):
-        """Handle reconnection logic"""
-        if self.running and not self.should_exit:
-            self.logger.info(f"Connection {self.connection_id} - Reconnecting...")
-            # Try to close the connection more gracefully
-            try:
-                if self.ws and self.ws.sock and self.ws.sock.connected:
-                    self.ws.close()
-            except Exception as e:
-                self.logger.error(f"Connection {self.connection_id} - Error closing connection during reconnect: {e}")
-            
-            self.stop()
-            sleep(10)  # Increased from 5 to 10 seconds to give more time for cleanup
-            self.start()
 
     def check_connection(self):
         """Periodically check connection health"""
@@ -940,16 +1073,17 @@ class PooledBinanceOrderBook:
         #self.logger.info(f'restart: {self.RESTART}')
         
         try:
-            order_book = self.order_books[coin]
+            #order_book = self.order_books[coin]
             #self.logger.info(f'snapshot:Connection {self.connection_id} - {order_book}')
-            if order_book['bids'] != {}:
-                self.wait_for_snapshot(coin)
-            #     self.logger.info(f'Connection {self.connection_id} - Getting snapshot for coin after waiting: {coin}')
+            # if order_book['bids'] != {}:
+            #     self.wait_for_snapshot(coin)
             # else:
-            #     self.logger.info(f'Connection {self.connection_id} - Getting snapshot for coin: {coin} last snapshot time: {self.coin_orderbook_initialized[coin]["next_snapshot_time"]}')
+            #     #self.logger.info(self.shared_state.get_shared_data("last_minute_snapshots", []))
+            #     _ = self.shared_state.update_last_minute_snapshots()
+
             snapshot_url = f"https://api.binance.com/api/v3/depth?symbol={coin}&limit=5000"
-            self.last_minute_snapshots.append(datetime.now())
-            if not self.ip_banned:
+
+            if not self.shared_state.get_shared_data("ip_banned", False):
                 response = requests.get(snapshot_url)
             else:
                 self.logger.info(f"Connection {self.connection_id} - IP banned. Waiting for ban to expire...")
@@ -978,7 +1112,7 @@ class PooledBinanceOrderBook:
             
             self.process_buffered_events(coin)
         else:
-            self.logger.error(f"Connection {self.connection_id} - Error getting snapshot: {response.status_code}: {response.text}")
+            self.logger.error(f"Connection {self.connection_id} - {coin} - Error getting snapshot: {response.status_code}: {response.text}")
             try:
                 #error = {"code":-1003,"msg":"Way too much request weight used; IP banned until 1748592527333. Please use WebSocket Streams for live updates to avoid bans."}
                 error_json = response.text
@@ -989,9 +1123,10 @@ class PooledBinanceOrderBook:
                     if ban_timestamp:
                         ban_datetime = datetime.fromtimestamp(ban_timestamp).isoformat()
                         self.logger.info(f"Connection {self.connection_id} - IP banned until {ban_datetime}. Waiting for ban to expire...")
-                        self.ip_banned = True
-                        sleep(ban_timestamp - time.time() + 5)
-                        self.ip_banned = False
+                        self.shared_state.set_shared_data("ip_banned", True)
+                        sleep(ban_timestamp - time.time() + 60)
+                        self.shared_state.set_shared_data("ip_banned", False)
+                        self.ws.close()
                         #self.get_snapshot(coin)
             except Exception as e:
                 self.logger.error(f"Connection {self.connection_id} - Error getting ban timestamp: {e}")
@@ -1106,6 +1241,7 @@ class PooledBinanceOrderBook:
 
         if event['U'] > self.order_books[coin]['lastUpdateId'] + 1:
             self.order_books[coin]['lastUpdateId'] = None
+            #self.logger.info(f'connection {self.connection_id} - {coin} - getting snapshot from process_update')
             self.get_snapshot(coin)
             return
 
@@ -1614,17 +1750,21 @@ class PooledBinanceOrderBook:
         """Wait for the snapshot to be ready, in order to avoid rate limit ban"""
         try:
             not_ready_to_go = True
+            last_minute_snapshots = self.shared_state.update_last_minute_snapshots()
 
             while not_ready_to_go:
                 
-                self.last_minute_snapshots = [x for x in self.last_minute_snapshots if (datetime.now() - x).total_seconds() <= 60]
-                self.last_minute_snapshots.sort(reverse=True)
+                #self.shared_state.set_shared_data("last_minute_snapshots", last_minute_snapshots)
+                if self.TEST_RESTART:
+                    shared_data = self.shared_state.get_shared_data("last_minute_snapshots", [])
+                    self.logger.info(f"Connection {self.connection_id} - Shared snapshots count: {len(shared_data)}, IP banned: {self.shared_state.get_shared_data('ip_banned', False)}")
 
-                if len(self.last_minute_snapshots) > 20:
-                    remaining_wait = 60 - (datetime.now() - self.last_minute_snapshots[-1]).total_seconds()
+                if len(last_minute_snapshots) >= 20:
+                    remaining_wait = (datetime.now() - last_minute_snapshots[-1]).total_seconds() + 1
                     self.logger.info(f"Connection {self.connection_id} - Waiting for snapshot for {coin} for {remaining_wait} seconds")
-                    if remaining_wait > 0:
-                        sleep(remaining_wait)
+                    self.shared_state.on_sleep[coin] = True
+                    sleep(remaining_wait)
+                    not_ready_to_go = False
                 else:
                     not_ready_to_go = False
 
@@ -1636,70 +1776,6 @@ class PooledBinanceOrderBook:
             # Continue despite errors, with a small delay
             sleep(5)
 
-    def start(self, start_script=False):
-        """Start the WebSocket connection for all coins"""
-        with self.connection_lock:
-            if self.running:
-                return
-            self.running = True
-        
-        try:
-            # Wait for snapshot to avoid rate limit
-            if not start_script:
-                self.initialize_order_book(start_script=start_script)
-
-            websocket.enableTrace(False)
-            # Create WebSocket connection with proper URL
-            full_url = f"{self.ws_url}{','.join(self.parameters)}"
-            self.logger.info(f"Connection {self.connection_id} - Starting WebSocket with {self.parameters}")
-            
-            # Reset ping/pong tracking
-            self.last_ping_time = None
-            self.last_pong_time = None
-            
-            self.ws = websocket.WebSocketApp(
-                self.ws_url,
-                on_message=self.on_message,
-                on_error=self.on_error,
-                on_close=self.on_close,
-                on_open=self.on_open,
-                on_ping=self.on_ping,
-                on_pong=self.on_pong)
-
-            # Run in a separate thread with ping interval and timeout
-            self.ws_thread = threading.Thread(target=self.ws.run_forever, kwargs={
-                # 'ping_interval': self.ping_interval,
-                # 'ping_timeout': self.ping_timeout,
-                'skip_utf8_validation': True  # Add this to skip UTF8 validation for better performance
-            })
-            self.ws_thread.daemon = True
-            self.ws_thread.start()
-            
-            # Also start the connection health check thread
-            #threading.Thread(target=self.check_connection, daemon=True).start()
-            
-        except Exception as e:
-            self.logger.error(f"Connection {self.connection_id} - Error in start method: {e}")
-            # Release the lock if start fails
-            with self.connection_lock:
-                self.running = False
-            # Try to restart after a delay
-            if not self.should_exit:
-                self.logger.info(f"Connection {self.connection_id} - Attempting to restart after error...")
-                sleep(10)
-                self.start()
-
-    def stop(self):
-        """Stop the WebSocket connection"""
-        with self.connection_lock:
-            if not self.running:
-                return
-            self.running = False
-            if self.ws:
-                try:
-                    self.ws.close()
-                except Exception as e:
-                    self.logger.error(f"Connection {self.connection_id} - Error closing WebSocket: {e}")
 
     def update_metadata_event(self, coin):
         metadata_filter = {
@@ -1978,16 +2054,20 @@ class PooledBinanceOrderBook:
             status = "running"
             timeframe_max_waiting_time_after_buy_hours = (datetime.now() - timedelta(days=1) - timedelta(minutes=self.MAX_WAITING_TIME_AFTER_BUY)).isoformat()
             timeframe_24hours = (datetime.now() - timedelta(days=1)).isoformat()
+            riskmanagement_configuration_backup = self.get_riskmanagement_configuration()
 
             metadata_docs = list(self.metadata_orderbook_collection.find({ "_id": {"$gt": timeframe_max_waiting_time_after_buy_hours}, "status": status,"buy_price": {"$ne": 0},"sell_price": 0},
                                                                 {"coin": 1, "event_key": 1, "end_observation": 1, "benchmark": 1,
                                                                 "riskmanagement_configuration": 1, "buy_price": 1, "ranking": 1, "current_doc_id": 1} ))
             if len(metadata_docs) != 0:
                 for doc in metadata_docs:
-                    coin_print = doc["coin"]
+                    #coin_print = doc["coin"]
                     
                     if doc["coin"] not in self.coins:
                         continue
+
+                    if doc["riskmanagement_configuration"] is None:
+                        doc["riskmanagement_configuration"] = riskmanagement_configuration_backup
                     #self.logger.info(f'Start: {coin_print}')
                     self.under_observation[doc["coin"]] = {
                         'event_key': doc["event_key"],
@@ -2007,9 +2087,11 @@ class PooledBinanceOrderBook:
             metadata_docs = list(self.metadata_orderbook_collection.find({ "_id": {"$gt": timeframe_24hours}, "status": status}, {"coin": 1, "event_key": 1, "end_observation": 1, "riskmanagement_configuration": 1, "ranking": 1, "current_doc_id": 1, "benchmark": 1} ))
             if len(metadata_docs) != 0:
                 for doc in metadata_docs:
-                    coin_print = doc["coin"]
+                    #coin_print = doc["coin"]
                     if doc["coin"] not in self.coins:
                         continue
+                    if doc["riskmanagement_configuration"] is None:
+                        doc["riskmanagement_configuration"] = riskmanagement_configuration_backup
                     #self.logger.info(f'Start: {coin_print}')
                     self.orderbook_collection[doc["coin"]] = self.db_orderbook[doc["event_key"]]
                     if not self.BUY[doc["coin"]]:
@@ -2124,6 +2206,7 @@ class PooledBinanceOrderBook:
 
             # total seconds until next wss restart
             total_remaining_seconds = remaining_seconds + minutes_remaining * 60 + hours_remaining * 60 * 60 + (self.connection_id * 60) + self.connection_id
+            #total_remaining_seconds = 5*60 + remaining_seconds + (self.connection_id * 60) + self.connection_id
 
             # ONLY FOR TESTING
             #total_remaining_seconds = 3*60 + remaining_seconds + (self.connection_id * 60)
@@ -2132,13 +2215,18 @@ class PooledBinanceOrderBook:
             # define timestamp for next wss restart
             wss_restart_timestamp = (now + timedelta(seconds=total_remaining_seconds)).isoformat()
             self.logger.info(f"Connection {self.connection_id} - on_restart_connection: Next wss restart {wss_restart_timestamp}")
-
-            sleep(total_remaining_seconds)
+            #This double sleep is to avoid to override too early the start_script parameter during the scheduled restart
+            sleep(1*60)
+            self.start_script = True
+            sleep(total_remaining_seconds-1*60)
+            self.start_script = False
             self.logger.info(f"Connection {self.connection_id} - Restart Connection")
         finally:
             with self.connection_restart_lock:
                 self.connection_restart_running = False
+                # Start new thread with start_script parameter
                 threading.Thread(target=self.restart_connection, daemon=True).start()
+                #threading.Thread(target=self.restart_connection, daemon=True).start()
                 self.ws.close()
 
 if __name__ == "__main__":
@@ -2168,7 +2256,7 @@ if __name__ == "__main__":
     threading.Thread(target=multi_order_book.wrap_search_volatility_event_trigger, daemon=True).start()
     
     # Start all the connections
-    multi_order_book.start(start_script=True)
+    multi_order_book.start()
     
     # Keep the main thread alive
     try:
