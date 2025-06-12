@@ -2067,7 +2067,7 @@ class PooledBinanceOrderBook:
             timeframe_24hours = (datetime.now() - timedelta(days=1)).isoformat()
             riskmanagement_configuration_backup = self.get_riskmanagement_configuration()
 
-            metadata_docs = list(self.metadata_orderbook_collection.find({ "_id": {"$gt": timeframe_max_waiting_time_after_buy_hours}, "status": status,"buy_price": {"$ne": 0},"sell_price": 0},
+            metadata_docs = list(self.metadata_orderbook_collection.find({ "end_observation": {"$gt": datetime.now().isoformat()}, "status": status,"buy_price": {"$ne": 0},"sell_price": 0},
                                                                 {"coin": 1, "event_key": 1, "end_observation": 1, "benchmark": 1,
                                                                 "riskmanagement_configuration": 1, "buy_price": 1, "ranking": 1, "current_doc_id": 1} ))
             if len(metadata_docs) != 0:
@@ -2095,7 +2095,7 @@ class PooledBinanceOrderBook:
                     self.BUY[doc["coin"]] = True
 
             #self.logger.info(f"Connection {self.connection_id} - There are {len(metadata_docs)} coins under observation in BUY status")
-            metadata_docs = list(self.metadata_orderbook_collection.find({ "_id": {"$gt": timeframe_24hours}, "status": status}, {"coin": 1, "event_key": 1, "end_observation": 1, "riskmanagement_configuration": 1, "ranking": 1, "current_doc_id": 1, "benchmark": 1} ))
+            metadata_docs = list(self.metadata_orderbook_collection.find({ "end_observation": {"$gt": datetime.now().isoformat()}, "status": status}, {"coin": 1, "event_key": 1, "end_observation": 1, "riskmanagement_configuration": 1, "ranking": 1, "current_doc_id": 1, "benchmark": 1} ))
             if len(metadata_docs) != 0:
                 for doc in metadata_docs:
                     #coin_print = doc["coin"]
