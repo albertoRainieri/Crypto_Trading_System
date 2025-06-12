@@ -570,9 +570,10 @@ class PooledBinanceOrderBook:
         self.TEST_RESTART = TEST_RESTART
         if self.TEST_RESTART:
             self.NOT_RESTARTED = True
-            self.ts_restart = datetime.now() + timedelta(minutes=10)
+            self.ts_restart = datetime.now() + timedelta(minutes=5)
         self.shared_state = SharedOrderBookState()
         self.start_script = True
+        self.previous_minute = None
         
         self.coins = [coin.upper() for coin in coins]
         self.coins_lower = [coin.lower() for coin in coins]
@@ -611,6 +612,9 @@ class PooledBinanceOrderBook:
         self.benchmark = {}
         self.total_bid_volume = {}
         self.total_ask_volume = {}
+        self.under_observation = {}
+        for coin in self.coins:
+            self.under_observation[coin] = {'status': False}
         
         # Parameters
         # TODO: remove hardcoded values
@@ -720,8 +724,9 @@ class PooledBinanceOrderBook:
 
         else:
             self.coin_orderbook_initialized[coin] = {'status': True, 'next_snapshot_time': last_snapshot_time}
+            self.under_observation[coin] = {'status': False}
 
-        self.under_observation[coin] = {'status': False}
+        
         self.BUY[coin] = False
         self.summary_jump_price_level[coin] = {}
         self.ask_order_distribution_list[coin] = []
@@ -836,6 +841,7 @@ class PooledBinanceOrderBook:
         try:
             data = json.loads(message)
 
+
             # Combined stream messages have a different format
             # They include a 'stream' field that identifies the source
             stream = data.get('stream')
@@ -847,7 +853,6 @@ class PooledBinanceOrderBook:
                     self.NOT_RESTARTED = False
                     self.ws.close()
                     
-                    #raise Exception("TEST_RESTART: Forcing WebSocket restart")
             
             if not stream or not stream_data:
                 #self.logger.error(f"Connection {self.connection_id} - Received malformed message: {message[:100]}...")
@@ -856,6 +861,12 @@ class PooledBinanceOrderBook:
             # Extract coin from stream name (format: "btcusdt@depth")
             coin_with_depth = stream.split('@')[0]
             coin = coin_with_depth.upper()
+
+            # current_minute = datetime.now().minute
+            # if coin == 'QNTUSDT' and current_minute != self.previous_minute:
+            #     under_observation = self.under_observation[coin]
+            #     self.logger.info(f'under_observation {coin}: {under_observation}')
+            #     self.previous_minute = current_minute
 
             if self.under_observation[coin]['status'] and datetime.now() > datetime.fromisoformat(self.under_observation[coin]['end_observation']):
 
