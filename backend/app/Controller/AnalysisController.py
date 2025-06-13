@@ -877,7 +877,7 @@ class AnalysisController:
         start_timestamp = request["start_timestamp"]
         collection = db_order_book[COLLECTION_ORDERBOOK_METADATA]
         end_timestamp = (datetime.now() - timedelta(days=2)).isoformat()
-        docs = list(collection.find({"_id": {"$gte": start_timestamp, "$lt": end_timestamp}, "status": "running"}, {"_id": 1, 'event_key': 1, 'coin': 1}))
+        docs = list(collection.find({"_id": {"$gte": start_timestamp, "$lt": end_timestamp}, "status": "completed"}, {"_id": 1, 'event_key': 1, 'coin': 1}))
         response = {"data": []}
         for doc in docs:
             #print(doc)
@@ -885,8 +885,6 @@ class AnalysisController:
         response = {"data": docs}
         json_string = jsonable_encoder(response)
         return JSONResponse(content=json_string)
-        
-        
 
     def get_orderbook(request):
         client = DatabaseConnection()
