@@ -1281,14 +1281,14 @@ class PooledBinanceOrderBook:
 
     def update_ask_order_distribution_list(self, ask_order_distribution, coin):
         """Update the ask order distribution list for a specific coin"""
-        self.ask_order_distribution_list[coin].append({
+        self.ask_order_distribution_list[coin] = [{
             'ask': ask_order_distribution,
             'dt': datetime.now()
-        })
+        }]
         # Keep only the last N objects based on datetime, where N is specified in strategy parameters
-        if len(self.ask_order_distribution_list[coin]) > self.under_observation[coin]['riskmanagement_configuration']['last_i_ask_order_distribution']:
-            self.ask_order_distribution_list[coin].sort(key=lambda x: x['dt'], reverse=True)
-            self.ask_order_distribution_list[coin] = self.ask_order_distribution_list[coin][:self.under_observation[coin]['riskmanagement_configuration']['last_i_ask_order_distribution']]
+        # if len(self.ask_order_distribution_list[coin]) > self.under_observation[coin]['riskmanagement_configuration']['last_i_ask_order_distribution']:
+        #     self.ask_order_distribution_list[coin].sort(key=lambda x: x['dt'], reverse=True)
+        #     self.ask_order_distribution_list[coin] = self.ask_order_distribution_list[coin][:self.under_observation[coin]['riskmanagement_configuration']['last_i_ask_order_distribution']]
         
         return self.ask_order_distribution_list[coin]
 
@@ -1309,7 +1309,7 @@ class PooledBinanceOrderBook:
 
     def process_order_book_update(self, coin, summary_bid_orders, summary_ask_orders, order_distribution, current_time, type_update):
         if type_update == 'ask':
-            self.ask_order_distribution_list[coin] = self.update_ask_order_distribution_list(order_distribution, coin)
+            self.update_ask_order_distribution_list(order_distribution, coin)
         # elif type_update == 'bid':
         #     self.bid_order_distribution_list[coin] = self.update_bid_order_distribution_list(order_distribution, coin)
 
@@ -1816,8 +1816,20 @@ class PooledBinanceOrderBook:
                 # Check ask order distribution
                 all_levels_valid = True
                 avg_distribution = self.calculate_average_distribution(self.ask_order_distribution_list[coin])
-                keys_ask_order_distribution = list(avg_distribution.keys())[:self.under_observation[coin]['riskmanagement_configuration']['lvl_ask_order_distribution_list']]
+
+                # Sort keys from lowest to greatest
+                keys_ask_order_distribution_list = list(avg_distribution.keys())
+                keys_ask_order_distribution = sorted(keys_ask_order_distribution_list, key=float)
+                keys_ask_order_distribution = keys_ask_order_distribution[:self.under_observation[coin]['riskmanagement_configuration']['lvl_ask_order_distribution_list']]
+
+                # self.logger.info(f'coin: {coin} . avg_distribution: {avg_distribution}')
+                # ask_order_distribution_list_coin = self.ask_order_distribution_list[coin]
+                # self.logger.info(f'coin: {coin} . ask_order_distribution_list: {ask_order_distribution_list_coin}')
                 
+                # self.logger.info(f'coin: {coin} . keys_ask_order_distribution: {keys_ask_order_distribution}')
+                
+                # self.logger.info(f'keys_ask_order_distribution: {keys_ask_order_distribution}')
+
                 for lvl in keys_ask_order_distribution:
                     if avg_distribution[lvl] >= self.under_observation[coin]['riskmanagement_configuration']['max_ask_order_distribution_level']:
                         all_levels_valid = False
@@ -1875,6 +1887,7 @@ class PooledBinanceOrderBook:
                             self.logger.info(f"Connection {self.connection_id} - No valid target prices found for {coin}. Skipping buy event.")
 
         except Exception as e:
+            self.logger.error(f"Connection {self.connection_id} - Traceback: {traceback.format_exc()}")
             self.logger.error(f"Connection {self.connection_id} - Error checking buy trading conditions for {coin}: {e}")
 
     def discover_target_price(self, coin, summary_ask_orders, total_ask_volume=0, n_target_levels=10, target_threshold=0.01, target_threshold_i=1):
