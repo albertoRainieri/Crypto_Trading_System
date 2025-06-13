@@ -2070,7 +2070,6 @@ class PooledBinanceOrderBook:
         #coins = coins[:20]
         return coins
 
-
     def search_volatility_event_trigger(self, start_script=False):
         """Search for volatility event trigger"""
         #self.logger.info(f"Connection {self.connection_id} - Searching for volatility event trigger")
@@ -2135,6 +2134,7 @@ class PooledBinanceOrderBook:
             return
         else:
             #self.logger.info(f"Connection {self.connection_id} - Calling search_volatility_event_trigger on instance {self.connection_id}")
+            last_hour = None
             while True:
                 try:
                     n_coins_under_observation = 0
@@ -2143,7 +2143,12 @@ class PooledBinanceOrderBook:
                     timeframe_1day = (datetime.now() - timedelta(days=1)).isoformat()
                     update_doc = {}
                     coins_under_observation = []
-                    metadata_docs = list(self.metadata_orderbook_collection.find({"_id": {"$gt": timeframe_1day}}, {"coin": 1, "event_key": 1, "end_observation": 1,"ranking": 1, "status": 1, "number": 1, "current_doc_id": 1}))
+                    # Find docs with end_observation > now and status running or pending
+                    metadata_docs = list(self.metadata_orderbook_collection.find({
+                        "end_observation": {"$gt": datetime.now().isoformat()},
+                        "status": {"$in": ["running", "pending"]}
+                    }, {"coin": 1, "event_key": 1, "end_observation": 1, "ranking": 1, "status": 1, "number": 1, "current_doc_id": 1}))
+                    # metadata_docs = list(self.metadata_orderbook_collection.find({"_id": {"$gt": timeframe_1day}}, {"coin": 1, "event_key": 1, "end_observation": 1,"ranking": 1, "status": 1, "number": 1, "current_doc_id": 1}))
                     # self.logger.info(f'metadata_docs: {metadata_docs}')
                     if len(metadata_docs) != 0:
                         riskmanagement_configuration = self.get_riskmanagement_configuration()
@@ -2210,7 +2215,32 @@ class PooledBinanceOrderBook:
                             self.logger.info(f"Connection {self.connection_id} - Coin {coin} - event_key: {event_key} - {number+1}/{len(numbers_filled)} - ranking: {ranking}")
                         
                     next_run = 60 - datetime.now().second - datetime.now().microsecond / 1000000 + 5
+
+                    current_hour = datetime.now().hour
+                    if current_hour != last_hour:
+                        #self.logger.info(f"Connection {self.connection_id} - New hour: {current_hour}")
+                        # Find docs with status "running" but expired end_observation
+                        #TODO: Use a more efficient query to find expired docs, use id_ in the last x days
+                        expired_docs = self.metadata_orderbook_collection.find({
+                            "status": "running",
+                            "end_observation": {"$lt": (datetime.now() - timedelta(minutes=5)).isoformat()}
+                        })
+
+                        # Update expired docs to "completed" status
+                        for doc in expired_docs:
+                            if doc['coin'] not in self.coins:
+                                continue
+
+                            self.metadata_orderbook_collection.update_one(
+                                {"_id": doc["_id"]},
+                                {"$set": {"status": "completed"}}
+                            )
+                            self.logger.info(f"Connection {self.connection_id} - Marked expired doc {doc['_id']} as completed")
+                            self.initialize_coin_status(coin=doc['coin'], start_script=False, last_snapshot_time=self.coin_orderbook_initialized[doc['coin']]['next_snapshot_time'])
+                        last_hour = current_hour
                     sleep(next_run)
+
+
                 except Exception as e:
                     self.logger.error(f"Connection {self.connection_id} - Error in search_volatility_event_trigger: {e}")
                             
