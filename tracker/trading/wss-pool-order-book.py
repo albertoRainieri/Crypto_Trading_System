@@ -66,7 +66,7 @@ class BinancePriceTracker:
             self.MINUTES_NO_ACTION = self.strategy_configuration.get('MINUTES_NO_ACTION', 10)  # Minutes to wait before triggering stop loss
             self.MINUTES_FORCE_ACTION = self.strategy_configuration.get('MINUTES_FORCE_ACTION',360)
 
-            self.MINUTES_FORCE_ACTION = 2
+            #self.MINUTES_FORCE_ACTION = 2
             self.PRICE_MOVEMENT_PRINT = 0.02
             self.EARLY_STOP_LOSS = EARLY_STOP_LOSS  # Flag to indicate if early stop loss has been triggered
             self.last_low_print = last_low_print  # Variable to store the last low price printed
