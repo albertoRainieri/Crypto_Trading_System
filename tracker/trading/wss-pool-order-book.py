@@ -2217,11 +2217,14 @@ class PooledBinanceOrderBook:
                     next_run = 60 - datetime.now().second - datetime.now().microsecond / 1000000 + 5
 
                     current_hour = datetime.now().hour
-                    if current_hour != last_hour:
+                    current_minute = datetime.now().minute
+                    if current_hour != last_hour and current_minute == self.connection_id + 30:
                         #self.logger.info(f"Connection {self.connection_id} - New hour: {current_hour}")
                         # Find docs with status "running" but expired end_observation
                         #TODO: Use a more efficient query to find expired docs, use id_ in the last x days
+                        one_week = (datetime.now() - timedelta(days=7)).isoformat()
                         expired_docs = self.metadata_orderbook_collection.find({
+                            "_id": {"$gt": one_week},
                             "status": "running",
                             "end_observation": {"$lt": (datetime.now() - timedelta(minutes=5)).isoformat()}
                         })
