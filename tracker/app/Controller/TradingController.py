@@ -129,7 +129,8 @@ class TradingController:
                     db_collection = db[COLLECTION_ORDERBOOK_METADATA]
 
                     # determine if there were scripts for "$coin" in the last 3hours
-                    docs = list( db_collection.find({"_id": {"$gt": coin_window_ts}, "coin": coin}))
+                    one_week = (datetime.now() - timedelta(days=7)).isoformat()
+                    docs = list( db_collection.find({"_id": {"$gt": one_week}, "status": "running", "end_observation": {"$gt": datetime.now().isoformat()}, "coin": coin}))
 
                     # this is the case where the orderbook script was never executed for $coin in the last day
                     if len(docs) == 0:
