@@ -2147,19 +2147,25 @@ class PooledBinanceOrderBook:
                     metadata_docs = list(self.metadata_orderbook_collection.find({
                         "_id": {"$gt": one_week},  # Only look at documents from the last week
                         "end_observation": {"$gt": datetime.now().isoformat()},
-                        "status": {"$in": ["running", "pending"]}
-                    }, {"coin": 1, "event_key": 1, "end_observation": 1, "ranking": 1, "status": 1, "number": 1, "current_doc_id": 1}))
+                        "status": {"$ne": "completed"}},
+                        {"coin": 1, "event_key": 1, "end_observation": 1, "ranking": 1, "status": 1, "number": 1, "current_doc_id": 1}))
                     # metadata_docs = list(self.metadata_orderbook_collection.find({"_id": {"$gt": timeframe_1day}}, {"coin": 1, "event_key": 1, "end_observation": 1,"ranking": 1, "status": 1, "number": 1, "current_doc_id": 1}))
                     # self.logger.info(f'metadata_docs: {metadata_docs}')
                     if len(metadata_docs) != 0:
                         riskmanagement_configuration = self.get_riskmanagement_configuration()
                         for doc in metadata_docs:
+
                             if doc["coin"] not in self.coins:
                                 if doc["status"] == "running":
                                     number_doc = doc.get("number", None)
                                     if number_doc is not None:
                                         numbers_filled.append(number_doc)
                                 continue
+
+                            # doc_id = doc['_id']
+                            # doc_status = doc['status']
+                            # doc_coin = doc['coin']
+                            # self.logger.info(f"Connection {self.connection_id} - doc_id: {doc_id}, doc_status: {doc_status}, doc_coin: {doc_coin}")
 
                             if doc["status"] == "pending":
                                 
@@ -2182,10 +2188,9 @@ class PooledBinanceOrderBook:
                                     numbers_filled.append(number_doc)
 
                             elif doc["status"] == "on_update":
-                                coin_print = doc["coin"]
-                                end_observation = doc["end_observation"]
                                 #self.logger.info(f"Connection {self.connection_id}: {coin_print} new volatility event - the orderbook polling will continue until {end_observation}")
-                                self.under_observation[doc["coin"]]['end_observation'] = doc["end_observation"]
+                                if self.under_observation[doc["coin"]]['status']:
+                                    self.under_observation[doc["coin"]]['end_observation'] = doc["end_observation"]
                                 self.metadata_orderbook_collection.update_one({"_id": doc["_id"]}, {"$set": {"status": "running", "end_observation": doc["end_observation"]}})
 
                         for coin in coins_under_observation:
@@ -2220,13 +2225,11 @@ class PooledBinanceOrderBook:
                     current_hour = datetime.now().hour
                     current_minute = datetime.now().minute
                     if current_hour != last_hour and current_minute == self.connection_id + 30:
-                        #self.logger.info(f"Connection {self.connection_id} - New hour: {current_hour}")
-                        # Find docs with status "running" but expired end_observation
-                        #TODO: Use a more efficient query to find expired docs, use id_ in the last x days
+
                         one_week = (datetime.now() - timedelta(days=7)).isoformat()
                         expired_docs = self.metadata_orderbook_collection.find({
                             "_id": {"$gt": one_week},
-                            "status": "running",
+                            "status": {"$ne": "completed"},
                             "end_observation": {"$lt": (datetime.now() - timedelta(minutes=5)).isoformat()}
                         })
 
@@ -2242,6 +2245,7 @@ class PooledBinanceOrderBook:
                             self.logger.info(f"Connection {self.connection_id} - Marked expired doc {doc['_id']} as completed")
                             self.initialize_coin_status(coin=doc['coin'], start_script=False, last_snapshot_time=self.coin_orderbook_initialized[doc['coin']]['next_snapshot_time'])
                         last_hour = current_hour
+
                     sleep(next_run)
 
 
