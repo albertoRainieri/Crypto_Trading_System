@@ -98,6 +98,7 @@ def get_benchmark_info(db_benchmark):
     else:
         print(f'{full_path} does not exist. Making the request to the server..')
         ENDPOINT = 'https://algocrypto.eu'
+        ENDPOINT = 'http://149.62.189.91'
         METHOD = '/analysis/get-benchmarkinfo'
 
         url_mosttradedcoins = ENDPOINT + METHOD

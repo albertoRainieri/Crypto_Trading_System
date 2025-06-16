@@ -875,6 +875,11 @@ class AnalysisController:
         db_order_book = client.get_db(DATABASE_ORDER_BOOK)
 
         start_timestamp = request["start_timestamp"]
+        filter_metadata = datetime(2025,6,11,21,37) # this the filter for moving from algo2 to algo3
+        start_timestamp = max(datetime.fromisoformat(start_timestamp), filter_metadata)
+        start_timestamp = start_timestamp.isoformat()
+
+
         collection = db_order_book[COLLECTION_ORDERBOOK_METADATA]
         end_timestamp = (datetime.now() - timedelta(days=2)).isoformat()
         docs = list(collection.find({"_id": {"$gte": start_timestamp, "$lt": end_timestamp}, "status": "completed"}, {"_id": 1, 'event_key': 1, 'coin': 1}))
