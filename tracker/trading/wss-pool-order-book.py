@@ -2154,21 +2154,18 @@ class PooledBinanceOrderBook:
                     if len(metadata_docs) != 0:
                         riskmanagement_configuration = self.get_riskmanagement_configuration()
                         for doc in metadata_docs:
-
+                            # update numbers_filled
+                            if doc["status"] in ["running", "on_update"]:
+                                number_doc = doc.get("number", None)
+                                if number_doc is not None:
+                                    numbers_filled.append(number_doc)
+                            
+                            # skip if coin is not in coins list
                             if doc["coin"] not in self.coins:
-                                if doc["status"] == "running":
-                                    number_doc = doc.get("number", None)
-                                    if number_doc is not None:
-                                        numbers_filled.append(number_doc)
                                 continue
 
-                            # doc_id = doc['_id']
-                            # doc_status = doc['status']
-                            # doc_coin = doc['coin']
-                            # self.logger.info(f"Connection {self.connection_id} - doc_id: {doc_id}, doc_status: {doc_status}, doc_coin: {doc_coin}")
-
+                            # initialize under_observation in case of new volatility event
                             if doc["status"] == "pending":
-                                
                                 benchmark_doc = self.db_benchmark[doc["coin"]].find_one({}, {'volume_30_avg': 1})
                                 self.benchmark[doc["coin"]] = benchmark_doc.get('volume_30_avg') if benchmark_doc else None
                                 self.under_observation[doc["coin"]] = {
@@ -2181,17 +2178,13 @@ class PooledBinanceOrderBook:
                                     'current_doc_id': doc["_id"]  # Use stored current_doc_id or default to start_observation
                                 }
                                 coins_under_observation.append(doc["coin"])
-                                
-                            elif doc["status"] == "running":
-                                number_doc = doc.get("number", None)
-                                if number_doc is not None:
-                                    numbers_filled.append(number_doc)
 
+                            # update under_observation in case of existing volatility event
                             elif doc["status"] == "on_update":
                                 #self.logger.info(f"Connection {self.connection_id}: {coin_print} new volatility event - the orderbook polling will continue until {end_observation}")
                                 if self.under_observation[doc["coin"]]['status']:
                                     self.under_observation[doc["coin"]]['end_observation'] = doc["end_observation"]
-                                self.metadata_orderbook_collection.update_one({"_id": doc["_id"]}, {"$set": {"status": "running", "end_observation": doc["end_observation"]}})
+                                self.metadata_orderbook_collection.update_one({"_id": doc["_id"]}, {"$set": {"status": "running"}})
 
                         for coin in coins_under_observation:
                             for number in range(len(numbers_filled)+1):
@@ -2220,8 +2213,7 @@ class PooledBinanceOrderBook:
                             })
                             self.logger.info(f"Connection {self.connection_id} - Coin {coin} - event_key: {event_key} - {number+1}/{len(numbers_filled)} - ranking: {ranking}")
                         
-                    next_run = 60 - datetime.now().second - datetime.now().microsecond / 1000000 + 5
-
+                    # check if there are expired docs
                     current_hour = datetime.now().hour
                     current_minute = datetime.now().minute
                     if current_hour != last_hour and current_minute == self.connection_id + 30:
@@ -2246,6 +2238,14 @@ class PooledBinanceOrderBook:
                             self.initialize_coin_status(coin=doc['coin'], start_script=False, last_snapshot_time=self.coin_orderbook_initialized[doc['coin']]['next_snapshot_time'])
                         last_hour = current_hour
 
+                    under_observation_coins = 0
+                    if current_hour == 1 and current_minute == 0: 
+                        for coin in self.under_observation:
+                            if self.under_observation[coin]['status']:
+                                under_observation_coins += 1
+                        self.logger.info(f"Connection {self.connection_id} - There are {under_observation_coins} coins under observation")
+
+                    next_run = 60 - datetime.now().second - datetime.now().microsecond / 1000000 + 5
                     sleep(next_run)
 
 
