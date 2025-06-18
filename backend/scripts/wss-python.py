@@ -14,10 +14,12 @@ from app.Controller.LoggingController import LoggingController
 import logging
 import threading
 import sys
+import re
 
 
 LIST = sys.argv[1]
-LIST_N = int(LIST[-1])
+#LIST_N = int(LIST[-1])
+LIST_N = int(re.search(r'list(\d+)', LIST).group(1))
 TIME = "T"
 PRICE = "p"
 QUANTITY = "q"
