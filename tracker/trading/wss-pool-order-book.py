@@ -1843,27 +1843,29 @@ class PooledBinanceOrderBook:
                         target_threshold_i = self.under_observation[coin]['riskmanagement_configuration'].get('MINIMUM_TARGET_THRESHOLD_I', 1)
 
                         self.buy_price[coin] = self.current_price[coin]
-                        self.logger.info('--------------------------------')
-                        self.logger.info('--------------------------------')
-                        self.logger.info("")
-                        self.logger.info(f"Connection {self.connection_id} - BUY EVENT: {coin} at {self.current_price[coin]}")
-                        self.logger.info('------------ 0.001 ask orders ----------------')
-                        self.logger.info(f"Connection {self.connection_id} - avg_distribution: {avg_distribution}")
-                        self.logger.info(f"Connection {self.connection_id} - summary_ask_orders: {summary_ask_orders}")
-                        self.logger.info("")
-                        self.logger.info('------------- 0.001 target price -------------')
-                        self.logger.info('Target Price delta 0.001')
-                        targets = self.discover_target_price(coin, summary_ask_orders, total_ask_volume=self.total_ask_volume[coin],
+
+                        targets = self.discover_target_price(coin, self.current_price[coin], summary_ask_orders, total_ask_volume=self.total_ask_volume[coin],
                                                              n_target_levels=n_targets,  target_threshold=target_threshold, target_threshold_i=target_threshold_i)
                         
-                        self.logger.info("")
-                        self.logger.info('-------------- Tracker Volume ----------------')
-                        self.get_tracker_volume_coin(coin, self.total_ask_volume[coin], summary_ask_orders)
-                        self.logger.info("")
-                        self.logger.info('--------------------------------')
-                        self.logger.info('--------------------------------')
 
                         if len(targets) > 0:
+                            self.logger.info('--------------------------------')
+                            self.logger.info('--------------------------------')
+                            self.logger.info("")
+                            self.logger.info(f"Connection {self.connection_id} - BUY EVENT: {coin} at {self.current_price[coin]}")
+                            self.logger.info('------------ 0.001 ask orders ----------------')
+                            self.logger.info(f"Connection {self.connection_id} - avg_distribution: {avg_distribution}")
+                            self.logger.info(f"Connection {self.connection_id} - summary_ask_orders: {summary_ask_orders}")
+                            self.logger.info("")
+                            self.logger.info('------------- 0.001 target price -------------')
+                            self.logger.info('Target Price delta 0.001')
+                            self.logger.info("")
+                            self.logger.info('-------------- Tracker Volume ----------------')
+                            self.get_tracker_volume_coin(coin, self.total_ask_volume[coin], summary_ask_orders)
+                            self.logger.info("")
+                            self.logger.info('--------------------------------')
+                            self.logger.info('--------------------------------')
+
                             stop_loss = self.current_price[coin] * (1 - self.under_observation[coin]['riskmanagement_configuration']['stop_loss'])
                             orderbook_id = self.under_observation[coin]['start_observation']
                             ranking = self.under_observation[coin]['ranking']
@@ -1878,11 +1880,13 @@ class PooledBinanceOrderBook:
                                 self.logger.info(f"Connection {self.connection_id} - Recent trades found for {coin}. Skipping buy event.")
                                 return
                             
-                            # Start the trading event in a separate thread since we're in a sync context
-                            def run_trading_event():
-                                asyncio.run(trading_event.run())
+                            # TODO: uncomment this when the system is ready for live trading
+                            # TODO: ANALYZE THIS FUNCTION, THERE IS A BUG,  IT MIGHT AFFECT THE ENTIRE ORDERBOOK TRACKING SYSTEM
+                            # # Start the trading event in a separate thread since we're in a sync context
+                            # def run_trading_event():
+                            #     asyncio.run(trading_event.run())
                             
-                            threading.Thread(target=run_trading_event, daemon=True).start()
+                            # threading.Thread(target=run_trading_event, daemon=True).start()
                         else:
                             self.logger.info(f"Connection {self.connection_id} - No valid target prices found for {coin}. Skipping buy event.")
 
@@ -1890,18 +1894,21 @@ class PooledBinanceOrderBook:
             self.logger.error(f"Connection {self.connection_id} - Traceback: {traceback.format_exc()}")
             self.logger.error(f"Connection {self.connection_id} - Error checking buy trading conditions for {coin}: {e}")
 
-    def discover_target_price(self, coin, summary_ask_orders, total_ask_volume=0, n_target_levels=10, target_threshold=0.01, target_threshold_i=1):
+    def discover_target_price(self, coin, current_price, summary_ask_orders, total_ask_volume=0, n_target_levels=10, target_threshold=0.01, target_threshold_i=1):
         """Discover the target price for a specific coin"""
         try:
             #avg_distribution_keys = sorted([0] + [float(x) for x in list(avg_distribution.keys())])
+            # check if the first level is below the target threshold
+            if summary_ask_orders[0][0] < target_threshold:
+                return []
+
             n_targets = 0
             cumulative_volume_last_level = summary_ask_orders[-1][1]
             targets = []
-
             for level in summary_ask_orders:
                 if n_targets < n_target_levels:
                     price_change_target = level[0]
-                    target_price = self.round_(self.current_price[coin] * (1 + price_change_target), self.count_decimals(self.current_price[coin]))
+                    target_price = self.round_(current_price * (1 + price_change_target), self.count_decimals(current_price))
                     #cumulative_volume_wrt_last_level = level[1] / cumulative_volume_last_level
                     cumulative_volume_wrt_last_level = self.round_((level[1]  / cumulative_volume_last_level)*100, 2)
                     absolute_ask_order_volume_level = level[1] * total_ask_volume
