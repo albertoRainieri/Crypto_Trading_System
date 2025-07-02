@@ -1885,6 +1885,7 @@ class PooledBinanceOrderBook:
                             # # Start the trading event in a separate thread since we're in a sync context
                             # def run_trading_event():
                             #     asyncio.run(trading_event.run())
+
                             
                             # threading.Thread(target=run_trading_event, daemon=True).start()
                         else:
