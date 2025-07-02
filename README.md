@@ -204,21 +204,16 @@ CHECK_PERIOD_MINUTES=1
 
 3. **Build and Start Services**:
    ```bash
-   docker-compose -f docker-compose.yaml.local up -d --build
+   docker-compose up -d --build mongo-express mongo backend tracker nginx
    ```
 
 ### Analysis Environment:
-
-1. **Start Jupyter**:
-   ```bash
-   cd analysis/Analysis2024
-   jupyter notebook
-   ```
 
 2. **Run Analysis**:
    - Open `Analysis_official.ipynb`
    - Execute cells for data analysis and strategy testing
    - Use `analyze_volatility.py` for volatility analysis
+   - Use `launch_strategy.py`for orderbook analysis
 
 ## 📊 Key Metrics and Analysis
 
