@@ -306,4 +306,15 @@ Content-Type: application/json
 - Contact: **Alberto Rainieri** - alberto.rainieri.lavoro@gmail.com
 
 
-**Note**: This system is complex and requires careful setup. For detailed implementation guidance, technical support, or questions about deployment, please contact the author: **Alberto Rainieri** - alberto.rainieri.lavoro@gmail.com
+**Note**: This system shows promising results in detecting volume and orderbook anomalies, but has not yet achieved consistent profitability in live trading. After 2 years of development, the project demonstrates solid technical architecture and anomaly detection capabilities, though further optimization is needed for steady returns.
+
+**Data Assets**: The system has collected extensive historical data including orderbook snapshots, volume patterns, and trading events across multiple cryptocurrency pairs. This rich dataset provides valuable insights for strategy development and backtesting.
+
+**Open for Collaboration**: I'm actively seeking collaborators, contributors, or partners to help improve the system's performance. Whether you're interested in:
+- Contributing code improvements
+- Testing and validation
+- Strategy optimization
+- Commercial partnerships
+- Data analysis and research
+
+Please reach out: **Alberto Rainieri** - alberto.rainieri.lavoro@gmail.com
