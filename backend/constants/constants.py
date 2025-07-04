@@ -66,9 +66,9 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60*24*3650
 clients_oauth2 = {
     "Crypto_User_2023!": {
-        "username": "Crypto_User_2023!",
-        "hashed_password": "$2b$12$HdmhpU5RyeOfjuYu/8w81OciGkE/mrGyBenp6iTCt.4MZCG6qSSbS",
+        "username": "",
+        "hashed_password": "",
         "disabled": False
     },
 }
-ACCESS_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJDcnlwdG9fVXNlcl8yMDIzISIsImV4cCI6MTk5NjE0ODAwOH0.kv5FpZBLrCShvwIeccqh01qMeBihA1ySs43MrjM5AEc"
+ACCESS_TOKEN = ""
