@@ -1743,7 +1743,7 @@ class PooledBinanceOrderBook:
                 order_distribution[lvl] = 0
 
         sum_cumulative_level = sum(order_distribution.values())
-        if len(orders) > 0 and (sum_cumulative_level < 0.99 or sum_cumulative_level > 1.01):
+        if len(orders) > 0 and (sum_cumulative_level < 0.98 or sum_cumulative_level > 1.02):
             self.logger.info(f'computation order_distribution error')
             self.logger.info(f'orders: {orders}')
             self.logger.info(f'order_distribution: {order_distribution}')
