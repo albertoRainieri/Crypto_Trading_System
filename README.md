@@ -6,8 +6,8 @@ A comprehensive 24/7 cryptocurrency trading analysis and live tracking system th
 
 The system consists of three main components:
 
-1. **Tracker** - Live market data collection and orderbook analysis
-2. **Backend** - API server for data access and analysis
+1. **Tracker** - Preprocesses raw trades data, monitors orderbook anomalies, and alerts orderbook analysis
+2. **Backend** - Collects live trades via WebSocket and serves as API server for data access and analysis
 3. **Analysis** - Local environment for strategy development and backtesting
 
 ## 🏛️ System Architecture Diagram
@@ -194,9 +194,11 @@ The tracker is the core component responsible for 24/7 live market data collecti
 - **Anomaly Detection**: Automatic detection of volume spikes and orderbook distribution anomalies
 - **Trading Event Detection**: Automatic detection of volatility events and trading opportunities
 - **Volume Analysis**: Tracks buy/sell volume patterns across multiple timeframes (1m, 5m, 15m, 30m, 60m)
-- **Live Trade Processing**: Fetches live trade data from database (collected by backend at second = 0) and preprocesses at second = 2
+- **Live Trade Processing**: Fetches live trade data from Market_Trades database (collected by backend at second = 0) and preprocesses at second = 2
+- **Data Preprocessing**: Processes raw market data against daily benchmarks and saves to Tracker database
 - **Benchmark Comparison**: Compares current volume against daily-computed benchmark data for relative volume analysis
 - **Adaptive Orderbook Saving**: Frequency of orderbook data saving is determined by orderbook depth - fewer orders near current price = higher saving frequency
+- **Anomaly Communication**: Alerts orderbook database when volume anomalies are detected for focused monitoring
 - **Daily Benchmark Computation**: Automatically computes volume averages and benchmarks at midnight daily
 - **Exchange Info Management**: Updates instrument lists and trading pairs daily at 23:59:18
 - **Performance Monitoring**: Tracks trading performance and updates metrics daily at 23:59:15
@@ -221,10 +223,11 @@ The tracker is the core component responsible for 24/7 live market data collecti
 
 ### Backend Service (`/backend`)
 
-FastAPI-based backend providing RESTful APIs for data access and analysis, including live trade information retrieval.
+FastAPI-based backend serving dual purposes: WebSocket client for live trade collection and RESTful API server for data access and analysis.
 
 #### Key Features:
-- **Live Trade Collection**: WebSocket client that collects live trades for all pairs every minute at second = 0
+- **Live Trade Collection**: WebSocket client that collects live trades for all pairs every minute at second = 0 and saves to Market_Trades database
+- **RESTful API Server**: Provides endpoints for data access, authentication, and analysis
 - **Live Trade Data APIs**: Real-time access to current market trades and volume data
 - **Data Retrieval APIs**: Access to tracker, market, and benchmark data
 - **Timeseries Analysis**: Historical data analysis with configurable timeframes
@@ -338,16 +341,17 @@ CHECK_PERIOD_MINUTES=1
 
 ### Live Data Collection:
 1. **Backend** collects live trade information from Binance WebSocket every minute at second = 0
-2. **Backend** saves live trade data to MongoDB Market Data collection
-3. **Tracker** fetches live trade data from database every minute at second = 2
+2. **Backend** saves live trade data to MongoDB Market_Trades collection
+3. **Tracker** fetches live trade data from Market_Trades database every minute at second = 2
 4. **Tracker** preprocesses live trade data against daily benchmark for volume analysis
-5. **WebSocket Orderbook Pooling** maintains multiple connections for 24/7 orderbook monitoring
-6. **Volume Comparison** compares current volume against daily benchmark data
-7. **Anomaly Detection** identifies volume spikes and orderbook distribution anomalies
-8. **Adaptive Orderbook Saving** saves orderbook data with frequency based on orderbook depth
-9. **Orderbook Analysis** processes bid/ask order distribution and detects trading events
-10. **Risk Management** evaluates positions and applies risk controls
-11. **Data Storage** saves processed data to MongoDB collections
+5. **Tracker** saves processed data to Tracker database
+6. **WebSocket Orderbook Pooling** maintains multiple connections for 24/7 orderbook monitoring
+7. **Volume Comparison** compares current volume against daily benchmark data
+8. **Anomaly Detection** identifies volume spikes and orderbook distribution anomalies
+9. **Adaptive Orderbook Saving** saves orderbook data with frequency based on orderbook depth
+10. **Orderbook Analysis** processes bid/ask order distribution and detects trading events
+11. **Risk Management** evaluates positions and applies risk controls
+12. **Data Storage** saves processed data to MongoDB collections
 
 ### Daily Maintenance Tasks (Midnight):
 - **23:59:15** - Performance monitoring and metrics update
