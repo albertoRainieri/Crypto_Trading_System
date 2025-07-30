@@ -10,6 +10,176 @@ The system consists of three main components:
 2. **Backend** - API server for data access and analysis
 3. **Analysis** - Local environment for strategy development and backtesting
 
+## 🏛️ System Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph "External APIs"
+        BINANCE[Binance API & WSS]
+    end
+
+    subgraph "Production Environment (Ubuntu 24.04)"
+        subgraph "Docker Containers"
+            subgraph "Backend Service"
+                FASTAPI[FastAPI Backend]
+                AUTH[Authentication]
+                API[API Endpoints]
+                BACKEND_WSS[WebSocket Client<br/>Live Trades Collection]
+                LIVE_TRADES[Live Trades Processing]
+            end
+
+            subgraph "Tracker Service"
+                TRACKER[Tracker Container]
+                TRACKER_WSS[WebSocket Client<br/>Orderbook Pool]
+                ORDERBOOK[Orderbook Analysis]
+                VOLUME[Volume Analysis]
+                ANOMALY[Anomaly Detection]
+                BENCHMARK_PROC[Benchmark Processing]
+                PREPROCESS[Data Preprocessing<br/>Market_Trades → Tracker]
+            end
+
+            subgraph "Database Layer"
+                MONGODB[(MongoDB)]
+                META[Metadata]
+                TRACKER_DATA[Tracker Data<br/>Processed Data]
+                MARKET_DATA[Market_Trades<br/>Raw Live Trades]
+                BENCHMARK[Benchmark Data]
+                ORDERBOOK_DATA[Orderbook Data<br/>Anomaly Alerts]
+            end
+
+            subgraph "Infrastructure"
+                NGINX[Nginx Reverse Proxy]
+                CERTBOT[SSL Certificates]
+                MONGO_EXP[MongoDB Express]
+            end
+        end
+    end
+
+    subgraph "Analysis Environment"
+        JUPYTER[Jupyter Notebooks]
+        ANALYSIS[Analysis Scripts]
+        BACKTEST[Backtesting]
+        STRATEGY[Strategy Development]
+    end
+
+    subgraph "Data Flow Timeline"
+        subgraph "Every Minute (Second = 0)"
+            MIN1[Backend: Collect Live Trades<br/>All Pairs via WebSocket]
+            MIN2[Save to Market Data DB]
+        end
+
+        subgraph "Every Minute (Second = 2)"
+            SEC2[Tracker: Fetch Raw Data<br/>from Market_Trades DB]
+            SEC3[Preprocess Data<br/>vs Daily Benchmark]
+            SEC4[Save Processed Data<br/>to Tracker DB]
+        end
+
+        subgraph "24/7 Continuous"
+            CONT1[WebSocket Pool: Orderbook<br/>Monitoring All Pairs]
+            CONT2[Volume Anomaly Detection]
+            CONT3[Tracker → Orderbook DB:<br/>Anomaly Alert for Focused Monitoring]
+            CONT4[Adaptive Orderbook Saving<br/>Frequency based on Depth]
+        end
+
+        subgraph "Daily Maintenance (Midnight)"
+            DAY1[Benchmark Computation]
+            DAY2[Exchange Info Update]
+            DAY3[Performance Monitoring]
+        end
+    end
+
+    %% External connections
+    BINANCE --> BACKEND_WSS
+    BINANCE --> TRACKER_WSS
+
+    %% Backend connections
+    FASTAPI --> AUTH
+    FASTAPI --> API
+    BACKEND_WSS --> LIVE_TRADES
+    LIVE_TRADES --> MARKET_DATA
+    API --> MONGODB
+
+    %% Tracker connections
+    TRACKER_WSS --> ORDERBOOK
+    ORDERBOOK --> VOLUME
+    VOLUME --> ANOMALY
+    ANOMALY --> ORDERBOOK_DATA
+    TRACKER --> MONGODB
+    BENCHMARK_PROC --> TRACKER_DATA
+    PREPROCESS --> TRACKER_DATA
+    MARKET_DATA --> PREPROCESS
+
+    %% Database collections
+    MONGODB --> META
+    MONGODB --> TRACKER_DATA
+    MONGODB --> MARKET_DATA
+    MONGODB --> BENCHMARK
+    MONGODB --> ORDERBOOK_DATA
+
+    %% Infrastructure
+    NGINX --> FASTAPI
+    CERTBOT --> NGINX
+    MONGO_EXP --> MONGODB
+
+    %% Force vertical layout
+    MONGODB --> MIN1
+
+    %% Analysis connections
+    JUPYTER --> MONGODB
+    ANALYSIS --> MONGODB
+    BACKTEST --> MONGODB
+    STRATEGY --> MONGODB
+
+    %% Data flow connections
+    MIN1 --> MIN2
+    MIN2 --> SEC2
+    SEC2 --> SEC3
+    SEC3 --> SEC4
+    SEC4 --> TRACKER_DATA
+
+    CONT1 --> CONT2
+    CONT2 --> CONT3
+    CONT3 --> ORDERBOOK_DATA
+    CONT2 --> CONT4
+    CONT4 --> ORDERBOOK_DATA
+
+    DAY1 --> BENCHMARK
+    DAY2 --> META
+    DAY3 --> TRACKER_DATA
+
+    %% Styling
+    classDef external fill:#ff9999,stroke:#333,stroke-width:2px
+    classDef service fill:#99ccff,stroke:#333,stroke-width:2px
+    classDef database fill:#99ff99,stroke:#333,stroke-width:2px
+    classDef infrastructure fill:#ffcc99,stroke:#333,stroke-width:2px
+    classDef analysis fill:#cc99ff,stroke:#333,stroke-width:2px
+    classDef dataflow fill:#ffff99,stroke:#333,stroke-width:2px
+
+    class BINANCE external
+    class TRACKER,TRACKER_WSS,ORDERBOOK,VOLUME,ANOMALY,BENCHMARK_PROC,PREPROCESS,FASTAPI,AUTH,API,BACKEND_WSS,LIVE_TRADES service
+    class MONGODB,META,TRACKER_DATA,MARKET_DATA,BENCHMARK,ORDERBOOK_DATA database
+    class NGINX,CERTBOT,MONGO_EXP infrastructure
+    class JUPYTER,ANALYSIS,BACKTEST,STRATEGY analysis
+    class MIN1,MIN2,SEC2,SEC3,SEC4,CONT1,CONT2,CONT3,CONT4,DAY1,DAY2,DAY3 dataflow
+```
+
+### Key Components:
+
+- **🔴 External APIs**: Binance API & WSS integration for real-time market data
+- **🔵 Services**: Python-based microservices for data collection, processing, and API delivery
+- **🟢 Database**: MongoDB with specialized collections for different data types
+- **🟠 Infrastructure**: Nginx reverse proxy, SSL certificates, and database management
+- **🟣 Analysis**: Local development environment for strategy development and backtesting
+- **🟡 Data Flow**: Real-time pipelines with precise timing, analysis workflows, and daily maintenance tasks
+
+### Data Flow Timeline:
+
+1. **Every Minute (Second = 0)**: Backend container collects live trades for all pairs via WebSocket and saves to Market_Trades database
+2. **Every Minute (Second = 2)**: Tracker container fetches raw data from Market_Trades database, preprocesses it against daily benchmark, and saves processed data to Tracker database
+3. **24/7 Continuous**: WebSocket pool monitors orderbook data for all pairs, with adaptive saving frequency based on orderbook depth
+4. **Volume Anomaly Detection**: When tracker detects volume anomalies, it alerts the orderbook database to focus monitoring on specific pairs
+5. **Daily Maintenance (Midnight)**: Benchmark computation, exchange info updates, and performance monitoring
+
 ## 🚀 Production Components
 
 ### Tracker Service (`/tracker`)
@@ -18,15 +188,16 @@ The tracker is the core component responsible for 24/7 live market data collecti
 
 #### Key Features:
 - **24/7 Continuous Monitoring**: Non-stop market surveillance for volume and orderbook anomalies
-- **Real-time Orderbook Tracking**: Monitors orderbook depth and order distribution patterns
+- **Real-time Orderbook Tracking**: Monitors orderbook depth and order distribution patterns via WebSocket pool
 - **Multi-Connection WebSocket Pooling**: Distributes orderbook monitoring across multiple WebSocket connections for scalability
 - **Orderbook Analysis**: Real-time analysis of bid/ask order distribution and price levels
 - **Anomaly Detection**: Automatic detection of volume spikes and orderbook distribution anomalies
 - **Trading Event Detection**: Automatic detection of volatility events and trading opportunities
 - **Volume Analysis**: Tracks buy/sell volume patterns across multiple timeframes (1m, 5m, 15m, 30m, 60m)
-- **Live Trade Processing**: Receives and processes live trade information from backend APIs
+- **Live Trade Processing**: Fetches live trade data from database (collected by backend at second = 0) and preprocesses at second = 2
 - **Benchmark Comparison**: Compares current volume against daily-computed benchmark data for relative volume analysis
-- **Daily Benchmark Computation**: Automatically computes volume averages and benchmarks at 23:59:30 daily
+- **Adaptive Orderbook Saving**: Frequency of orderbook data saving is determined by orderbook depth - fewer orders near current price = higher saving frequency
+- **Daily Benchmark Computation**: Automatically computes volume averages and benchmarks at midnight daily
 - **Exchange Info Management**: Updates instrument lists and trading pairs daily at 23:59:18
 - **Performance Monitoring**: Tracks trading performance and updates metrics daily at 23:59:15
 - **Risk Management**: Implements configurable risk parameters and loss limits
@@ -53,11 +224,12 @@ The tracker is the core component responsible for 24/7 live market data collecti
 FastAPI-based backend providing RESTful APIs for data access and analysis, including live trade information retrieval.
 
 #### Key Features:
+- **Live Trade Collection**: WebSocket client that collects live trades for all pairs every minute at second = 0
 - **Live Trade Data APIs**: Real-time access to current market trades and volume data
 - **Data Retrieval APIs**: Access to tracker, market, and benchmark data
 - **Timeseries Analysis**: Historical data analysis with configurable timeframes
 - **Orderbook Analysis**: Orderbook metadata and depth analysis
-- **User Authentication**: Secure access control
+- **User Authentication**: Secure access control with JWT tokens
 - **Real-time Data Streaming**: WebSocket endpoints for live data
 
 #### Main Components:
@@ -165,19 +337,22 @@ CHECK_PERIOD_MINUTES=1
 ## 📈 Data Flow
 
 ### Live Data Collection:
-1. **Backend** retrieves live trade information from external sources
-2. **Tracker** receives live trade data from backend APIs
-3. **WebSocket Orderbook Pooling** maintains multiple connections for 24/7 orderbook monitoring
-4. **Volume Comparison** compares current volume against daily benchmark data
-5. **Anomaly Detection** identifies volume spikes and orderbook distribution anomalies
-6. **Orderbook Analysis** processes bid/ask order distribution and detects trading events
-7. **Risk Management** evaluates positions and applies risk controls
-8. **Data Storage** saves processed data to MongoDB collections
+1. **Backend** collects live trade information from Binance WebSocket every minute at second = 0
+2. **Backend** saves live trade data to MongoDB Market Data collection
+3. **Tracker** fetches live trade data from database every minute at second = 2
+4. **Tracker** preprocesses live trade data against daily benchmark for volume analysis
+5. **WebSocket Orderbook Pooling** maintains multiple connections for 24/7 orderbook monitoring
+6. **Volume Comparison** compares current volume against daily benchmark data
+7. **Anomaly Detection** identifies volume spikes and orderbook distribution anomalies
+8. **Adaptive Orderbook Saving** saves orderbook data with frequency based on orderbook depth
+9. **Orderbook Analysis** processes bid/ask order distribution and detects trading events
+10. **Risk Management** evaluates positions and applies risk controls
+11. **Data Storage** saves processed data to MongoDB collections
 
-### Daily Maintenance Tasks (23:59):
+### Daily Maintenance Tasks (Midnight):
 - **23:59:15** - Performance monitoring and metrics update
 - **23:59:18** - Exchange info update (instrument lists, trading pairs)
-- **23:59:30** - Daily benchmark computation (volume averages)
+- **00:00:00** - Daily benchmark computation (volume averages)
 - **00:00:00** - Coin list refresh and volume standings update
 
 ### Analysis Pipeline:
