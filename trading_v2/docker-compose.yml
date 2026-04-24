@@ -1,0 +1,45 @@
+services:
+  financialjuice:
+    build: .
+    image: financialjuice-live:latest
+    container_name: financialjuice_live
+    env_file:
+      - .env
+
+    # Print news JSON to stdout immediately (no buffering).
+    # Attach with: docker compose logs -f
+    tty: false
+    stdin_open: false
+
+    # Chromium needs /dev/shm of at least 256 MB; the Docker default (64 MB)
+    # causes renderer crashes under load.
+    shm_size: "256mb"
+
+    # Required for Chromium's sandbox to work inside Docker.
+    # If your host kernel disallows this, set CHROMIUM_ARGS to include
+    # --no-sandbox in the script instead.
+    security_opt:
+      - seccomp:unconfined
+
+    environment:
+      # Set to "1" to enable debug output to stderr inside the container.
+      - FJ_DEBUG=0
+      # Path inside the container where the persistent Chromium profile is mounted.
+      - FJ_PROFILE_DIR=/home/pwuser/.fj_profile
+
+    # Mount a persistent Chromium profile so the container stays logged in
+    # across restarts.
+    volumes:
+      - fj_profile:/home/pwuser/.fj_profile
+
+    restart: unless-stopped
+
+    # Resource limits — Chromium is memory-hungry; cap to avoid OOM kills.
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+
+volumes:
+  fj_profile:
