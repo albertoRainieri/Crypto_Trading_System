@@ -1,0 +1,15 @@
+services:
+  telegram-news:
+    build: .
+    image: telegram-news:latest
+    container_name: telegram_news
+    env_file:
+      - .env
+    restart: unless-stopped
+    tty: false
+    stdin_open: false
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.5"

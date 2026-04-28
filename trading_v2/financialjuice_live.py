@@ -35,6 +35,11 @@ TARGET_URL = "https://www.financialjuice.com/home"
 BROWSER_PROFILE_DIR: str | None = os.environ.get("FJ_PROFILE_DIR") or None
 # e.g. set FJ_PROFILE_DIR=/home/pwuser/.fj_profile in docker-compose.yml env block
 
+# Optional residential proxy URL to bypass Cloudflare IP-level blocks on VPS/
+# datacenter IPs.  Format: http://user:pass@host:port  or  socks5://host:port
+# Set FJ_PROXY_URL in .env; leave blank to connect directly.
+PROXY_URL: str | None = os.environ.get("FJ_PROXY_URL") or None
+
 # Chromium launch flags tuned for low-latency real-time work.
 CHROMIUM_ARGS = [
     "--disable-background-timer-throttling",  # prevents JS timer throttling in background tabs
@@ -520,86 +525,92 @@ def log_debug(msg: str) -> None:
 # MAIN
 # ---------------------------------------------------------------------------
 
+async def _setup_and_run(page: Page, context) -> None:
+    """
+    Wire up all interception strategies, navigate to Financial Juice, and block
+    until cancelled.  Called with either a Playwright or camoufox page — both
+    expose the same Playwright Page API.
+    """
+    # ------------------------------------------------------------------
+    # STRATEGY 1: WebSocket interception — register BEFORE navigation so
+    # we catch the very first WS handshake.
+    # ------------------------------------------------------------------
+    page.on("websocket", attach_websocket_listener)
+
+    # ------------------------------------------------------------------
+    # STRATEGY 2: HTTP response interception.
+    # ------------------------------------------------------------------
+    page.on("response", on_response)
+
+    # ------------------------------------------------------------------
+    # Inject auth credentials before the page loads.
+    # ------------------------------------------------------------------
+    await inject_auth(page)
+
+    # ------------------------------------------------------------------
+    # Navigate to Financial Juice.
+    # wait_until="domcontentloaded" is intentionally used over "load" to
+    # return control earlier — the WS connection typically opens before
+    # all assets finish loading.
+    # ------------------------------------------------------------------
+    log_debug(f"Navigating to {TARGET_URL}")
+    await page.goto(TARGET_URL, wait_until="domcontentloaded", timeout=30_000)
+
+    # ------------------------------------------------------------------
+    # STRATEGY 3: Inject MutationObserver as a DOM-level safety net.
+    # Re-inject on every SPA navigation (handles client-side routing).
+    # ------------------------------------------------------------------
+    await inject_mutation_observer(page)
+
+    async def on_frame_navigated(frame) -> None:
+        if frame == page.main_frame:
+            log_debug(f"[NAV] main frame navigated to {frame.url}")
+            await inject_mutation_observer(page)
+
+    page.on("framenavigated", on_frame_navigated)
+
+    log_debug("Listening for real-time news. Press Ctrl+C to stop.")
+
+    # ------------------------------------------------------------------
+    # Keep the event loop alive indefinitely.
+    # All news delivery is event-driven — this coroutine simply waits.
+    # No polling, no sleep loops.
+    # ------------------------------------------------------------------
+    try:
+        await asyncio.Future()   # runs forever until cancelled
+    except asyncio.CancelledError:
+        pass
+    finally:
+        await context.close()
+
+
 async def main() -> None:
-    async with async_playwright() as pw:
-        if BROWSER_PROFILE_DIR:
-            # Persistent context: reuses cookies, IndexedDB, etc. across runs.
-            # Lowest-friction way to stay logged in without re-implementing auth.
+    proxy_cfg = {"server": PROXY_URL} if PROXY_URL else None
+
+    if BROWSER_PROFILE_DIR:
+        # Persistent context: reuses cookies, IndexedDB, etc. across runs.
+        # Uses Chromium to stay compatible with an existing saved profile.
+        async with async_playwright() as pw:
             context = await pw.chromium.launch_persistent_context(
                 BROWSER_PROFILE_DIR,
                 headless=True,          # set False to debug visually
                 args=CHROMIUM_ARGS,
                 # Disable service workers that might intercept and buffer requests.
                 service_workers="block",
+                proxy=proxy_cfg,
             )
             page = context.pages[0] if context.pages else await context.new_page()
-        else:
-            browser = await pw.chromium.launch(
-                headless=True,
-                args=CHROMIUM_ARGS,
-            )
-            context = await browser.new_context(
-                # Pretend to be a real browser to avoid bot-detection redirects.
-                user_agent=(
-                    "Mozilla/5.0 (X11; Linux x86_64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0.0.0 Safari/537.36"
-                ),
-                service_workers="block",
-            )
+            await _setup_and_run(page, context)
+    else:
+        # Fresh session: use camoufox (patched Firefox) which applies dozens of
+        # fingerprint-level patches that defeat Cloudflare's bot-detection
+        # heuristics.  Pair with FJ_PROXY_URL (residential proxy) to bypass
+        # IP-level blocks on VPS/datacenter hosts.
+        from camoufox.async_api import AsyncCamoufox
+        async with AsyncCamoufox(headless=True, proxy=proxy_cfg) as browser:
+            context = await browser.new_context(service_workers="block")
             page = await context.new_page()
-
-        # ------------------------------------------------------------------
-        # STRATEGY 1: WebSocket interception — register BEFORE navigation so
-        # we catch the very first WS handshake.
-        # ------------------------------------------------------------------
-        page.on("websocket", attach_websocket_listener)
-
-        # ------------------------------------------------------------------
-        # STRATEGY 2: HTTP response interception.
-        # ------------------------------------------------------------------
-        page.on("response", on_response)
-
-        # ------------------------------------------------------------------
-        # Inject auth credentials before the page loads.
-        # ------------------------------------------------------------------
-        await inject_auth(page)
-
-        # ------------------------------------------------------------------
-        # Navigate to Financial Juice.
-        # wait_until="domcontentloaded" is intentionally used over "load" to
-        # return control earlier — the WS connection typically opens before
-        # all assets finish loading.
-        # ------------------------------------------------------------------
-        log_debug(f"Navigating to {TARGET_URL}")
-        await page.goto(TARGET_URL, wait_until="domcontentloaded", timeout=30_000)
-
-        # ------------------------------------------------------------------
-        # STRATEGY 3: Inject MutationObserver as a DOM-level safety net.
-        # Re-inject on every SPA navigation (handles client-side routing).
-        # ------------------------------------------------------------------
-        await inject_mutation_observer(page)
-
-        async def on_frame_navigated(frame) -> None:
-            if frame == page.main_frame:
-                log_debug(f"[NAV] main frame navigated to {frame.url}")
-                await inject_mutation_observer(page)
-
-        page.on("framenavigated", on_frame_navigated)
-
-        log_debug("Listening for real-time news. Press Ctrl+C to stop.")
-
-        # ------------------------------------------------------------------
-        # Keep the event loop alive indefinitely.
-        # All news delivery is event-driven — this coroutine simply waits.
-        # No polling, no sleep loops.
-        # ------------------------------------------------------------------
-        try:
-            await asyncio.Future()   # runs forever until cancelled
-        except asyncio.CancelledError:
-            pass
-        finally:
-            await context.close()
+            await _setup_and_run(page, context)
 
 
 if __name__ == "__main__":
